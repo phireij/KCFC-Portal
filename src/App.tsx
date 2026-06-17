@@ -1,0 +1,422 @@
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { onAuthStateChanged, User, sendEmailVerification } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, updateDoc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
+import { UserProfile, UserRole } from './types';
+import { cn } from './lib/utils';
+import { Megaphone } from 'lucide-react';
+
+// Pages
+import Dashboard from './pages/Dashboard';
+import Login from './pages/Login';
+import Polls from './pages/Polls';
+import Resources from './pages/Resources';
+import Duties from './pages/Duties';
+import Admin from './pages/Admin';
+import Profile from './pages/Profile';
+import Members from './pages/Members';
+import Announcements from './pages/Announcements';
+import Accounting from './pages/Accounting';
+import Navbar from './components/layout/Navbar';
+
+interface AuthContextType {
+  user: User | null;
+  profile: UserProfile | null;
+  loading: boolean;
+}
+
+const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true });
+
+export const useAuth = () => useContext(AuthContext);
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const authValue = React.useMemo(() => ({ user, profile, loading }), [user, profile, loading]);
+
+  useEffect(() => {
+    let unsubscribeProfile = () => {};
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (authenticatedUser) => {
+      try {
+        // Clean up previous profile listener if any
+        unsubscribeProfile();
+
+        setUser(authenticatedUser);
+        if (authenticatedUser) {
+          const isBootstrapAdmin = authenticatedUser.email === 'kcfc.jp@gmail.com';
+          const emailVerified = authenticatedUser.emailVerified;
+          
+          const userDocRef = doc(db, 'users', authenticatedUser.uid);
+
+          // Setup real-time listener for the user profile document
+          unsubscribeProfile = onSnapshot(userDocRef, async (userDoc) => {
+            try {
+              if (userDoc.exists()) {
+                const currentProfile = userDoc.data() as UserProfile;
+                
+                // Sync email verified state to firestore if it was false/undefined previously
+                // Also, if the member is already verified (isVerified === true), they should be treated as email verified.
+                if ((emailVerified || currentProfile.isVerified) && !currentProfile.isEmailVerified) {
+                  await updateDoc(userDocRef, {
+                    isEmailVerified: true,
+                    updatedAt: serverTimestamp()
+                  });
+                }
+
+                // Ensure bootstrap admin is always admin and verified
+                if (isBootstrapAdmin) {
+                  if (!(currentProfile.roles || []).includes('admin') || !currentProfile.isVerified || currentProfile.displayName !== 'ADMIN') {
+                    const updatedProfile = {
+                      ...currentProfile,
+                      displayName: 'ADMIN',
+                      roles: ['admin' as UserRole],
+                      isVerified: true,
+                      isEmailVerified: true,
+                      updatedAt: new Date().toISOString()
+                    };
+                    await setDoc(userDocRef, {
+                      ...updatedProfile,
+                      updatedAt: serverTimestamp()
+                    }, { merge: true });
+                    setProfile(updatedProfile);
+                  } else {
+                    setProfile(currentProfile);
+                  }
+                } else {
+                  setProfile(currentProfile);
+                }
+              } else {
+                // New user registration
+                const newProfile: UserProfile = {
+                  uid: authenticatedUser.uid,
+                  email: authenticatedUser.email || '',
+                  displayName: isBootstrapAdmin ? 'ADMIN' : (authenticatedUser.displayName || 'Member'),
+                  photoURL: authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authenticatedUser.displayName || 'Member')}&background=5A5A40&color=fff`,
+                  roles: isBootstrapAdmin ? ['admin'] : ['member'],
+                  ministries: [],
+                  isEmailVerified: isBootstrapAdmin || emailVerified, // Google/FB logins are auto-verified
+                  isVerified: isBootstrapAdmin, // Admin is auto-verified
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                await setDoc(userDocRef, {
+                  ...newProfile,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp()
+                });
+                setProfile(newProfile);
+              }
+            } catch (err) {
+              console.error("Profile snapshot sync error:", err);
+            } finally {
+              setLoading(false);
+            }
+          }, (err) => {
+            console.error("Profile snapshot listener error:", err);
+            setLoading(false);
+          });
+        } else {
+          setProfile(null);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Auth initialization error:", error);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeProfile();
+    };
+  }, []);
+
+  // 90 days remember me & 1 hour inactivity tracker
+  useEffect(() => {
+    if (!user) return;
+
+    const rememberMe = localStorage.getItem('kcfc_remember_me') === 'true';
+
+    if (rememberMe) {
+      // 90 days maximum persistent logged in duration
+      const loginTimestamp = localStorage.getItem('kcfc_login_timestamp');
+      if (!loginTimestamp) {
+        localStorage.setItem('kcfc_login_timestamp', Date.now().toString());
+      } else {
+        const daysPassed = (Date.now() - parseInt(loginTimestamp, 10)) / (1000 * 60 * 60 * 24);
+        if (daysPassed > 90) {
+          localStorage.removeItem('kcfc_remember_me');
+          localStorage.removeItem('kcfc_login_timestamp');
+          auth.signOut();
+          return;
+        }
+      }
+      return;
+    }
+
+    // Unchecked remember me -> Logout after 1 hour of inactivity
+    let lastActive = Date.now();
+    const updateActivity = () => {
+      lastActive = Date.now();
+    };
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach(event => {
+      window.addEventListener(event, updateActivity);
+    });
+
+    const interval = setInterval(() => {
+      const inactiveMs = Date.now() - lastActive;
+      if (inactiveMs > 60 * 60 * 1000) { // 1 hour
+        console.log("No inactivity for 1 hour. Auto-logout triggered.");
+        auth.signOut();
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, updateActivity);
+      });
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  // FCM Push Registration & Foreground Listeners
+  const [fcmNotification, setFcmNotification] = useState<{ title: string; body: string } | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let activeCleanup: (() => void) | null = null;
+
+    import('./lib/fcmClient').then(async ({ registerDeviceToken, observeForegroundMessages }) => {
+      // 1. Attempt token registration
+      await registerDeviceToken(user.uid);
+
+      // 2. Setup active window listener for push alerts
+      const unsubscribeMessages = await observeForegroundMessages((payload) => {
+        const title = payload.notification?.title || 'Notification';
+        const body = payload.notification?.body || '';
+        setFcmNotification({ title, body });
+      });
+
+      if (unsubscribeMessages) {
+        activeCleanup = unsubscribeMessages;
+      }
+    }).catch(err => {
+      console.warn("FCM: Client initialization deferred or unsupported in this sandboxed frame:", err);
+    });
+
+    return () => {
+      if (activeCleanup) {
+        activeCleanup();
+      }
+    };
+  }, [user]);
+
+  const isDarkMode = profile?.preferences?.darkMode === true;
+  const fontSize = profile?.preferences?.fontSize || 'normal';
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    document.documentElement.classList.remove('font-size-small', 'font-size-normal', 'font-size-medium', 'font-size-big');
+    document.documentElement.classList.add(`font-size-${fontSize}`);
+  }, [fontSize]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0]">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-16 h-16 bg-[#5A5A40] rounded-full mb-4"></div>
+          <div className="h-4 w-48 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
+  // Disabled Account View
+  if (user && profile && profile.isDisabled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+        <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
+          <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <h1 className="text-2xl font-serif">Account Disabled</h1>
+          <p className="text-gray-500 leading-relaxed text-sm">Hello {profile.displayName}, your registration has been disabled by an administrator. Please contact your coordinator to restore access.</p>
+          <button 
+            onClick={() => auth.signOut()}
+            className="text-[#5A5A40] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Email Verification Holding State
+  if (user && !user.emailVerified && profile && !profile.isEmailVerified && !profile.isVerified) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+        <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
+          <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </div>
+          <h1 className="text-2xl font-serif">Verify Your Email</h1>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            Welcome to the KCFC Portal! We have sent an email verification link to <strong className="text-[#5A5A40]">{user.email}</strong>. Please check your inbox (and spam folder) and verify your email.
+          </p>
+          <p className="text-xs text-amber-600 font-bold">
+            Note: Once verified, your account will be visible to administrator coordinators for approval.
+          </p>
+          <div className="pt-4 flex flex-col gap-3">
+            <button 
+              onClick={async () => {
+                try {
+                  await user.reload();
+                  if (user.emailVerified) {
+                    const userDocRef = doc(db, 'users', user.uid);
+                    await updateDoc(userDocRef, {
+                      isEmailVerified: true,
+                      updatedAt: serverTimestamp()
+                    });
+                    window.location.reload();
+                  } else {
+                    alert("Email not verified yet. Please click the link we sent to your email and try again.");
+                  }
+                } catch (e: any) {
+                  alert(e.message || "Something went wrong.");
+                }
+              }}
+              className="w-full py-4 bg-[#5A5A40] text-white rounded-full font-bold uppercase tracking-widest text-xs shadow-sm hover:shadow-lg transition-all cursor-pointer"
+            >
+              I Have Verified My Email
+            </button>
+            <button 
+              onClick={async () => {
+                try {
+                  await sendEmailVerification(user);
+                  alert("Verification email resent! Please check your inbox.");
+                } catch (e: any) {
+                  alert("Error resending email: " + e.message);
+                }
+              }}
+              className="text-[#5A5A40] font-bold uppercase tracking-widest text-[10px] hover:underline pt-2 cursor-pointer"
+            >
+              Resend Verification Email
+            </button>
+            <button 
+              onClick={() => auth.signOut()}
+              className="text-gray-400 font-bold uppercase tracking-widest text-[10px] hover:underline cursor-pointer"
+            >
+              Sign Out & Back to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Pending Approval View
+  if (user && profile && !profile.isVerified) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+        <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl">
+          <div className="w-20 h-20 bg-yellow-50 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <h1 className="text-2xl font-serif mb-4">Membership Pending</h1>
+          <p className="text-gray-500 mb-8">Hello {profile.displayName}, your registration has been received. An administrator needs to approve your membership before you can access the community portal.</p>
+          <button 
+            onClick={() => auth.signOut()}
+            className="text-[#5A5A40] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isAuthReady = user && profile && profile.isVerified;
+
+  return (
+    <AuthContext.Provider value={authValue}>
+      <Router>
+        <div className={cn(
+          "min-h-screen transition-all duration-300",
+          isDarkMode 
+            ? "dark bg-[#141411] text-[#f5f5f0]" 
+            : "bg-[#f5f5f0] text-[#1a1a1a]"
+        )}>
+          {isAuthReady && <Navbar />}
+          <main className={cn("min-h-screen", isAuthReady ? "pt-20 pb-24 md:pb-8 px-4" : "")}>
+            <Routes>
+              <Route path="/login" element={!isAuthReady ? <Login /> : <Navigate to="/" replace />} />
+              <Route path="/" element={isAuthReady ? <Dashboard /> : <Navigate to="/login" />} />
+              <Route path="/polls" element={isAuthReady ? <Polls /> : <Navigate to="/login" />} />
+              <Route path="/duties" element={isAuthReady ? <Duties /> : <Navigate to="/login" />} />
+              <Route path="/resources" element={isAuthReady ? <Resources /> : <Navigate to="/login" />} />
+              <Route path="/admin" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r))) ? <Admin /> : <Navigate to="/" />} />
+              <Route path="/members" element={isAuthReady ? <Members /> : <Navigate to="/login" />} />
+              <Route path="/announcements" element={isAuthReady ? <Announcements /> : <Navigate to="/login" />} />
+              <Route path="/accounting" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'treasurer'].includes(r))) ? <Accounting /> : <Navigate to="/" />} />
+              <Route path="/profile" element={isAuthReady ? <Profile /> : <Navigate to="/login" />} />
+              {/* Fallback for deep-linking unmatched routes or /index.html pathing */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+
+          {/* Visual FCM Foreground Notification Banner */}
+          {fcmNotification && (
+            <div 
+              id="fcm-notification-banner"
+              className="fixed bottom-6 right-6 z-50 max-w-sm w-[90%] sm:w-full bg-white/80 dark:bg-[#11110f]/85 p-5 rounded-2xl border border-gray-200 dark:border-white/10 backdrop-blur-xl shadow-2xl flex gap-4 overflow-hidden"
+              style={{ animation: 'bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-[#5A5A40]" />
+              <div className="p-2.5 bg-[#5A5A40]/10 rounded-xl h-fit">
+                <Megaphone className="w-5 h-5 text-[#5A5A40]" />
+              </div>
+              <div className="flex-1 space-y-1">
+                <div className="flex justify-between items-start">
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">{fcmNotification.title}</h4>
+                  <button 
+                    onClick={() => setFcmNotification(null)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-white text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed font-semibold">{fcmNotification.body}</p>
+                <div className="pt-2 flex justify-end">
+                  <button 
+                    onClick={() => {
+                      setFcmNotification(null);
+                      window.location.hash = "/announcements";
+                    }}
+                    className="text-[9px] font-bold text-[#5A5A40] dark:text-[#8a8a65] uppercase tracking-widest hover:underline cursor-pointer"
+                  >
+                    View Announcements →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Router>
+    </AuthContext.Provider>
+  );
+}

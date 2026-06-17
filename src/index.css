@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* Font Size Settings */
+html.font-size-small {
+  font-size: 14px;
+}
+html.font-size-normal {
+  font-size: 16px;
+}
+html.font-size-medium {
+  font-size: 18px;
+}
+html.font-size-big {
+  font-size: 20px;
+}
+
+/* Set root and body backgrounds globally so there is never a browser-fallback white background */
+html, body, #root {
+  background-color: #f5f5f0;
+  color: #1a1a1a;
+  transition: background-color 300ms ease, color 300ms ease;
+  min-height: 100vh;
+}
+
+html.dark, html.dark body, html.dark #root {
+  background-color: #141411;
+  color: #f5f5f0;
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,0 +1,243 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and roles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "roles": { 
+          "type": "array",
+          "items": { "type": "string", "enum": ["admin", "spiritual_director", "president", "vice_president", "secretary", "treasurer", "auditor", "pro", "choir_a_leader", "choir_b_leader", "lector_commentator_leader", "usher_leader", "altar_server_leader", "kitchen_leader", "kitchen_sub_leader", "cleaning_leader", "cleaning_sub_leader", "member"] }
+        },
+        "ministries": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["choir", "lector", "usher", "altar_server"] }
+        },
+        "isVerified": { "type": "boolean" },
+        "isDisabled": { "type": "boolean" },
+        "nickname": { "type": "string" },
+        "birthdate": { "type": "string" },
+        "homeAddress": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "fcmTokens": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "roles"]
+    },
+    "Poll": {
+      "title": "Poll",
+      "description": "Community pre-attendance poll for Mass",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["weekly", "quarterly"] },
+        "category": { "type": "string", "enum": ["standard", "core_member", "committee"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "massDate": { "type": "string", "format": "date" },
+        "massDates": { 
+          "type": "array", 
+          "items": { 
+            "type": "object", 
+            "properties": {
+              "date": { "type": "string", "format": "date" },
+              "description": { "type": "string" }
+            },
+            "required": ["date"]
+          } 
+        },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "closed", "draft"] },
+        "isMultiSelect": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "assignments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "completedAssignments": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "category", "title", "status", "startDate", "endDate"]
+    },
+    "Response": {
+      "title": "Poll Response",
+      "description": "A user's response to a poll",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "attendance": { "type": "string", "enum": ["yes", "no", "maybe"] },
+        "selectedOptions": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pollId", "userId"]
+    },
+    "Duty": {
+      "title": "Duty Assignment",
+      "description": "Kitchen/Cleaning or Ministry task assignments",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "type": { "type": "string", "enum": ["kitchen", "cleaning", "ministry"] },
+        "date": { "type": "string", "format": "date-time" },
+        "slot": { "type": "string" },
+        "assignedBy": { "type": "string" },
+        "assignedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "date"]
+    },
+    "Resource": {
+      "title": "Ministry Resource",
+      "description": "Files and links for specific ministries",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "ministry": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileType": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "ministry", "fileUrl"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Community news and updates",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "content", "authorId", "status"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notifications",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["announcement", "duty", "system", "broadcast"] },
+        "status": { "type": "string", "enum": ["unread", "read"] },
+        "link": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "status"]
+    },
+    "Transaction": {
+      "title": "Accounting Transaction",
+      "description": "Financial records (income/expense)",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "processedBy": { "type": "string" },
+        "processedByName": { "type": "string" },
+        "lastModifiedBy": { "type": "string" },
+        "lastModifiedByName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved"] },
+        "approvedBy": { "type": "string" },
+        "approvedByName": { "type": "string" },
+        "receiptUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "amount", "category", "date", "processedBy"]
+    },
+    "AccountingCategory": {
+      "title": "Accounting Category",
+      "description": "Categories for financial transactions",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type"]
+    },
+    "ChoreDutyTemplate": {
+      "title": "Chore Duty Template",
+      "description": "Dynamic template for chore assignments",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "group": { "type": "string", "enum": ["cleaning", "kitchen"] },
+        "requiredPersons": { "type": "number" },
+        "restrictedToToiletOk": { "type": "boolean" }
+      },
+      "required": ["name", "group", "requiredPersons"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Community member profiles"
+    },
+    "/polls/{pollId}": {
+      "schema": "Poll",
+      "description": "Attendance and planning polls"
+    },
+    "/polls/{pollId}/responses/{responseId}": {
+      "schema": "Response",
+      "description": "Individual poll responses"
+    },
+    "/duties/{dutyId}": {
+      "schema": "Duty",
+      "description": "Assigned duties for members"
+    },
+    "/resources/{resourceId}": {
+      "schema": "Resource",
+      "description": "Shared ministry documents"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Community announcements"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "/accounting/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial records"
+    },
+    "/accounting_categories/{categoryId}": {
+      "schema": "AccountingCategory",
+      "description": "Categories for transactions"
+    },
+    "/chore_duty_templates/{templateId}": {
+      "schema": "ChoreDutyTemplate",
+      "description": "Dynamic chores templates"
+    }
+  }
+}

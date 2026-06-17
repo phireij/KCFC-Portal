@@ -1,0 +1,235 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function getUserData() { 
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data : {}; 
+    }
+    function isBootstrapAdmin() {
+      return isSignedIn() && request.auth.token.email == 'kcfc.jp@gmail.com';
+    }
+    function isApproved() { 
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          getUserData().get('isVerified', false) == true && 
+          getUserData().get('isDisabled', false) == false
+        )
+      );
+    }
+    function hasRole(role) { 
+      let data = getUserData();
+      return isApproved() && role in data.get('roles', []); 
+    }
+    function isAdmin() { 
+      let roles = getUserData().get('roles', []);
+      return isBootstrapAdmin() || (
+        isApproved() && (
+          'admin' in roles || 
+          'president' in roles || 
+          'vice_president' in roles || 
+          'secretary' in roles ||
+          'auditor' in roles ||
+          'pro' in roles ||
+          'spiritual_director' in roles
+        )
+      ); 
+    } 
+    function isLeader() {
+      let roles = getUserData().get('roles', []);
+      return isApproved() && (
+        'leader' in roles || 
+        'choir_a_leader' in roles || 
+        'choir_b_leader' in roles || 
+        'lector_commentator_leader' in roles || 
+        'usher_leader' in roles || 
+        'altar_server_leader' in roles || 
+        'kitchen_leader' in roles || 
+        'kitchen_sub_leader' in roles || 
+        'cleaning_leader' in roles || 
+        'cleaning_sub_leader' in roles || 
+        'chore_leader' in roles
+      );
+    }
+
+    function canCreateAnnouncement() {
+      let roles = getUserData().get('roles', []);
+      return isApproved() && (
+        isBootstrapAdmin() ||
+        'admin' in roles ||
+        'president' in roles ||
+        'vice_president' in roles ||
+        'spiritual_director' in roles ||
+        'secretary' in roles ||
+        'pro' in roles
+      );
+    }
+
+    function canManageAnnouncement(announcement) {
+      let roles = getUserData().get('roles', []);
+      return isApproved() && (
+        isBootstrapAdmin() ||
+        'admin' in roles ||
+        'president' in roles ||
+        announcement.authorId == request.auth.uid
+      );
+    }
+    
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.uid is string && data.uid.size() <= 128 &&
+               data.email is string && data.email.size() <= 200 &&
+               data.roles is list && data.roles.size() <= 10 &&
+               data.get('ministries', []) is list &&
+               (!('isCoreMember' in data) || data.isCoreMember is bool) &&
+               (!('isVerified' in data) || data.isVerified is bool) &&
+               (!('isDisabled' in data) || data.isDisabled is bool) &&
+               (!('isEmailVerified' in data) || data.isEmailVerified is bool) &&
+               (!('fcmTokens' in data) || data.fcmTokens is list);
+      }
+
+      allow get: if isSignedIn();
+      allow list: if isApproved();
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
+                    (isBootstrapAdmin() || (incoming().roles == ['member'] && incoming().isVerified == false));
+      allow update: if isSignedIn() && (
+        (isOwner(userId) && (
+          isBootstrapAdmin() || 
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'ministries', 'updatedAt', 'nickname', 'birthdate', 'homeAddress', 'phoneNumber', 'preferences', 'isEmailVerified', 'fcmTokens'])
+        )) ||
+        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens']))
+      ) && isValidUser(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Polls Collection ---
+    match /polls/{pollId} {
+      function isValidPoll(data) {
+        return data.title is string && data.title.size() <= 200 &&
+               data.type in ['weekly', 'quarterly'] &&
+               data.status in ['active', 'closed', 'draft'];
+      }
+
+      allow read: if isApproved();
+      allow create: if isAdmin() && isValidPoll(incoming());
+      allow update: if (isAdmin() && isValidPoll(incoming())) ||
+                       (isLeader() && incoming().diff(existing()).affectedKeys().hasOnly(['assignments', 'completedAssignments', 'updatedAt']) && isValidPoll(incoming()));
+      allow delete: if isAdmin();
+
+      // --- Poll Responses ---
+      match /responses/{responseId} {
+        function isValidResponse(data) {
+          return data.pollId == pollId &&
+                 data.userId == request.auth.uid &&
+                 (!('attendance' in data) || data.attendance == null || data.attendance in ['yes', 'no', 'maybe']) &&
+                 (!('toiletOk' in data) || data.toiletOk is bool) &&
+                 (!('selectedOptions' in data) || data.selectedOptions is list);
+        }
+
+        allow read: if isApproved();
+        allow create: if isApproved() && isValidResponse(incoming());
+        allow update: if isApproved() && isOwner(existing().userId) && isValidResponse(incoming()) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['attendance', 'notes', 'selectedOptions', 'submittedAt', 'toiletOk']);
+        allow delete: if isAdmin();
+      }
+    }
+
+    // --- Chore Duty Templates Collection ---
+    match /chore_duty_templates/{templateId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // --- Duties Collection ---
+    match /duties/{dutyId} {
+      function isValidDuty(data) {
+        return data.userId is string && data.type in ['kitchen', 'cleaning', 'ministry'];
+      }
+
+      allow read: if isApproved();
+      allow create, update: if (isAdmin() || isLeader()) && isValidDuty(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Resources Collection ---
+    match /resources/{resourceId} {
+      function isValidResource(data) {
+        return data.title is string && data.title.size() <= 200 &&
+               data.fileUrl is string && data.fileUrl.size() <= 1000;
+      }
+
+      allow read: if isApproved();
+      allow create, update: if (isAdmin() || isLeader()) && isValidResource(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Announcements Collection ---
+    match /announcements/{annId} {
+      function isValidAnnouncement(data) {
+        return data.title is string && data.title.size() <= 200 &&
+               data.content is string && data.content.size() <= 10000 &&
+               data.authorId == request.auth.uid &&
+               data.status in ['draft', 'published'];
+      }
+
+      allow read: if isApproved();
+      allow create: if canCreateAnnouncement() && isValidAnnouncement(incoming());
+      allow update: if canManageAnnouncement(existing()) && isValidAnnouncement(incoming());
+      allow delete: if canManageAnnouncement(existing());
+    }
+
+    // --- Notifications Collection ---
+    match /notifications/{notificationId} {
+      allow read, update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && (
+        isBootstrapAdmin() || 
+        'admin' in getUserData().get('roles', []) ||
+        'president' in getUserData().get('roles', []) ||
+        'vice_president' in getUserData().get('roles', []) ||
+        'secretary' in getUserData().get('roles', []) ||
+        'spiritual_director' in getUserData().get('roles', []) ||
+        'pro' in getUserData().get('roles', []) ||
+        'auditor' in getUserData().get('roles', []) ||
+        isLeader()
+      );
+    }
+
+    // --- Accounting Collection ---
+    match /accounting/{transactionId} {
+      function canAccessAccounting() {
+        let roles = getUserData().get('roles', []);
+        return isApproved() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'treasurer' in roles
+        );
+      }
+      
+      function isValidTransaction(data) {
+        return data.type in ['income', 'expense'] &&
+               data.amount is number &&
+               data.category is string &&
+               data.processedBy == request.auth.uid;
+      }
+
+      allow read: if canAccessAccounting();
+      allow create: if canAccessAccounting() && isValidTransaction(incoming());
+      allow update: if canAccessAccounting() && isValidTransaction(incoming());
+      allow delete: if canAccessAccounting();
+    }
+  }
+}
