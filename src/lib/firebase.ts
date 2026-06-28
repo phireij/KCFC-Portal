@@ -16,7 +16,12 @@ const envConfig = {
 };
 
 const hasEnvConfig = !!(envConfig.apiKey && envConfig.projectId);
-const firebaseConfig = hasEnvConfig ? envConfig : firebaseConfigFromFile;
+const firebaseConfig = hasEnvConfig ? envConfig : { ...firebaseConfigFromFile };
+
+// Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
+if (metaEnv.VITE_FIREBASE_DATABASE_ID) {
+  (firebaseConfig as any).firestoreDatabaseId = metaEnv.VITE_FIREBASE_DATABASE_ID;
+}
 
 export const app = initializeApp(firebaseConfig);
 export const db = (firebaseConfig as any).firestoreDatabaseId 

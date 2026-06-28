@@ -15,6 +15,10 @@ const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof
 const currentDirname = hasImportMeta ? path.dirname(currentFilename) : (typeof __dirname !== "undefined" ? __dirname : "");
 
 // Load Firebase configuration
+const firebaseConfigFromFile = JSON.parse(
+  readFileSync(path.resolve(process.cwd(), "firebase-applet-config.json"), "utf-8")
+);
+
 const hasServerEnvConfig = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID);
 const firebaseConfig = hasServerEnvConfig ? {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -24,9 +28,12 @@ const firebaseConfig = hasServerEnvConfig ? {
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.FIREBASE_APP_ID,
   firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID,
-} : JSON.parse(
-  readFileSync(path.resolve(process.cwd(), "firebase-applet-config.json"), "utf-8")
-);
+} : { ...firebaseConfigFromFile };
+
+// Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
+if (process.env.FIREBASE_DATABASE_ID) {
+  firebaseConfig.firestoreDatabaseId = process.env.FIREBASE_DATABASE_ID;
+}
 
 // Unified server diagnostic logger
 function logMessage(msg: string) {
