@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../App';
 import { collection, query, getDocs, where, getCountFromServer, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { motion } from 'motion/react';
-import { Users, ClipboardCheck, CalendarRange, FolderOpen, AlertCircle, ArrowRight, UserCheck, Wallet } from 'lucide-react';
+import { Users, ClipboardCheck, CalendarRange, FolderOpen, AlertCircle, ArrowRight, UserCheck, Wallet, Database as DatabaseIcon, CheckCircle2 as CheckCircle, Loader2, Trash2 } from 'lucide-react';
 import { UserProfile, Poll, Resource, Announcement, MinistryType, Transaction } from '../types';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
+import { seedDatabase, purgeAllDummyData } from '../lib/seeder';
 
 export default function Dashboard() {
   const { profile } = useAuth();
@@ -22,8 +23,51 @@ export default function Dashboard() {
   const [balance, setBalance] = useState<number | null>(null);
   const [upcomingAssignments, setUpcomingAssignments] = useState<{ type: string, date: string, slot?: string, id?: string, tab?: 'core' | 'liturgical' }[]>([]);
 
+  // Database initialization states
+  const [seeding, setSeeding] = useState(false);
+  const [seedSuccess, setSeedSuccess] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purgeSuccess, setPurgeSuccess] = useState(false);
+
   const isAdmin = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
   const isAccountingAuthorized = (profile?.roles || []).some(r => ['admin', 'president', 'treasurer'].includes(r));
+
+  const handleSeedDatabase = async () => {
+    if (!profile?.uid) return;
+    setSeeding(true);
+    try {
+      await seedDatabase(profile.uid, profile.email || '');
+      setSeedSuccess(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err: any) {
+      console.error("Failed to seed database:", err);
+      alert("Error initializing database: " + err.message);
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  const handlePurgeAllDummyData = async () => {
+    if (!profile?.uid) return;
+    if (!window.confirm("Are you absolutely sure you want to permanently delete all sample/dummy records (including mock members, mock templates, active polls, contact messages, and sample accounting transactions) from this temporary database? This will NOT affect portal.kcfcjp.com.")) {
+      return;
+    }
+    setPurging(true);
+    try {
+      await purgeAllDummyData(profile.uid);
+      setPurgeSuccess(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err: any) {
+      console.error("Failed to purge database:", err);
+      alert("Error purging database: " + err.message);
+    } finally {
+      setPurging(false);
+    }
+  };
 
   useEffect(() => {
     if (!profile) return;
@@ -35,6 +79,8 @@ export default function Dashboard() {
         const pending = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
         setPendingList(pending);
         setStats(prev => ({ ...prev, pendingUsers: pending.length }));
+      }, (err) => {
+        console.error("Error listing pending users on Dashboard:", err);
       });
     }
 
@@ -47,6 +93,8 @@ export default function Dashboard() {
     );
     const unsubscribeAnnouncements = onSnapshot(qAnnouncements, (snap) => {
       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
+    }, (err) => {
+      console.error("Error listening to announcements on Dashboard:", err);
     });
 
     // Real-time listener for users to compute committee stats
@@ -62,6 +110,8 @@ export default function Dashboard() {
       
       setCommitteeCounts(counts);
       setStats(prev => ({ ...prev, members: users.length }));
+    }, (err) => {
+      console.error("Error listing users on Dashboard:", err);
     });
 
     let unsubscribeAccounting = () => {};
@@ -70,6 +120,8 @@ export default function Dashboard() {
         const trans = snap.docs.map(d => d.data() as Transaction);
         const bal = trans.reduce((acc, t) => acc + (t.type === 'income' ? t.amount : -t.amount), 0);
         setBalance(bal);
+      }, (err) => {
+        console.error("Error listening to accounting on Dashboard:", err);
       });
     }
 
@@ -188,7 +240,7 @@ export default function Dashboard() {
           <p className="text-gray-500 dark:text-gray-400 font-serif italic mt-1">Here's what's happening in the community.</p>
         </div>
         <div className="flex gap-2">
-          {profile?.roles.map(role => {
+          {(profile?.roles || []).map(role => {
             const displayRole = (role === 'member' && profile?.isCoreMember) ? 'Core Member' : role;
             return (
               <span key={role} className="px-3 py-1 bg-[#5A5A40] text-white text-[10px] uppercase tracking-wider rounded-full font-bold">
@@ -198,6 +250,92 @@ export default function Dashboard() {
           })}
         </div>
       </header>
+
+      {/* 🚀 Brand New Database / Initialization Banner */}
+      {isAdmin && stats.members <= 25 && (
+        <section className="bg-gradient-to-r from-[#5A5A40]/10 via-[#8a8a65]/5 to-transparent border border-[#5A5A40]/20 rounded-[32px] overflow-hidden p-8 backdrop-blur-md">
+          <div className="max-w-3xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-[#5A5A40] rounded-2xl flex items-center justify-center text-white">
+                <DatabaseIcon size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-serif font-bold text-gray-900 dark:text-white">
+                  {stats.members <= 1 ? "Initialize Your Workspace" : "Populate KCFC Sample Records"}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {stats.members <= 1 ? "Database Connection Confirmed • Clean Environment" : "Database Workspace Manager • Re-seeding Available"}
+                </p>
+              </div>
+            </div>
+            
+            <p className="text-sm text-gray-600 dark:text-gray-300 font-serif leading-relaxed">
+              {stats.members <= 1 
+                ? "Your KCFC Portal is successfully connected to your newly provisioned Firebase Firestore database. Since this is a completely brand new, secure environment, there are no existing records yet."
+                : `Your KCFC Portal is successfully connected to Firestore and has detected ${stats.members} user record(s). If your previous attempt was interrupted, or if you have pending membership requests, you can re-seed the sample database to ensure all data points are fully populated.`}
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-300 font-serif leading-relaxed">
+              Click below to instantly populate your database with high-fidelity sample records (including **chore duty templates**, **active mass polls**, **financial logs**, and **message inbox logs**) or permanently purge all dummy records to work with a clean, correct environment.
+            </p>
+
+            <div className="pt-2 flex flex-wrap items-center gap-4">
+              <button
+                onClick={handleSeedDatabase}
+                disabled={seeding || seedSuccess || purging}
+                className="px-6 py-3 bg-[#5A5A40] hover:bg-[#4a4a35] disabled:bg-[#5A5A40]/50 text-white font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+              >
+                {seeding ? (
+                  <>
+                    <Loader2 className="animate-spin" size={16} />
+                    Initializing Records...
+                  </>
+                ) : seedSuccess ? (
+                  <>
+                    <CheckCircle className="text-green-400" size={16} />
+                    Database Seeding Successful!
+                  </>
+                ) : (
+                  <>
+                    <DatabaseIcon size={16} />
+                    {stats.members <= 1 ? "Populate KCFC Sample Records" : "Re-populate KCFC Sample Records"}
+                  </>
+                )}
+              </button>
+
+              {stats.members > 1 && (
+                <button
+                  onClick={handlePurgeAllDummyData}
+                  disabled={purging || purgeSuccess || seeding}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                >
+                  {purging ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      Purging Database...
+                    </>
+                  ) : purgeSuccess ? (
+                    <>
+                      <CheckCircle className="text-green-400" size={16} />
+                      Purge Successful!
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} />
+                      Purge Dummy/Sample Data
+                    </>
+                  )}
+                </button>
+              )}
+
+              {(seeding || purging) && (
+                <span className="text-xs text-[#5A5A40] dark:text-[#8a8a65] font-mono font-bold animate-pulse">
+                  {seeding ? "Deploying templates, categories & transactions..." : "Cleaning out dummy files & records..."}
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {isAdmin && stats.pendingUsers > 0 && (
         <section className="bg-yellow-50/50 dark:bg-yellow-950/10 border border-yellow-100 dark:border-yellow-500/20 rounded-[32px] overflow-hidden">

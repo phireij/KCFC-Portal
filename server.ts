@@ -8,6 +8,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { getMessaging as getMessagingAdmin } from "firebase-admin/messaging";
 import nodemailer from "nodemailer";
+import multer from "multer";
 
 const hasImportMeta = typeof import.meta !== "undefined" && "url" in import.meta;
 const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== "undefined" ? __filename : "");
@@ -49,6 +50,7 @@ async function startServer() {
 
   // Middleware
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   // API routes
   app.get("/api/health", (req, res) => {
@@ -759,6 +761,385 @@ async function startServer() {
       res.json({ success: true, logs });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  const upload = multer();
+
+  // Public endpoint to receive contact messages from external website (KCFC.COM)
+  app.options("/api/public/contact", (req, res) => {
+    const requestedHeaders = req.headers["access-control-request-headers"];
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    if (requestedHeaders) {
+      res.setHeader("Access-Control-Allow-Headers", requestedHeaders);
+    } else {
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Requested-With, Accept, Authorization");
+    }
+    res.sendStatus(204);
+  });
+
+  app.post("/api/public/contact", upload.any(), async (req, res) => {
+    const requestedHeaders = req.headers["access-control-request-headers"] || req.headers["Access-Control-Request-Headers"];
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    if (requestedHeaders) {
+      res.setHeader("Access-Control-Allow-Headers", String(requestedHeaders));
+    } else {
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Requested-With, Accept, Authorization");
+    }
+
+    // Unified server-side diagnostic logging of incoming public inquiries
+    const inboundHeaders = JSON.stringify(req.headers);
+    const inboundBody = JSON.stringify(req.body);
+    const inboundQuery = JSON.stringify(req.query);
+    logMessage(`[INBOUND CONTACT] Received request. Headers: ${inboundHeaders} | Body: ${inboundBody} | Query: ${inboundQuery}`);
+
+    const body = req.body || {};
+    const query = req.query || {};
+
+    // Ultra-robust, self-healing parameter extraction mapping all possible form shapes
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    const stringValues: { key: string; value: string; parentKey?: string }[] = [];
+
+    function traverse(obj: any, parentKey?: string) {
+      if (!obj) return;
+      if (typeof obj === "object") {
+        for (const [k, v] of Object.entries(obj)) {
+          if (typeof v === "string" || typeof v === "number") {
+            stringValues.push({ key: k, value: String(v), parentKey });
+          } else if (v && typeof v === "object") {
+            traverse(v, k);
+          }
+        }
+      }
+    }
+
+    traverse({ ...body, ...query });
+
+    // 1. Extract Email
+    let email = "";
+    const emailField = stringValues.find(item => {
+      const k = item.key.toLowerCase().replace(/[-_]/g, "");
+      return k.includes("email") || k.includes("mail");
+    });
+    if (emailField) {
+      email = emailField.value.trim();
+    } else {
+      const fallbackEmail = stringValues.find(item => emailRegex.test(item.value));
+      if (fallbackEmail) {
+        email = fallbackEmail.value.trim();
+      }
+    }
+
+    // 2. Extract Name
+    let name = "";
+    const nameField = stringValues.find(item => {
+      const k = item.key.toLowerCase().replace(/[-_]/g, "");
+      return k.includes("name") && !k.includes("email") && !k.includes("message") && !k.includes("subject") && !k.includes("filename");
+    });
+    if (nameField) {
+      name = nameField.value.trim();
+    } else {
+      const firstNameField = stringValues.find(item => {
+        const k = item.key.toLowerCase().replace(/[-_]/g, "");
+        return k.includes("first") || k.includes("fname") || k.includes("given");
+      });
+      const lastNameField = stringValues.find(item => {
+        const k = item.key.toLowerCase().replace(/[-_]/g, "");
+        return k.includes("last") || k.includes("lname") || k.includes("family") || k.includes("sur");
+      });
+      if (firstNameField || lastNameField) {
+        name = `${firstNameField?.value || ""} ${lastNameField?.value || ""}`.trim();
+      }
+    }
+
+    // 3. Extract Message
+    let message = "";
+    const messageKeys = ["message", "comments", "comment", "body", "contactmessage", "description", "content", "inquiry", "text", "yourmessage", "msg", "textarea"];
+    const messageField = stringValues.find(item => {
+      const k = item.key.toLowerCase().replace(/[-_]/g, "");
+      return messageKeys.some(mk => k === mk || k.includes(mk)) && !k.includes("email") && !k.includes("subject") && !k.includes("name");
+    });
+    if (messageField) {
+      message = messageField.value.trim();
+    } else {
+      const candidates = stringValues.filter(item => {
+        const k = item.key.toLowerCase().replace(/[-_]/g, "");
+        const val = item.value.trim();
+        return !k.includes("email") && !k.includes("mail") && !k.includes("name") && !k.includes("subject") && !emailRegex.test(val) && val.length > 3;
+      });
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.value.length - a.value.length);
+        message = candidates[0].value.trim();
+      }
+    }
+
+    // Fallback: If name is still empty, find any remaining non-empty string that is NOT email or message
+    if (!name) {
+      const remainingField = stringValues.find(item => {
+        const k = item.key.toLowerCase().replace(/[-_]/g, "");
+        const val = item.value.trim();
+        return val !== email && val !== message && !k.includes("subject") && !k.includes("email") && !k.includes("mail") && !emailRegex.test(val) && val.length > 1;
+      });
+      if (remainingField) {
+        name = remainingField.value.trim();
+      }
+    }
+
+    // 4. Extract Subject
+    let subject = "";
+    const subjectField = stringValues.find(item => {
+      const k = item.key.toLowerCase().replace(/[-_]/g, "");
+      return k.includes("subject") || k.includes("title");
+    });
+    if (subjectField) {
+      subject = subjectField.value.trim();
+    }
+
+    logMessage(`[INBOUND CONTACT] Extracted fields => name: "${name}", email: "${email}", subject: "${subject}", message: "${message.substring(0, 100)}..."`);
+
+    if (!name || !email || !message) {
+      logMessage(`[INBOUND CONTACT ERROR] Validation failed. Missing name, email, or message.`);
+      res.status(400).json({ 
+        error: "Missing required fields: name, email, and message are required.",
+        extracted: { name, email, subject, message }
+      });
+      return;
+    }
+
+    try {
+      // 1. Send the email notification directly using SMTP/Nodemailer
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpPort = parseInt(process.env.SMTP_PORT || "587");
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASSWORD;
+      const smtpFrom = process.env.SMTP_FROM || smtpUser || '"KCFC Community Portal" <no-reply@kcfc-portal.org>';
+
+      const mailOptions = {
+        from: smtpFrom,
+        to: "kcfc.jp@gmail.com",
+        subject: `[KCFC Web Inquiry] New message from ${name}`,
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background-color: #fcfcf9; border: 1px solid #e5e5df; border-radius: 12px;">
+            <h2 style="color: #4A4A30; border-bottom: 2px solid #5A5A40; padding-bottom: 10px; margin-top: 0;">New Contact Form Message</h2>
+            <p style="font-size: 14px; color: #2d2d25;">A new inquiry has been submitted via the KCFC website:</p>
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40; width: 100px;">From:</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Email:</td>
+                <td style="padding: 8px 0; color: #2d2d25;"><a href="mailto:${email}" style="color: #8a8a65;">${email}</a></td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Subject:</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${subject || "KCFC Portal Inquiry"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Submitted:</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${new Date().toUTCString()}</td>
+              </tr>
+            </table>
+            <div style="background-color: #fafaf7; border-left: 4px solid #5A5A40; padding: 15px; border-radius: 4px; font-style: italic; font-size: 14px; line-height: 1.6; color: #333; margin-top: 10px;">
+              "${message}"
+            </div>
+            <hr style="border: 0; border-top: 1px solid #e5e5df; margin: 25px 0;" />
+            <div style="text-align: center;">
+              <a href="${process.env.APP_URL || "https://portal.kcfcjp.com"}/admin#messages-inbox-section" style="background-color: #5A5A40; color: white; padding: 10px 24px; text-decoration: none; font-size: 12px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                Open Executive Inbox
+              </a>
+            </div>
+          </div>
+        `
+      };
+
+      let emailSent = false;
+      if (smtpHost && smtpUser && smtpPass) {
+        logMessage(`[INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...`);
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpPort === 465,
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+        await transporter.sendMail(mailOptions);
+        emailSent = true;
+        logMessage(`[INBOUND CONTACT] SMTP mail dispatch SUCCESS.`);
+      } else {
+        logMessage(`[INBOUND CONTACT] SMTP disabled or credentials missing. Skipping email notification.`);
+      }
+
+      // 2. Write the message to Firestore (try direct admin SDK write first, fallback to REST API)
+      let firestoreWritten = false;
+      let errorDetails = "";
+      try {
+        logMessage(`[INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...`);
+        await dbAdmin.collection("messages").add({
+          name,
+          email,
+          subject: subject || "KCFC Portal Inquiry",
+          message,
+          status: "unread",
+          alertSent: true,
+          createdAt: new Date().toISOString()
+        });
+        firestoreWritten = true;
+        logMessage("[SUCCESS] Message written to Firestore via dbAdmin.");
+      } catch (dbErr: any) {
+        logMessage(`[WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: ${dbErr.message}`);
+        errorDetails += `[dbAdmin Error: ${dbErr.message}]`;
+        
+        try {
+          const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || "(default)"}/documents/messages?key=${firebaseConfig.apiKey}`;
+          const payload = {
+            fields: {
+              name: { stringValue: name },
+              email: { stringValue: email },
+              subject: { stringValue: subject || "KCFC Portal Inquiry" },
+              message: { stringValue: message },
+              status: { stringValue: "unread" },
+              alertSent: { booleanValue: true },
+              createdAt: { stringValue: new Date().toISOString() }
+            }
+          };
+
+          logMessage(`[INBOUND CONTACT] POSTing to REST endpoint: ${firestoreUrl}`);
+          const fsResponse = await fetch(firestoreUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          
+          if (fsResponse.ok) {
+            firestoreWritten = true;
+            logMessage("[SUCCESS] Message written to Firestore via REST API fallback.");
+          } else {
+            const errText = await fsResponse.text();
+            logMessage(`[ERROR] REST API fallback failed: ${errText}`);
+            errorDetails += ` [REST Error: ${errText}]`;
+          }
+        } catch (fsErr: any) {
+          logMessage(`[ERROR] REST API fetch failed: ${fsErr.message}`);
+          errorDetails += ` [REST Fetch Error: ${fsErr.message}]`;
+        }
+      }
+
+      res.json({ success: true, emailSent, firestoreWritten, errorDetails: errorDetails || undefined });
+    } catch (err: any) {
+      logMessage(`[ERROR] Public contact endpoint execution failed: ${err.message}`);
+      res.status(500).json({ error: err.message || "Failed to process contact inquiry" });
+    }
+  });
+
+  // Secure API endpoint for client-side triggered email alerts when a new unread message is received
+  app.post("/api/admin/send-message-alert", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized: Missing authorization token" });
+      return;
+    }
+
+    const { messageId, name, email, message, createdAt, subject } = req.body;
+    if (!messageId || !name || !email || !message) {
+      res.status(400).json({ error: "Missing required fields" });
+      return;
+    }
+
+    const token = authHeader.split("Bearer ")[1];
+    try {
+      // 1. Verify caller ID token
+      const decodedToken = await authAdmin.verifyIdToken(token);
+      const callerEmail = decodedToken.email;
+
+      // 2. Escape hatch check for direct permission
+      let hasPermission = false;
+      if (callerEmail === "kcfc.jp@gmail.com") {
+        hasPermission = true;
+      } else {
+        // Fetch caller's profile to verify roles
+        try {
+          const callerDoc = await dbAdmin.collection("users").doc(decodedToken.uid).get();
+          if (callerDoc.exists) {
+            const callerProfile = callerDoc.data();
+            const roles = callerProfile?.roles || [];
+            hasPermission = roles.some((r: string) => ["admin", "president"].includes(r));
+          }
+        } catch (dbErr) {
+          // If Firestore read gets permission denied, fall back to denying except for bootstrap admin
+          console.warn("[WARN] DB query failed in send-message-alert:", dbErr);
+        }
+      }
+
+      if (!hasPermission) {
+        res.status(403).json({ error: "Forbidden: Only Admin or President can trigger email alerts" });
+        return;
+      }
+
+      // 3. Send email notification via SMTP
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpPort = parseInt(process.env.SMTP_PORT || "587");
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASSWORD;
+      const smtpFrom = process.env.SMTP_FROM || smtpUser || '"KCFC Community Portal" <no-reply@kcfc-portal.org>';
+
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        res.status(503).json({ error: "SMTP mail server is not configured in environment" });
+        return;
+      }
+
+      const mailOptions = {
+        from: smtpFrom,
+        to: "kcfc.jp@gmail.com",
+        subject: `[KCFC Web Inquiry] New message from ${name}`,
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background-color: #fcfcf9; border: 1px solid #e5e5df; border-radius: 12px;">
+            <h2 style="color: #4A4A30; border-bottom: 2px solid #5A5A40; padding-bottom: 10px; margin-top: 0;">New Contact Form Message</h2>
+            <p style="font-size: 14px; color: #2d2d25;">A new inquiry has been submitted via the KCFC website:</p>
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40; width: 100px;">From:</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Email:</td>
+                <td style="padding: 8px 0; color: #2d2d25;"><a href="mailto:${email}" style="color: #8a8a65;">${email}</a></td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Subject:</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${subject || "KCFC Portal Inquiry"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Submitted:</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${createdAt || new Date().toUTCString()}</td>
+              </tr>
+            </table>
+            <div style="background-color: #fafaf7; border-left: 4px solid #5A5A40; padding: 15px; border-radius: 4px; font-style: italic; font-size: 14px; line-height: 1.6; color: #333; margin-top: 10px;">
+              "${message}"
+            </div>
+            <hr style="border: 0; border-top: 1px solid #e5e5df; margin: 25px 0;" />
+            <div style="text-align: center;">
+              <a href="${process.env.APP_URL || "https://portal.kcfcjp.com"}/admin#messages-inbox-section" style="background-color: #5A5A40; color: white; padding: 10px 24px; text-decoration: none; font-size: 12px; font-weight: bold; border-radius: 8px; display: inline-block;">
+                Open Executive Inbox
+              </a>
+            </div>
+          </div>
+        `
+      };
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+
+      await transporter.sendMail(mailOptions);
+      res.json({ success: true, message: "Email alert dispatched successfully" });
+    } catch (err: any) {
+      console.error("[ERROR] Dispatching email alert:", err);
+      res.status(500).json({ error: err.message || "Failed to dispatch email alert" });
     }
   });
 

@@ -204,3 +204,14 @@ export interface AccountingCategory {
   type: 'income' | 'expense';
   createdAt: any;
 }
+
+export interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  subject?: string;
+  message: string;
+  status: 'unread' | 'read' | 'archived';
+  createdAt: any;
+}
+

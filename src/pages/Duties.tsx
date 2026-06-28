@@ -55,7 +55,7 @@ export default function Duties() {
     slot: ''
   });
 
-  const isAdmin = profile?.roles.some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
+  const isAdmin = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
 
   const fetchDuties = async () => {
     try {
@@ -128,6 +128,8 @@ export default function Duties() {
     // Listen to users
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
       setUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(u => u.email !== 'kcfc.jp@gmail.com'));
+    }, (err) => {
+      console.error("Error listening to users in Duties page:", err);
     });
 
     // Listen to committee and attendance polls
@@ -148,6 +150,8 @@ export default function Duties() {
         responses[poll.id] = respSnap.docs.map(d => ({ id: d.id, ...d.data() } as PollResponse));
       }
       setPollResponses(responses);
+    }, (err) => {
+      console.error("Error listening to polls in Duties page:", err);
     });
 
     return () => {
@@ -473,7 +477,7 @@ export default function Duties() {
 
             {/* 📋 CHORE COMMITTEE LEADERS APPROVAL QUEUE */}
             {(() => {
-              const isCommitteeLeader = profile?.roles.some(r => ['admin', 'president', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
+              const isCommitteeLeader = (profile?.roles || []).some(r => ['admin', 'president', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
               if (!isCommitteeLeader) return null;
 
               // Filter duties matching the leader's purview (allow edit even if confirmed already)

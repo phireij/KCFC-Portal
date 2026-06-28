@@ -5,7 +5,7 @@ import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs
 import { auth, db } from './lib/firebase';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
-import { Megaphone } from 'lucide-react';
+import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -34,6 +34,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const authValue = React.useMemo(() => ({ user, profile, loading }), [user, profile, loading]);
 
@@ -42,12 +43,13 @@ export default function App() {
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (authenticatedUser) => {
       try {
+        setAuthError(null);
         // Clean up previous profile listener if any
         unsubscribeProfile();
 
         setUser(authenticatedUser);
         if (authenticatedUser) {
-          const isBootstrapAdmin = authenticatedUser.email === 'kcfc.jp@gmail.com';
+          const isBootstrapAdmin = authenticatedUser.email?.toLowerCase() === 'kcfc.jp@gmail.com';
           const emailVerified = authenticatedUser.emailVerified;
           
           const userDocRef = doc(db, 'users', authenticatedUser.uid);
@@ -58,12 +60,17 @@ export default function App() {
               if (userDoc.exists()) {
                 const currentProfile = userDoc.data() as UserProfile;
                 
-                // Sync email verified state to firestore if it was false/undefined previously
-                // Also, if the member is already verified (isVerified === true), they should be treated as email verified.
+                // Immediately set the profile state so the user is authenticated on the client-side without lag
+                setProfile(currentProfile);
+
+                // Sync email verified state to firestore if it was false/undefined previously.
+                // Run this in the background asynchronously so we never block the main authentication flow.
                 if ((emailVerified || currentProfile.isVerified) && !currentProfile.isEmailVerified) {
-                  await updateDoc(userDocRef, {
+                  updateDoc(userDocRef, {
                     isEmailVerified: true,
                     updatedAt: serverTimestamp()
+                  }).catch((err) => {
+                    console.warn("Background email verification sync failed:", err);
                   });
                 }
 
@@ -78,16 +85,18 @@ export default function App() {
                       isEmailVerified: true,
                       updatedAt: new Date().toISOString()
                     };
-                    await setDoc(userDocRef, {
+                    
+                    // Optimistically set the profile state
+                    setProfile(updatedProfile);
+
+                    // Sync to Firestore in the background
+                    setDoc(userDocRef, {
                       ...updatedProfile,
                       updatedAt: serverTimestamp()
-                    }, { merge: true });
-                    setProfile(updatedProfile);
-                  } else {
-                    setProfile(currentProfile);
+                    }, { merge: true }).catch((err) => {
+                      console.warn("Background bootstrap admin profile sync failed:", err);
+                    });
                   }
-                } else {
-                  setProfile(currentProfile);
                 }
               } else {
                 // New user registration
@@ -103,20 +112,27 @@ export default function App() {
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 };
-                await setDoc(userDocRef, {
+
+                // Optimistically set the profile state
+                setProfile(newProfile);
+
+                // Write to Firestore in the background
+                setDoc(userDocRef, {
                   ...newProfile,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp()
+                }).catch((err) => {
+                  console.error("Background new user registration write failed:", err);
                 });
-                setProfile(newProfile);
               }
             } catch (err) {
-              console.error("Profile snapshot sync error:", err);
+              console.error("Profile snapshot processing error:", err);
             } finally {
               setLoading(false);
             }
           }, (err) => {
             console.error("Profile snapshot listener error:", err);
+            setAuthError(`Database Connection Error: ${err.message || err}. Please ensure your Firebase Firestore database is provisioned and has security rules deployed.`);
             setLoading(false);
           });
         } else {
@@ -185,6 +201,31 @@ export default function App() {
     };
   }, [user]);
 
+  // Poll Deep-linking and automatic redirection
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pollId = params.get('pollId');
+    if (pollId) {
+      sessionStorage.setItem('redirect_poll_id', pollId);
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
+  // Handle post-authentication redirection to the deep-linked poll
+  useEffect(() => {
+    const isAuthReady = user && profile && profile.isVerified;
+    if (isAuthReady) {
+      const redirectPollId = sessionStorage.getItem('redirect_poll_id');
+      if (redirectPollId) {
+        sessionStorage.removeItem('redirect_poll_id');
+        setTimeout(() => {
+          window.location.href = `/polls?id=${redirectPollId}`;
+        }, 100);
+      }
+    }
+  }, [user, profile]);
+
   // FCM Push Registration & Foreground Listeners
   const [fcmNotification, setFcmNotification] = useState<{ title: string; body: string } | null>(null);
 
@@ -218,6 +259,142 @@ export default function App() {
     };
   }, [user]);
 
+  // Real-time listener for incoming public contact messages (for Admin / President)
+  const [newMessageNotification, setNewMessageNotification] = useState<{ id: string; name: string; email: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!user || !profile) return;
+    
+    const isMessageManager = (profile.roles || []).some(r => ['admin', 'president'].includes(r));
+    if (!isMessageManager) return;
+
+    // Capture the exact initialization time. We only alert on new documents created after mounting.
+    const listenerMountTime = Date.now();
+
+    const messagesQuery = query(
+      collection(db, 'messages')
+    );
+
+    const sendEmailAlert = async (msgId: string, msgData: any) => {
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch('/api/admin/send-message-alert', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({
+            messageId: msgId,
+            name: msgData.name || 'Visitor',
+            email: msgData.email || 'No email provided',
+            message: msgData.message || '',
+            subject: msgData.subject || '',
+            createdAt: msgData.createdAt?.toDate ? msgData.createdAt.toDate().toUTCString() : (msgData.createdAt || new Date().toUTCString())
+          })
+        });
+
+        if (response.ok) {
+          // Update the Firestore document to mark alertSent as true, so it won't trigger again
+          await updateDoc(doc(db, 'messages', msgId), {
+            alertSent: true
+          });
+          console.log(`[SUCCESS] Email alert dispatched and alertSent marked for message ${msgId}`);
+        } else {
+          console.error('[ERROR] Failed triggering email alert on server:', await response.text());
+        }
+      } catch (err) {
+        console.error('[ERROR] sendEmailAlert failed:', err);
+      }
+    };
+
+    const playNotificationChime = () => {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const now = audioCtx.currentTime;
+        
+        // Low note (C5)
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(523.25, now);
+        gain1.gain.setValueAtTime(0.12, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.35);
+
+        // High note (E5)
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(659.25, now + 0.12);
+        gain2.gain.setValueAtTime(0.12, now + 0.12);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.12);
+        osc2.stop(now + 0.55);
+      } catch (err) {
+        console.warn("Audio chime block or unsupported in sandbox context:", err);
+      }
+    };
+
+    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          const status = data.status || 'unread';
+
+          if (status === 'unread') {
+            let messageTimeMs = Date.now();
+            if (data.createdAt) {
+              if (typeof data.createdAt === 'string') {
+                messageTimeMs = Date.parse(data.createdAt);
+              } else if (data.createdAt.seconds) {
+                messageTimeMs = data.createdAt.seconds * 1000;
+              } else if (typeof data.createdAt === 'number') {
+                messageTimeMs = data.createdAt;
+              } else if (typeof data.createdAt.toDate === 'function') {
+                messageTimeMs = data.createdAt.toDate().getTime();
+              }
+            }
+
+            // Automatically normalize status in database if it was missing/undefined
+            if (!data.status) {
+              updateDoc(doc(db, 'messages', change.doc.id), {
+                status: 'unread'
+              }).catch(err => console.error("[ERROR] Failed to normalize message status in Firestore:", err));
+            }
+
+            // Automatically send an email notification if it has not been dispatched yet
+            if (data.alertSent !== true) {
+              sendEmailAlert(change.doc.id, data);
+            }
+
+            // Trigger a slide-in alert and chime only if the message is actually newly received after mount
+            if (messageTimeMs > listenerMountTime - 4000) {
+              playNotificationChime();
+              setNewMessageNotification({
+                id: change.doc.id,
+                name: data.name || 'Visitor',
+                email: data.email || 'No email provided',
+                message: data.message || '',
+              });
+            }
+          }
+        }
+      });
+    }, (err) => {
+      console.error("Error listening to public website messages:", err);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user, profile]);
+
   const isDarkMode = profile?.preferences?.darkMode === true;
   const fontSize = profile?.preferences?.fontSize || 'normal';
 
@@ -240,6 +417,49 @@ export default function App() {
         <div className="animate-pulse flex flex-col items-center">
           <div className="w-16 h-16 bg-[#5A5A40] rounded-full mb-4"></div>
           <div className="h-4 w-48 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
+  // Database Connection Error View
+  if (authError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+        <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
+          <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <h1 className="text-2xl font-serif text-red-600">Database Connection Failed</h1>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            We are unable to load your profile because of a database connection error:
+          </p>
+          <div className="bg-red-50 text-red-700 p-4 rounded-xl text-xs font-mono break-all text-left">
+            {authError}
+          </div>
+          <p className="text-xs text-gray-400">
+            If you are the administrator, please ensure Firestore is provisioned in your Firebase console and security rules are fully deployed.
+          </p>
+          <div className="pt-4 flex flex-col gap-3">
+            <button 
+              onClick={() => {
+                setAuthError(null);
+                window.location.reload();
+              }}
+              className="w-full py-4 bg-[#5A5A40] text-white rounded-full font-bold uppercase tracking-widest text-xs shadow-sm hover:shadow-lg transition-all cursor-pointer"
+            >
+              Retry Connection
+            </button>
+            <button 
+              onClick={() => {
+                setAuthError(null);
+                auth.signOut();
+              }}
+              className="text-gray-400 font-bold uppercase tracking-widest text-[10px] hover:underline cursor-pointer"
+            >
+              Sign Out & Back to Login
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -410,6 +630,70 @@ export default function App() {
                     className="text-[9px] font-bold text-[#5A5A40] dark:text-[#8a8a65] uppercase tracking-widest hover:underline cursor-pointer"
                   >
                     View Announcements →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Real-time Website Inquiry / Message Notification Banner */}
+          {newMessageNotification && (
+            <div 
+              id="new-message-notification-banner"
+              className="fixed top-20 right-6 z-50 max-w-sm w-[90%] sm:w-full bg-white/95 dark:bg-[#11110f]/95 p-5 rounded-2xl border border-amber-500/20 dark:border-amber-500/35 backdrop-blur-xl shadow-2xl flex gap-4 overflow-hidden"
+              style={{ animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            >
+              <style>{`
+                @keyframes slideIn {
+                  from { transform: translateX(100%); opacity: 0; }
+                  to { transform: translateX(0); opacity: 1; }
+                }
+              `}</style>
+              <div className="absolute inset-x-0 top-0 h-1 bg-amber-500 animate-pulse" />
+              <div className="p-2.5 bg-amber-500/10 rounded-xl h-fit text-amber-600 dark:text-amber-400">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <div className="flex justify-between items-start">
+                  <span className="text-[10px] font-extrabold text-amber-600 dark:text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-full">New Web Message</span>
+                  <button 
+                    onClick={() => setNewMessageNotification(null)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-white text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-gray-950 dark:text-white">{newMessageNotification.name}</h4>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono select-all">{newMessageNotification.email}</p>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed font-medium line-clamp-2 italic bg-gray-50 dark:bg-white/5 p-2 rounded-lg border border-gray-100 dark:border-white/5">
+                  "{newMessageNotification.message}"
+                </p>
+                <div className="pt-2 flex gap-3 justify-end items-center">
+                  <button 
+                    onClick={async () => {
+                      try {
+                        await updateDoc(doc(db, 'messages', newMessageNotification.id), {
+                          status: 'read'
+                        });
+                        setNewMessageNotification(null);
+                      } catch (err) {
+                        console.error("Error marking as read directly from toast:", err);
+                      }
+                    }}
+                    className="flex items-center gap-1 text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest hover:text-green-600 dark:hover:text-green-400 transition-colors cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Mark Read
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setNewMessageNotification(null);
+                      window.location.href = "/admin#messages-inbox-section";
+                    }}
+                    className="text-[9px] font-extrabold text-[#5A5A40] dark:text-[#8a8a65] uppercase tracking-widest bg-[#5A5A40]/10 dark:bg-[#8a8a65]/10 px-2.5 py-1.5 rounded-lg hover:bg-[#5A5A40]/20 dark:hover:bg-[#8a8a65]/25 transition-all cursor-pointer"
+                  >
+                    Open Inbox &rarr;
                   </button>
                 </div>
               </div>

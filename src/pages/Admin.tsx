@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, deleteDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile, UserRole, MinistryType } from '../types';
+import { UserProfile, UserRole, MinistryType, ContactMessage } from '../types';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, ShieldAlert, UserCheck, Search, Ban, UserX, Trash2, X, ChevronDown, ChevronRight, Megaphone, FileText, RefreshCw } from 'lucide-react';
+import { Shield, ShieldAlert, UserCheck, Search, Ban, UserX, Trash2, X, ChevronDown, ChevronRight, Megaphone, FileText, RefreshCw, Mail, Inbox, Archive, Check, AlertCircle, Eye, EyeOff, Reply, Send, Loader2 } from 'lucide-react';
 import BroadcastTool from '../components/admin/BroadcastTool';
+import { sendGmail } from '../lib/gmail';
 import { useSearchParams } from 'react-router-dom';
+import { format } from 'date-fns';
 
 export default function Admin() {
   const { profile } = useAuth();
@@ -23,6 +25,155 @@ export default function Admin() {
   const [purging, setPurging] = useState(false);
   const [serverLogs, setServerLogs] = useState<string>('');
   const [loadingLogs, setLoadingLogs] = useState(false);
+
+  // Messages State & Listeners for President and Portal Admin
+  const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [messageFilter, setMessageFilter] = useState<'unread' | 'all' | 'archived'>('unread');
+  const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
+
+  // Inline Gmail Reply States
+  const [isReplying, setIsReplying] = useState(false);
+  const [replySubject, setReplySubject] = useState('');
+  const [replyBody, setReplyBody] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState(false);
+
+  const isMessageManager = (profile?.roles || []).some(r => ['admin', 'president'].includes(r));
+
+  // Reset/Pre-fill Gmail reply states when selectedMessage changes
+  useEffect(() => {
+    if (selectedMessage) {
+      setReplySubject(`Re: ${selectedMessage.subject || 'KCFC Portal Inquiry'}`);
+      setReplyBody(`Dear ${selectedMessage.name},\n\nThank you for reaching out to KCFC.\n\n\n\nSincerely,\nKCFC Administration`);
+      setIsReplying(false);
+      setSendingEmail(false);
+      setEmailError(null);
+      setEmailSuccess(false);
+    }
+  }, [selectedMessage]);
+  
+  // Executive Submenu Navigation Active Tab
+  const [activeTab, setActiveTab] = useState<'pending' | 'members' | 'messages' | 'broadcast' | 'purge'>('pending');
+
+  useEffect(() => {
+    if (!isMessageManager) {
+      setMessagesLoading(false);
+      return;
+    }
+
+    const q = query(collection(db, 'messages'));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const msgs = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          status: data.status || 'unread'
+        } as ContactMessage;
+      });
+
+      msgs.sort((a, b) => {
+        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+
+      setMessages(msgs);
+      setMessagesLoading(false);
+    }, (err) => {
+      console.error("Error subscribing to messages:", err);
+      setMessagesLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [isMessageManager]);
+
+  const toggleReadStatus = async (msg: ContactMessage, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      const nextStatus = msg.status === 'read' ? 'unread' : 'read';
+      await updateDoc(doc(db, 'messages', msg.id), {
+        status: nextStatus
+      });
+      if (selectedMessage?.id === msg.id) {
+        setSelectedMessage(prev => prev ? { ...prev, status: nextStatus } : null);
+      }
+    } catch (err: any) {
+      console.error("Error updating message status:", err);
+      alert(`Failed to update message status: ${err.message}`);
+    }
+  };
+
+  const toggleArchiveStatus = async (msg: ContactMessage, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      const nextStatus = msg.status === 'archived' ? 'unread' : 'archived';
+      await updateDoc(doc(db, 'messages', msg.id), {
+        status: nextStatus
+      });
+      if (selectedMessage?.id === msg.id) {
+        setSelectedMessage(prev => prev ? { ...prev, status: nextStatus } : null);
+      }
+    } catch (err: any) {
+      console.error("Error archiving message:", err);
+      alert(`Failed to archive message: ${err.message}`);
+    }
+  };
+
+  const deleteMessage = async (msgId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!confirm("Are you sure you want to permanently delete this message? This action is irreversible.")) {
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'messages', msgId));
+      if (selectedMessage?.id === msgId) {
+        setSelectedMessage(null);
+      }
+    } catch (err: any) {
+      console.error("Error deleting message:", err);
+      alert(`Failed to delete message: ${err.message}`);
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!selectedMessage) return;
+    if (!replyBody.trim()) {
+      setEmailError('Please write a response message body.');
+      return;
+    }
+
+    setSendingEmail(true);
+    setEmailError(null);
+    setEmailSuccess(false);
+
+    try {
+      // Send response email using backend / client-side OAuth via Gmail API
+      await sendGmail(
+        selectedMessage.email,
+        replySubject,
+        replyBody.replace(/\n/g, '<br />')
+      );
+
+      setEmailSuccess(true);
+      setIsReplying(false);
+
+      // Automatically mark original query as read upon successful reply
+      if (selectedMessage.status === 'unread') {
+        await updateDoc(doc(db, 'messages', selectedMessage.id), {
+          status: 'read'
+        });
+        setSelectedMessage(prev => prev ? { ...prev, status: 'read' } : null);
+      }
+    } catch (err: any) {
+      console.error("Error sending response via Gmail:", err);
+      setEmailError(err.message || 'Could not send email. Please ensure you have granted Gmail send permissions.');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
 
   useEffect(() => {
     if (targetUid && users.length > 0) {
@@ -43,6 +194,31 @@ export default function Admin() {
       }, 400);
     }
   }, [targetUid, users]);
+
+  // Smooth scroll handler for deep-linked hash anchors (e.g. #messages-inbox-section)
+  useEffect(() => {
+    const handleHashScroll = () => {
+      if (window.location.hash === '#messages-inbox-section') {
+        if (isMessageManager) {
+          setActiveTab('messages');
+        }
+        setTimeout(() => {
+          const element = document.getElementById('messages-inbox-section');
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            element.classList.add('ring-2', 'ring-amber-500/20', 'dark:ring-amber-500/30');
+            setTimeout(() => {
+              element.classList.remove('ring-2', 'ring-amber-500/20', 'dark:ring-amber-500/30');
+            }, 3000);
+          }
+        }, 600);
+      }
+    };
+
+    handleHashScroll();
+    window.addEventListener('hashchange', handleHashScroll);
+    return () => window.removeEventListener('hashchange', handleHashScroll);
+  }, [isMessageManager]);
 
   const fetchLogs = async () => {
     setLoadingLogs(true);
@@ -69,7 +245,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    if (profile?.roles.some(r => ['admin', 'president'].includes(r))) {
+    if ((profile?.roles || []).some(r => ['admin', 'president'].includes(r))) {
       fetchLogs();
     }
   }, [profile]);
@@ -146,7 +322,7 @@ export default function Admin() {
   };
 
   const saveRoles = async (userId: string) => {
-    if (!profile?.roles.some(r => ['admin', 'president', 'secretary'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president', 'secretary'].includes(r))) {
       alert("You do not have permission to edit member roles.");
       return;
     }
@@ -241,7 +417,7 @@ export default function Admin() {
   };
 
   const saveMemberProfile = async (userId: string) => {
-    if (!profile?.roles.some(r => ['admin', 'president'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president'].includes(r))) {
       alert("You do not have permission to edit member profiles.");
       return;
     }
@@ -278,7 +454,7 @@ export default function Admin() {
   };
 
   const toggleVerification = async (userId: string, currentStatus: boolean) => {
-    if (!profile?.roles.some(r => ['admin', 'president', 'secretary'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president', 'secretary'].includes(r))) {
       alert("You do not have permission to verify members.");
       return;
     }
@@ -319,7 +495,7 @@ export default function Admin() {
   };
 
   const toggleCoreMember = async (userId: string, currentStatus: boolean) => {
-    if (!profile?.roles.some(r => ['admin', 'president', 'secretary'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president', 'secretary'].includes(r))) {
       alert("You do not have permission to manage core membership.");
       return;
     }
@@ -356,7 +532,7 @@ export default function Admin() {
   };
 
   const toggleDisabled = async (userId: string, currentStatus: boolean) => {
-    if (!profile?.roles.some(r => ['admin', 'president'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president'].includes(r))) {
       alert("Only the Admin or President can disable accounts.");
       return;
     }
@@ -385,7 +561,7 @@ export default function Admin() {
   };
 
   const removeUser = async (userId: string) => {
-    if (!profile?.roles.some(r => ['admin', 'president'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president'].includes(r))) {
       alert("Only the Admin or President can remove members.");
       return;
     }
@@ -439,7 +615,7 @@ export default function Admin() {
 
   const handlePurgeEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.roles.some(r => ['admin', 'president'].includes(r))) {
+    if (!(profile?.roles || []).some(r => ['admin', 'president'].includes(r))) {
       alert("Only the Admin or President can purge member credentials.");
       return;
     }
@@ -526,12 +702,17 @@ export default function Admin() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    (u.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())) &&
-    !u.roles.includes('admin') &&
-    u.email !== 'kcfc.jp@gmail.com'
-  );
+  const filteredUsers = users.filter(u => {
+    const displayName = u.displayName || '';
+    const email = u.email || '';
+    const roles = u.roles || [];
+    return (
+      (displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       email.toLowerCase().includes(searchTerm.toLowerCase())) &&
+      !roles.includes('admin') &&
+      email !== 'kcfc.jp@gmail.com'
+    );
+  });
 
   const pendingUsers = filteredUsers.filter(u => !u.isVerified);
   const acceptedUsers = filteredUsers.filter(u => u.isVerified);
@@ -696,7 +877,7 @@ export default function Admin() {
                             <div className="pt-4 space-y-4 border-t border-gray-100 dark:border-white/5">
                               <h4 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] pb-1 flex items-center justify-between">
                                 <span>Member Profile Details</span>
-                                {profile?.roles.some(r => ['admin', 'president'].includes(r)) && !editingProfiles[user.uid] && (
+                                {(profile?.roles || []).some(r => ['admin', 'president'].includes(r)) && !editingProfiles[user.uid] && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); startProfileEditing(user); }}
                                     className="text-[9px] text-[#5A5A40] dark:text-[#8a8a65] hover:underline uppercase font-bold cursor-pointer"
@@ -1037,64 +1218,564 @@ export default function Admin() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-32">
-      <div>
-        <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Administrative Center</h1>
-        <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Manage roles, permissions, and member verification.</p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-gray-100 dark:border-white/5 pb-6">
+        <div>
+          <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Administrative Center</h1>
+          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Manage roles, permissions, and member verification.</p>
+        </div>
       </div>
 
-      {canBroadcast && (
+      {/* High-Fidelity Submenu Navigation */}
+      <div className="bg-gray-50/50 dark:bg-[#11110f]/30 p-1.5 rounded-2xl border border-gray-100 dark:border-white/5 flex gap-1 overflow-x-auto scrollbar-none select-none">
+        <button
+          onClick={() => setActiveTab('pending')}
+          className={cn(
+            "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+            activeTab === 'pending'
+              ? "bg-[#5A5A40] text-white shadow-xs dark:bg-[#8a8a65] dark:text-[#11110f]"
+              : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-[#1e1e1a]"
+          )}
+        >
+          <ShieldAlert size={15} />
+          <span>Pending Requests</span>
+          {pendingUsers.length > 0 && (
+            <span className={cn(
+              "ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold",
+              activeTab === 'pending'
+                ? "bg-white text-[#5A5A40] dark:bg-[#11110f] dark:text-[#8a8a65]"
+                : "bg-yellow-500/10 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-400"
+            )}>
+              {pendingUsers.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('members')}
+          className={cn(
+            "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+            activeTab === 'members'
+              ? "bg-[#5A5A40] text-white shadow-xs dark:bg-[#8a8a65] dark:text-[#11110f]"
+              : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-[#1e1e1a]"
+          )}
+        >
+          <UserCheck size={15} />
+          <span>Members Directory</span>
+          {acceptedUsers.length > 0 && (
+            <span className={cn(
+              "ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold",
+              activeTab === 'members'
+                ? "bg-white text-[#5A5A40] dark:bg-[#11110f] dark:text-[#8a8a65]"
+                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+            )}>
+              {acceptedUsers.length}
+            </span>
+          )}
+        </button>
+
+        {isMessageManager && (
+          <button
+            onClick={() => setActiveTab('messages')}
+            className={cn(
+              "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+              activeTab === 'messages'
+                ? "bg-[#5A5A40] text-white shadow-xs dark:bg-[#8a8a65] dark:text-[#11110f]"
+                : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-[#1e1e1a]"
+            )}
+          >
+            <Inbox size={15} />
+            <span>Message Inbox</span>
+            {messages.filter(m => m.status === 'unread').length > 0 && (
+              <span className={cn(
+                "ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold animate-pulse",
+                activeTab === 'messages'
+                  ? "bg-white text-[#5A5A40] dark:bg-[#11110f] dark:text-[#8a8a65]"
+                  : "bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400"
+              )}>
+                {messages.filter(m => m.status === 'unread').length}
+              </span>
+            )}
+          </button>
+        )}
+
+        {canBroadcast && (
+          <button
+            onClick={() => setActiveTab('broadcast')}
+            className={cn(
+              "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+              activeTab === 'broadcast'
+                ? "bg-[#5A5A40] text-white shadow-xs dark:bg-[#8a8a65] dark:text-[#11110f]"
+                : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-[#1e1e1a]"
+            )}
+          >
+            <Megaphone size={15} />
+            <span>Broadcast Tool</span>
+          </button>
+        )}
+
+        {isMessageManager && (
+          <button
+            onClick={() => setActiveTab('purge')}
+            className={cn(
+              "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+              activeTab === 'purge'
+                ? "bg-[#5A5A40] text-white shadow-xs dark:bg-[#8a8a65] dark:text-[#11110f]"
+                : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-[#1e1e1a]"
+            )}
+          >
+            <UserX size={15} />
+            <span>Security & Logs</span>
+          </button>
+        )}
+      </div>
+
+      {isMessageManager && messages.some(m => m.status === 'unread') && (
+        <div className="bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/20 rounded-[24px] p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-amber-500/10 rounded-xl">
+              <Mail className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-amber-800 dark:text-amber-300">New Contact Messages</h4>
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80 font-serif italic">
+                You have {messages.filter(m => m.status === 'unread').length} unread message(s) waiting in your executive inbox.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setActiveTab('messages');
+              setTimeout(() => {
+                document.getElementById('messages-inbox-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            }}
+            className="self-start sm:self-center px-4 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-500/25 dark:hover:bg-amber-500/45 text-white dark:text-amber-300 text-xs font-bold uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+          >
+            Open Inbox &rarr;
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'broadcast' && canBroadcast && (
         <section className="space-y-4">
           <BroadcastTool />
         </section>
       )}
 
+      {activeTab === 'messages' && isMessageManager && (
+        <section id="messages-inbox-section" className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-serif text-gray-900 dark:text-white flex items-center gap-2">
+                <Inbox className="text-[#5A5A40] dark:text-[#8a8a65]" size={22} />
+                Executive Message Inbox
+              </h2>
+              <p className="text-xs text-gray-400 dark:text-gray-550 font-serif italic mt-0.5">
+                Review and manage inquiries, suggestions, and feedback sent to KCFC.
+              </p>
+            </div>
+            
+            {/* Filter Tabs */}
+            <div className="flex bg-gray-50 dark:bg-[#252520] p-1 rounded-xl w-fit border border-gray-100 dark:border-white/5">
+              {(['unread', 'all', 'archived'] as const).map((tab) => {
+                const count = tab === 'unread' 
+                  ? messages.filter(m => m.status === 'unread').length 
+                  : tab === 'archived'
+                    ? messages.filter(m => m.status === 'archived').length
+                    : messages.filter(m => m.status !== 'archived').length;
+
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      setMessageFilter(tab);
+                      setSelectedMessage(null);
+                    }}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
+                      messageFilter === tab
+                        ? "bg-white dark:bg-[#11110f] text-[#5A5A40] dark:text-[#8a8a65] shadow-xs"
+                        : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    )}
+                  >
+                    {tab}
+                    {count > 0 && (
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded-full text-[8px] font-bold",
+                        tab === 'unread'
+                          ? "bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                          : "bg-gray-100 text-gray-650 dark:bg-gray-800 dark:text-gray-400"
+                      )}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {messagesLoading ? (
+            <div className="py-12 text-center text-gray-400 dark:text-gray-550 italic font-serif text-sm">
+              Syncing executive messages...
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="py-12 bg-gray-50/50 dark:bg-[#11110f]/20 rounded-2xl border border-dashed border-gray-150 dark:border-white/5 text-center text-gray-400 dark:text-gray-500 font-serif italic text-xs">
+              No messages have been received yet.
+            </div>
+          ) : (messages.filter(m => {
+            if (messageFilter === 'unread') return m.status === 'unread';
+            if (messageFilter === 'archived') return m.status === 'archived';
+            return m.status !== 'archived';
+          })).length === 0 ? (
+            <div className="py-12 bg-gray-50/50 dark:bg-[#11110f]/20 rounded-2xl border border-dashed border-gray-150 dark:border-white/5 text-center text-gray-400 dark:text-gray-500 font-serif italic text-xs">
+              No messages in "{messageFilter}" category.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[400px]">
+              {/* Message List Sidebar */}
+              <div className={cn(
+                "lg:col-span-5 space-y-2 max-h-[500px] overflow-y-auto pr-2",
+                selectedMessage && "hidden lg:block"
+              )}>
+                {messages
+                  .filter(m => {
+                    if (messageFilter === 'unread') return m.status === 'unread';
+                    if (messageFilter === 'archived') return m.status === 'archived';
+                    return m.status !== 'archived';
+                  })
+                  .map((msg) => {
+                    const msgDate = msg.createdAt?.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt || 0);
+                    const formattedDate = format(msgDate, 'MMM d, yyyy h:mm a');
+                    
+                    return (
+                      <div
+                        key={msg.id}
+                        onClick={() => setSelectedMessage(msg)}
+                        className={cn(
+                          "p-4 rounded-2xl border transition-all cursor-pointer text-left relative",
+                          msg.status === 'unread'
+                            ? "bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10 dark:bg-amber-500/[0.02]"
+                            : "bg-gray-50/50 dark:bg-[#252520]/25 border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-[#252520]/40",
+                          selectedMessage?.id === msg.id && "ring-2 ring-[#5A5A40] dark:ring-[#8a8a65] bg-white dark:bg-[#11110f]"
+                        )}
+                      >
+                        {msg.status === 'unread' && (
+                          <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                        )}
+                        
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className={cn(
+                            "w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white",
+                            msg.status === 'unread' ? "bg-amber-600 dark:bg-amber-500/40" : "bg-gray-400 dark:bg-gray-650"
+                          )}>
+                            {msg.name ? msg.name.charAt(0).toUpperCase() : '?' }
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className={cn(
+                              "text-xs truncate text-gray-900 dark:text-white",
+                              msg.status === 'unread' ? "font-bold" : "font-medium"
+                            )}>
+                              {msg.name}
+                            </h4>
+                            <p className="text-[9px] text-gray-450 truncate">{msg.email}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <h5 className={cn(
+                            "text-xs truncate text-gray-800 dark:text-gray-300",
+                            msg.status === 'unread' && "font-bold"
+                          )}>
+                            {msg.subject || "(No Subject)"}
+                          </h5>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed font-serif italic">
+                            {msg.message}
+                          </p>
+                          <div className="text-[8px] text-gray-400 text-right mt-1.5 font-sans">
+                            {formattedDate}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Message Details Pane */}
+              <div className={cn(
+                "lg:col-span-7 bg-gray-50/50 dark:bg-[#252520]/25 rounded-[24px] border border-gray-100 dark:border-white/5 p-6 flex flex-col justify-between min-h-[350px]",
+                !selectedMessage && "hidden lg:flex items-center justify-center text-center py-24"
+              )}>
+                {selectedMessage ? (
+                  <div className="space-y-6 flex flex-col h-full justify-between">
+                    <div className="space-y-6 text-left">
+                      {/* Details Header */}
+                      <div className="flex items-start justify-between border-b border-gray-100 dark:border-white/5 pb-4">
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setSelectedMessage(null)}
+                            className="lg:hidden px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg text-[10px] font-bold text-gray-650 dark:text-gray-400"
+                          >
+                            &larr; Back
+                          </button>
+                          <div className="w-10 h-10 rounded-full bg-[#5A5A40] text-white flex items-center justify-center font-bold text-sm">
+                            {selectedMessage.name ? selectedMessage.name.charAt(0).toUpperCase() : '?' }
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{selectedMessage.name}</h3>
+                            <a
+                              href={`mailto:${selectedMessage.email}`}
+                              className="text-xs text-[#5A5A40] dark:text-[#8a8a65] hover:underline break-all"
+                            >
+                              {selectedMessage.email}
+                            </a>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-[9px] text-gray-400 font-sans">
+                            {selectedMessage.createdAt?.toDate 
+                              ? format(selectedMessage.createdAt.toDate(), 'PPP p')
+                              : (selectedMessage.createdAt ? format(new Date(selectedMessage.createdAt), 'PPP p') : 'Just now')}
+                          </div>
+                          <span className={cn(
+                            "inline-block mt-1 px-2.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider",
+                            selectedMessage.status === 'unread'
+                              ? "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+                              : selectedMessage.status === 'archived'
+                                ? "bg-purple-100 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400"
+                                : "bg-green-100 text-green-600 dark:bg-green-950/40 dark:text-green-400"
+                          )}>
+                            {selectedMessage.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Details Content */}
+                      <div className="space-y-2">
+                        <div className="text-xs text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider">Subject</div>
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white font-serif">
+                          {selectedMessage.subject || "(No Subject)"}
+                        </h4>
+                        
+                        <div className="text-xs text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider pt-4">Message</div>
+                        <div className="bg-white dark:bg-[#11110f]/45 p-5 rounded-2xl border border-gray-100 dark:border-white/5 text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap select-text font-serif">
+                          {selectedMessage.message}
+                        </div>
+                      </div>
+
+                      {/* Inline Gmail Reply Form */}
+                      {isReplying ? (
+                        <div className="mt-6 bg-white dark:bg-[#11110f]/60 p-5 rounded-2xl border border-amber-500/10 dark:border-amber-500/25 shadow-inner space-y-4">
+                          <div className="flex items-center justify-between border-b border-gray-150 dark:border-white/5 pb-2.5">
+                            <h5 className="text-[10px] font-extrabold uppercase tracking-widest text-[#5A5A40] dark:text-[#8a8a65] flex items-center gap-1.5">
+                              <Mail size={12} />
+                              Compose Gmail Response (Inline)
+                            </h5>
+                            <span className="text-[9px] text-gray-450 dark:text-gray-400 font-medium">To: {selectedMessage.email}</span>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-[9px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500 mb-1">Subject</label>
+                              <input 
+                                type="text" 
+                                value={replySubject} 
+                                onChange={(e) => setReplySubject(e.target.value)}
+                                className="w-full text-xs bg-gray-50 dark:bg-white/5 border border-gray-150 dark:border-white/5 rounded-lg px-3 py-2 text-gray-900 dark:text-white focus:ring-1 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all font-medium"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500 mb-1">Message Body</label>
+                              <textarea 
+                                rows={6}
+                                value={replyBody} 
+                                onChange={(e) => setReplyBody(e.target.value)}
+                                placeholder="Compose reply..."
+                                className="w-full text-xs bg-gray-50 dark:bg-white/5 border border-gray-150 dark:border-white/5 rounded-lg p-3 text-gray-900 dark:text-white focus:ring-1 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all font-serif leading-relaxed"
+                              />
+                            </div>
+                          </div>
+
+                          {emailError && (
+                            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-[11px] text-red-600 dark:text-red-400 flex items-center gap-2 font-medium">
+                              <AlertCircle size={14} className="shrink-0" />
+                              <span>{emailError}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end gap-2.5 pt-2">
+                            <button 
+                              onClick={() => setIsReplying(false)}
+                              className="px-3.5 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                              disabled={sendingEmail}
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              onClick={handleSendReply}
+                              disabled={sendingEmail}
+                              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                            >
+                              {sendingEmail ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin" />
+                                  Sending...
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={12} />
+                                  Send Response
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ) : emailSuccess ? (
+                        <div className="mt-6 bg-green-500/10 border border-green-500/20 p-4 rounded-2xl text-xs text-green-700 dark:text-green-400 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 font-medium">
+                          <div className="flex items-center gap-2">
+                            <Check size={16} className="text-green-600 dark:text-green-400 shrink-0" />
+                            <span>Reply successfully sent to <strong>{selectedMessage.email}</strong> via Gmail!</span>
+                          </div>
+                          <button 
+                            onClick={() => setEmailSuccess(false)}
+                            className="text-[9px] uppercase tracking-widest font-extrabold text-green-600 dark:text-green-400 hover:underline"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {/* Details Actions */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-gray-100 dark:border-white/5 mt-auto">
+                      <div className="flex flex-wrap gap-2">
+                        {/* Toggle Read */}
+                        <button
+                          onClick={(e) => toggleReadStatus(selectedMessage, e)}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer",
+                            selectedMessage.status === 'read'
+                              ? "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200"
+                              : "bg-amber-100 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400 hover:bg-amber-200"
+                          )}
+                        >
+                          {selectedMessage.status === 'read' ? <EyeOff size={12} /> : <Eye size={12} />}
+                          {selectedMessage.status === 'read' ? 'Mark Unread' : 'Mark Read'}
+                        </button>
+
+                        {/* Toggle Archive */}
+                        <button
+                          onClick={(e) => toggleArchiveStatus(selectedMessage, e)}
+                          className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Archive size={12} />
+                          {selectedMessage.status === 'archived' ? 'Move to Inbox' : 'Archive'}
+                        </button>
+
+                        {/* Inline Gmail Reply Toggle */}
+                        {!isReplying && (
+                          <button
+                            onClick={() => setIsReplying(true)}
+                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                          >
+                            <Reply size={12} />
+                            Reply with Gmail
+                          </button>
+                        )}
+
+                        {/* Mail Client Reply (Fallback) */}
+                        <a
+                          href={`mailto:${selectedMessage.email}?subject=Re: ${encodeURIComponent(selectedMessage.subject || 'KCFC Portal Inquiry')}`}
+                          className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                        >
+                          <Mail size={12} />
+                          Mail Client
+                        </a>
+                      </div>
+
+                      {/* Delete */}
+                      <button
+                        onClick={(e) => deleteMessage(selectedMessage.id, e)}
+                        className="p-2.5 text-gray-300 hover:text-red-500 transition-all cursor-pointer"
+                        title="Delete Message"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-[#5A5A40]/10 flex items-center justify-center mx-auto">
+                      <Mail className="w-6 h-6 text-[#5A5A40] dark:text-[#8a8a65]" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">No Message Selected</h4>
+                      <p className="text-[11px] text-gray-400 dark:text-gray-500 font-serif italic mt-1 max-w-xs mx-auto">
+                        Choose a message from the list to view its contents and initiate management actions.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Global search controller */}
-      <div className="bg-white dark:bg-[#1e1e1a] p-6 rounded-[24px] border border-gray-100 dark:border-white/5 shadow-xs">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-550" size={18} />
-          <input
-            type="text"
-            placeholder="Search all members by name or email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
-          />
+      {(activeTab === 'pending' || activeTab === 'members') && (
+        <div className="bg-white dark:bg-[#1e1e1a] p-6 rounded-[24px] border border-gray-100 dark:border-white/5 shadow-xs">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-550" size={18} />
+            <input
+              type="text"
+              placeholder="Search all members by name or email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Section 1: Pending Membership Requests */}
-      <div className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-yellow-250/20 dark:border-yellow-500/10 shadow-xs space-y-6">
-        <div>
-          <h2 className="text-lg font-serif font-bold text-gray-900 dark:text-[#f5f5f0] flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
-            Pending Membership Requests ({pendingUsers.length})
-          </h2>
-          <p className="text-[11px] text-gray-400 dark:text-gray-500 font-serif italic mt-0.5">
-            New registration requests requiring validation before access is enabled.
-          </p>
+      {activeTab === 'pending' && (
+        <div className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-yellow-250/20 dark:border-yellow-500/10 shadow-xs space-y-6">
+          <div>
+            <h2 className="text-lg font-serif font-bold text-gray-900 dark:text-[#f5f5f0] flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
+              Pending Membership Requests ({pendingUsers.length})
+            </h2>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 font-serif italic mt-0.5">
+              New registration requests requiring validation before access is enabled.
+            </p>
+          </div>
+          {loading ? (
+            <div className="py-12 text-center text-gray-400 dark:text-gray-500 italic font-serif text-sm">Syncing requests...</div>
+          ) : renderTable(pendingUsers)}
         </div>
-        {loading ? (
-          <div className="py-12 text-center text-gray-400 dark:text-gray-500 italic font-serif text-sm">Syncing requests...</div>
-        ) : renderTable(pendingUsers)}
-      </div>
+      )}
 
       {/* Section 2: Accepted Community Directory */}
-      <div className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-xs space-y-6">
-        <div>
-          <h2 className="text-lg font-serif font-bold text-gray-900 dark:text-[#f5f5f0] flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
-            Registered Members Directory ({acceptedUsers.length})
-          </h2>
-          <p className="text-[11px] text-gray-400 dark:text-gray-500 font-serif italic mt-0.5">
-            Active verified congregation list with configured permissions, choreography, and leadership profiles.
-          </p>
+      {activeTab === 'members' && (
+        <div className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-xs space-y-6">
+          <div>
+            <h2 className="text-lg font-serif font-bold text-gray-900 dark:text-[#f5f5f0] flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+              Registered Members Directory ({acceptedUsers.length})
+            </h2>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 font-serif italic mt-0.5">
+              Active verified congregation list with configured permissions, choreography, and leadership profiles.
+            </p>
+          </div>
+          {loading ? (
+            <div className="py-12 text-center text-gray-400 dark:text-gray-550 italic font-serif text-sm">Syncing member directory...</div>
+          ) : renderTable(acceptedUsers)}
         </div>
-        {loading ? (
-          <div className="py-12 text-center text-gray-400 dark:text-gray-550 italic font-serif text-sm">Syncing member directory...</div>
-        ) : renderTable(acceptedUsers)}
-      </div>
+      )}
 
-      {profile?.roles.some(r => ['admin', 'president'].includes(r)) && (
+      {activeTab === 'purge' && (profile?.roles || []).some(r => ['admin', 'president'].includes(r)) && (
         <div className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-sm space-y-6">
           <div>
             <h2 className="text-xl font-serif text-gray-900 dark:text-white flex items-center gap-2">
@@ -1134,11 +1815,11 @@ export default function Admin() {
           <div className="pt-6 border-t border-gray-100 dark:border-white/5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-550 uppercase tracking-widest flex items-center gap-2">
                   <FileText size={14} className="text-[#5A5A40] dark:text-[#8a8a65]" />
                   Direct Service Connection Logs
                 </h3>
-                <p className="text-[9px] text-gray-400 dark:text-gray-500 font-serif italic mt-0.5">
+                <p className="text-[9px] text-gray-400 dark:text-gray-550 font-serif italic mt-0.5">
                   Real-time back-end operation stream and authorization status indicators.
                 </p>
               </div>

@@ -6,6 +6,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Users, Shield, User as UserIcon, Search, Filter, Star, Hash, Mail, Phone, MapPin } from 'lucide-react';
 import { cn } from '../lib/utils';
 
+const MINISTRIES = [
+  { id: 'choir_a', label: 'Choir A', category: 'Liturgical', icon: '🎵' },
+  { id: 'choir_b', label: 'Choir B', category: 'Liturgical', icon: '🎶' },
+  { id: 'lector_commentator', label: 'Lector & Commentator', category: 'Liturgical', icon: '📖' },
+  { id: 'usher', label: 'Usher', category: 'Liturgical', icon: '⛪' },
+  { id: 'altar_server', label: 'Altar Server', category: 'Liturgical', icon: '🕯️' },
+  { id: 'kitchen', label: 'Kitchen Committee', category: 'Chore', icon: '🍳' },
+  { id: 'cleaning', label: 'Cleaning Committee', category: 'Chore', icon: '🧹' },
+];
+
 export default function Members() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,12 +23,15 @@ export default function Members() {
   // States for search and filtering
   const [searchQuery, setSearchQuery] = useState('');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'core' | 'regular'>('all');
-  const [ministryFilter, setMinistryFilter] = useState<string>('all');
+  const [selectedMinistries, setSelectedMinistries] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'users'), (snap) => {
       const u = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
       setUsers(u.filter(user => user.isVerified && user.email !== 'kcfc.jp@gmail.com'));
+      setLoading(false);
+    }, (err) => {
+      console.error("Error listening to users in Members page:", err);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -43,7 +56,8 @@ export default function Members() {
 
   const getSortScore = (user: UserProfile) => {
     let bestOrder = 999;
-    user.roles.forEach(role => {
+    const roles = user.roles || [];
+    roles.forEach(role => {
       if (ROLE_ORDER[role] < bestOrder) {
         bestOrder = ROLE_ORDER[role];
       }
@@ -56,24 +70,19 @@ export default function Members() {
     // 1. Search Query Match (Display Name, Nickname, Email, etc.)
     const query = searchQuery.toLowerCase().trim();
     if (query) {
-      const nameMatch = u.displayName.toLowerCase().includes(query) || 
-                        (u.nickname && u.nickname.toLowerCase().includes(query)) ||
-                        u.email.toLowerCase().includes(query);
+      const displayName = u.displayName || '';
+      const nickname = u.nickname || '';
+      const email = u.email || '';
+      const nameMatch = displayName.toLowerCase().includes(query) || 
+                        nickname.toLowerCase().includes(query) ||
+                        email.toLowerCase().includes(query);
       if (!nameMatch) return false;
     }
 
     // 2. Ministry & Committee Filter Match
-    if (ministryFilter !== 'all') {
-      if (ministryFilter === 'liturgical_any') {
-        const hasLiturgical = u.ministries?.some(m => ['choir_a', 'choir_b', 'lector_commentator', 'usher', 'altar_server'].includes(m));
-        if (!hasLiturgical) return false;
-      } else if (ministryFilter === 'chore_any') {
-        const hasChore = u.ministries?.some(m => ['kitchen', 'cleaning'].includes(m));
-        if (!hasChore) return false;
-      } else {
-        const hasSpecific = u.ministries?.includes(ministryFilter as any);
-        if (!hasSpecific) return false;
-      }
+    if (selectedMinistries.length > 0) {
+      const hasAnySelected = u.ministries?.some(m => selectedMinistries.includes(m));
+      if (!hasAnySelected) return false;
     }
 
     return true;
@@ -107,8 +116,8 @@ export default function Members() {
       </header>
 
       {/* 🔍 Search & Filters Panel (Glassmorphism Dashboard style) */}
-      <div className="bg-white/60 dark:bg-[#1e1e1a]/60 backdrop-blur-md p-6 rounded-[2.5rem] border border-gray-100/80 dark:border-white/5 shadow-xs mb-10 space-y-4 font-sans">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white/60 dark:bg-[#1e1e1a]/60 backdrop-blur-md p-6 rounded-[2.5rem] border border-gray-100/80 dark:border-white/5 shadow-xs mb-10 space-y-6 font-sans">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           
           {/* Search bar */}
           <div className="relative">
@@ -127,7 +136,7 @@ export default function Members() {
             <button
               onClick={() => setMemberTypeFilter('all')}
               className={cn(
-                "flex-1 text-center py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all",
+                "flex-1 text-center py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                 memberTypeFilter === 'all' 
                   ? "bg-white dark:bg-[#1e1e1a] text-gray-800 dark:text-white shadow-3xs" 
                   : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 font-semibold"
@@ -138,7 +147,7 @@ export default function Members() {
             <button
               onClick={() => setMemberTypeFilter('core')}
               className={cn(
-                "flex-1 text-center py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all",
+                "flex-1 text-center py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                 memberTypeFilter === 'core' 
                   ? "bg-[#5A5A40] text-white shadow-3xs" 
                   : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 font-semibold"
@@ -149,7 +158,7 @@ export default function Members() {
             <button
               onClick={() => setMemberTypeFilter('regular')}
               className={cn(
-                "flex-1 text-center py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all",
+                "flex-1 text-center py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                 memberTypeFilter === 'regular' 
                   ? "bg-orange-600 text-white shadow-3xs" 
                   : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 font-semibold"
@@ -158,34 +167,120 @@ export default function Members() {
               Regular
             </button>
           </div>
+        </div>
 
-          {/* Ministry specific selectors */}
-          <div className="relative">
-            <select
-              value={ministryFilter}
-              onChange={e => setMinistryFilter(e.target.value)}
-              className="w-full pl-4 pr-10 py-2.5 bg-gray-50/70 dark:bg-[#252520]/70 border border-gray-100 dark:border-white/5 rounded-2xl text-xs focus:ring-1 focus:ring-[#5A5A40] outline-none font-medium transition-all cursor-pointer appearance-none text-gray-600 dark:text-[#f5f5f0]"
-            >
-              <option value="all">⭐ Filter by Ministry / Committee</option>
-              <optgroup label="Liturgical Ministries">
-                <option value="liturgical_any">Any Liturgical Ministry</option>
-                <option value="choir_a">Choir A</option>
-                <option value="choir_b">Choir B</option>
-                <option value="lector_commentator">Lector & Commentator</option>
-                <option value="usher">Usher</option>
-                <option value="altar_server">Altar Server</option>
-              </optgroup>
-              <optgroup label="Chore Committees">
-                <option value="chore_any">Any Chore Committee</option>
-                <option value="kitchen">🍳 Kitchen Committee</option>
-                <option value="cleaning">🧹 Cleaning Committee</option>
-              </optgroup>
-            </select>
-            <div className="absolute right-3.5 top-3 pointer-events-none text-gray-450">
-              <Filter size={14} />
-            </div>
+        {/* Multi-select ministries */}
+        <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-white/5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500 flex items-center gap-1.5">
+              <Filter size={12} />
+              Filter by Ministries & Committees (Multiple Selection)
+            </span>
+            {selectedMinistries.length > 0 && (
+              <button
+                onClick={() => setSelectedMinistries([])}
+                className="text-[9px] font-bold text-red-500 hover:underline uppercase tracking-wider cursor-pointer"
+              >
+                Clear Selections
+              </button>
+            )}
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold">⛪ Liturgical Ministries</span>
+                <button
+                  onClick={() => {
+                    const liturgicalIds = ['choir_a', 'choir_b', 'lector_commentator', 'usher', 'altar_server'];
+                    const allSelected = liturgicalIds.every(id => selectedMinistries.includes(id));
+                    if (allSelected) {
+                      setSelectedMinistries(prev => prev.filter(id => !liturgicalIds.includes(id)));
+                    } else {
+                      setSelectedMinistries(prev => Array.from(new Set([...prev, ...liturgicalIds])));
+                    }
+                  }}
+                  className="text-[8px] font-bold text-[#5A5A40] dark:text-[#8a8a65] hover:underline uppercase cursor-pointer"
+                >
+                  {['choir_a', 'choir_b', 'lector_commentator', 'usher', 'altar_server'].every(id => selectedMinistries.includes(id)) ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {MINISTRIES.filter(m => m.category === 'Liturgical').map(m => {
+                  const isSelected = selectedMinistries.includes(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedMinistries(prev => 
+                          prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
+                        );
+                      }}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-xl text-[10px] font-medium transition-all border flex items-center gap-1.5 cursor-pointer",
+                        isSelected 
+                          ? "bg-[#5A5A40] text-white border-[#5A5A40] dark:bg-[#8a8a65] dark:text-[#11110f] dark:border-[#8a8a65]" 
+                          : "bg-white/40 dark:bg-[#252520]/40 text-gray-600 dark:text-gray-300 border-gray-150/55 dark:border-white/5 hover:bg-white dark:hover:bg-[#252520]"
+                      )}
+                    >
+                      <span>{m.icon}</span>
+                      <span>{m.label}</span>
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white dark:bg-[#11110f]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold">🍳 Chore Committees</span>
+                <button
+                  onClick={() => {
+                    const choreIds = ['kitchen', 'cleaning'];
+                    const allSelected = choreIds.every(id => selectedMinistries.includes(id));
+                    if (allSelected) {
+                      setSelectedMinistries(prev => prev.filter(id => !choreIds.includes(id)));
+                    } else {
+                      setSelectedMinistries(prev => Array.from(new Set([...prev, ...choreIds])));
+                    }
+                  }}
+                  className="text-[8px] font-bold text-orange-600 dark:text-orange-400 hover:underline uppercase cursor-pointer"
+                >
+                  {['kitchen', 'cleaning'].every(id => selectedMinistries.includes(id)) ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {MINISTRIES.filter(m => m.category === 'Chore').map(m => {
+                  const isSelected = selectedMinistries.includes(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedMinistries(prev => 
+                          prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
+                        );
+                      }}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-xl text-[10px] font-medium transition-all border flex items-center gap-1.5 cursor-pointer",
+                        isSelected 
+                          ? "bg-orange-600 text-white border-orange-600 dark:bg-orange-500" 
+                          : "bg-white/40 dark:bg-[#252520]/40 text-gray-600 dark:text-gray-300 border-gray-150/55 dark:border-white/5 hover:bg-white dark:hover:bg-[#252520]"
+                      )}
+                    >
+                      <span>{m.icon}</span>
+                      <span>{m.label}</span>
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

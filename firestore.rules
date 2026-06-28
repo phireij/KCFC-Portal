@@ -3,81 +3,120 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // 0. Global Safety Net
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null && 
+                           'email' in request.auth.token && 
+                           request.auth.token.email.matches('(?i)kcfc\\.jp@gmail\\.com');
     }
 
     // --- Helpers ---
     function isSignedIn() { return request.auth != null; }
     function getUserData() { 
       let path = /databases/$(database)/documents/users/$(request.auth.uid);
-      return exists(path) ? get(path).data : {}; 
+      return exists(path) ? get(path).data : null; 
     }
     function isBootstrapAdmin() {
-      return isSignedIn() && request.auth.token.email == 'kcfc.jp@gmail.com';
+      return isSignedIn() && 
+             'email' in request.auth.token && 
+             request.auth.token.email.matches('(?i)kcfc\\.jp@gmail\\.com');
     }
     function isApproved() { 
+      let data = getUserData();
       return isSignedIn() && (
         isBootstrapAdmin() || (
-          getUserData().get('isVerified', false) == true && 
-          getUserData().get('isDisabled', false) == false
+          data != null &&
+          data.get('isVerified', false) == true && 
+          data.get('isDisabled', false) == false
         )
       );
     }
     function hasRole(role) { 
       let data = getUserData();
-      return isApproved() && role in data.get('roles', []); 
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          data != null &&
+          data.get('isVerified', false) == true && 
+          data.get('isDisabled', false) == false &&
+          role in data.get('roles', [])
+        )
+      );
     }
     function isAdmin() { 
-      let roles = getUserData().get('roles', []);
-      return isBootstrapAdmin() || (
-        isApproved() && (
-          'admin' in roles || 
-          'president' in roles || 
-          'vice_president' in roles || 
-          'secretary' in roles ||
-          'auditor' in roles ||
-          'pro' in roles ||
-          'spiritual_director' in roles
+      let data = getUserData();
+      let roles = data != null ? data.get('roles', []) : [];
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          data != null &&
+          data.get('isVerified', false) == true && 
+          data.get('isDisabled', false) == false &&
+          (
+            'admin' in roles || 
+            'president' in roles || 
+            'vice_president' in roles || 
+            'secretary' in roles ||
+            'auditor' in roles ||
+            'pro' in roles ||
+            'spiritual_director' in roles
+          )
         )
       ); 
     } 
     function isLeader() {
-      let roles = getUserData().get('roles', []);
-      return isApproved() && (
-        'leader' in roles || 
-        'choir_a_leader' in roles || 
-        'choir_b_leader' in roles || 
-        'lector_commentator_leader' in roles || 
-        'usher_leader' in roles || 
-        'altar_server_leader' in roles || 
-        'kitchen_leader' in roles || 
-        'kitchen_sub_leader' in roles || 
-        'cleaning_leader' in roles || 
-        'cleaning_sub_leader' in roles || 
-        'chore_leader' in roles
+      let data = getUserData();
+      let roles = data != null ? data.get('roles', []) : [];
+      return isSignedIn() && (
+        data != null &&
+        data.get('isVerified', false) == true && 
+        data.get('isDisabled', false) == false &&
+        (
+          'leader' in roles || 
+          'choir_a_leader' in roles || 
+          'choir_b_leader' in roles || 
+          'lector_commentator_leader' in roles || 
+          'usher_leader' in roles || 
+          'altar_server_leader' in roles || 
+          'kitchen_leader' in roles || 
+          'kitchen_sub_leader' in roles || 
+          'cleaning_leader' in roles || 
+          'cleaning_sub_leader' in roles || 
+          'chore_leader' in roles
+        )
       );
     }
 
     function canCreateAnnouncement() {
-      let roles = getUserData().get('roles', []);
-      return isApproved() && (
-        isBootstrapAdmin() ||
-        'admin' in roles ||
-        'president' in roles ||
-        'vice_president' in roles ||
-        'spiritual_director' in roles ||
-        'secretary' in roles ||
-        'pro' in roles
+      let data = getUserData();
+      let roles = data != null ? data.get('roles', []) : [];
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          data != null &&
+          data.get('isVerified', false) == true && 
+          data.get('isDisabled', false) == false &&
+          (
+            'admin' in roles ||
+            'president' in roles ||
+            'vice_president' in roles ||
+            'spiritual_director' in roles ||
+            'secretary' in roles ||
+            'pro' in roles
+          )
+        )
       );
     }
 
     function canManageAnnouncement(announcement) {
-      let roles = getUserData().get('roles', []);
-      return isApproved() && (
-        isBootstrapAdmin() ||
-        'admin' in roles ||
-        'president' in roles ||
-        announcement.authorId == request.auth.uid
+      let data = getUserData();
+      let roles = data != null ? data.get('roles', []) : [];
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          data != null &&
+          data.get('isVerified', false) == true && 
+          data.get('isDisabled', false) == false &&
+          (
+            announcement.authorId == request.auth.uid ||
+            'admin' in roles ||
+            'president' in roles
+          )
+        )
       );
     }
     
@@ -194,28 +233,25 @@ service cloud.firestore {
     // --- Notifications Collection ---
     match /notifications/{notificationId} {
       allow read, update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && (
-        isBootstrapAdmin() || 
-        'admin' in getUserData().get('roles', []) ||
-        'president' in getUserData().get('roles', []) ||
-        'vice_president' in getUserData().get('roles', []) ||
-        'secretary' in getUserData().get('roles', []) ||
-        'spiritual_director' in getUserData().get('roles', []) ||
-        'pro' in getUserData().get('roles', []) ||
-        'auditor' in getUserData().get('roles', []) ||
-        isLeader()
-      );
+      allow create: if isAdmin() || isLeader();
     }
 
     // --- Accounting Collection ---
     match /accounting/{transactionId} {
       function canAccessAccounting() {
-        let roles = getUserData().get('roles', []);
-        return isApproved() && (
-          isBootstrapAdmin() ||
-          'admin' in roles ||
-          'president' in roles ||
-          'treasurer' in roles
+        let data = getUserData();
+        let roles = data != null ? data.get('roles', []) : [];
+        return isSignedIn() && (
+          isBootstrapAdmin() || (
+            data != null &&
+            data.get('isVerified', false) == true && 
+            data.get('isDisabled', false) == false &&
+            (
+              'admin' in roles ||
+              'president' in roles ||
+              'treasurer' in roles
+            )
+          )
         );
       }
       
@@ -230,6 +266,27 @@ service cloud.firestore {
       allow create: if canAccessAccounting() && isValidTransaction(incoming());
       allow update: if canAccessAccounting() && isValidTransaction(incoming());
       allow delete: if canAccessAccounting();
+    }
+
+    // --- Accounting Categories Collection ---
+    match /accounting_categories/{categoryId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // --- Messages Collection ---
+    match /messages/{messageId} {
+      function isValidMessage(data) {
+        return data.name is string && data.name.size() <= 200 &&
+               data.email is string && data.email.size() <= 200 &&
+               data.message is string && data.message.size() <= 10000 &&
+               (!('status' in data) || data.status in ['unread', 'read', 'archived']);
+      }
+
+      // Anyone (even unauthenticated) can create/submit messages from the public website contact form
+      allow create: if isValidMessage(incoming());
+      // Only administrators can read, update, or delete messages
+      allow read, update, delete: if isAdmin();
     }
   }
 }

@@ -65,7 +65,7 @@ export default function Navbar() {
             <div className="text-right hidden md:block">
               <div className="text-xs font-bold leading-tight text-gray-900 dark:text-[#f5f5f0]">{profile?.displayName}</div>
               <div className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-tighter">
-                {profile?.email === 'kcfc.jp@gmail.com' ? 'SUPER MEMBER' : profile?.roles.join(', ')}
+                {profile?.email === 'kcfc.jp@gmail.com' ? 'SUPER MEMBER' : (profile?.roles || []).join(', ')}
               </div>
             </div>
             <button 

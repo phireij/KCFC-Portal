@@ -22,7 +22,7 @@ export default function Resources() {
     fileType: 'pdf'
   });
 
-  const isAdmin = profile?.roles.some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
+  const isAdmin = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
 
   useEffect(() => {
     const fetchResources = async () => {

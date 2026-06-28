@@ -149,7 +149,7 @@ export default function Profile() {
             <p className="text-gray-400 dark:text-gray-500 text-sm">{profile?.email}</p>
             
             <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {profile?.roles.map(role => (
+              {(profile?.roles || []).map(role => (
                 <span key={role} className="px-3 py-1 bg-[#5A5A40]/10 text-[#5A5A40] text-[10px] font-bold uppercase tracking-widest rounded-full">
                   {role}
                 </span>

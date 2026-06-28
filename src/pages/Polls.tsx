@@ -7,7 +7,7 @@ import { Poll, PollResponse, PollStatus, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { CommitteeAssignments } from '../components/CommitteeAssignments';
 import { motion } from 'motion/react';
-import { CheckCircle2, XCircle, HelpCircle, Calendar, Plus, Trash2, ChevronDown, Play, Pause, Settings, Check, Mail, Loader2, Copy, User, BookOpen, Users, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, HelpCircle, Calendar, Plus, Trash2, ChevronDown, Play, Pause, Settings, Check, Mail, Loader2, Copy, User, BookOpen, Users, Lock, Share2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { sendGmail } from '../lib/gmail';
 
@@ -25,6 +25,18 @@ export default function Polls() {
   const [pollResponses, setPollResponses] = useState<Record<string, PollResponse[]>>({});
   const [filter, setFilter] = useState<'latest' | 'all' | 'core' | 'committee'>('latest');
   const [expandedPolls, setExpandedPolls] = useState<Record<string, boolean>>({});
+  const [copiedPollId, setCopiedPollId] = useState<string | null>(null);
+
+  const handleSharePoll = (pollId: string, pollTitle: string) => {
+    const shareUrl = `${window.location.origin}/?pollId=${pollId}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopiedPollId(pollId);
+      setTimeout(() => setCopiedPollId(null), 2000);
+    }).catch(err => {
+      console.error("[ERROR] Failed to copy deep-link:", err);
+      alert(`Could not write to clipboard automatically. Here is the link to copy:\n${shareUrl}`);
+    });
+  };
 
   const [formData, setFormData] = useState({
     title: '',
@@ -45,6 +57,8 @@ export default function Polls() {
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
       const fetchedUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
       setUsers(fetchedUsers.filter(u => u.email !== 'kcfc.jp@gmail.com'));
+    }, (err) => {
+      console.error("Error listening to users in Polls page:", err);
     });
 
     // 2. Listen to polls
@@ -97,6 +111,9 @@ export default function Polls() {
           }
         }, 500);
       }
+    }, (err) => {
+      console.error("Error listening to polls in Polls page:", err);
+      setLoading(false);
     });
 
     return () => {
@@ -1080,8 +1097,27 @@ export default function Polls() {
                     <p className="text-sm text-gray-500 dark:text-gray-400 italic font-serif leading-relaxed line-clamp-1">{poll.description || `Pre-attendance for Mass on ${safeFormat(poll.massDate, 'MMM dd')}`}</p>
                   </div>
                   
-                  {canManage && (
-                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    {/* Share Poll Deep Link Button */}
+                    <button
+                      onClick={() => handleSharePoll(poll.id, poll.title)}
+                      className={cn(
+                        "p-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center cursor-pointer",
+                        copiedPollId === poll.id
+                          ? "text-green-600 dark:text-green-400 bg-green-500/10"
+                          : "text-gray-400 dark:text-gray-500 hover:text-[#5A5A40] dark:hover:text-[#8a8a65] hover:bg-gray-100 dark:hover:bg-[#252520]"
+                      )}
+                      title="Copy Share Link"
+                    >
+                      {copiedPollId === poll.id ? (
+                        <Check size={20} />
+                      ) : (
+                        <Share2 size={20} />
+                      )}
+                    </button>
+
+                    {canManage && (
+                      <>
                        <button
                         onClick={() => handleNotifyMembers(poll)}
                         disabled={!!notifying}
@@ -1155,8 +1191,8 @@ export default function Polls() {
                           <Trash2 size={20} />
                         </button>
                       )}
-                    </div>
-                  )}
+                    </>)}
+                  </div>
                 </button>
 
                 {expandedPolls[poll.id] && (

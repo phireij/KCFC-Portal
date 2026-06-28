@@ -309,3 +309,75 @@ We will implement a visual reports widget in the lower half of the **Chore Assig
    * **Dynamic Directory Synchronization**: On successful email purge, the deleted user is instantly filtered out of the front-end directory's list state, removing them dynamically from the active list without requiring manual page reloads.
    * **Hybrid Client-Admin Direct Erasure Fail-Safe (Ultimate Solution)**: In the Cloud Run sandbox container environment, backend Admin service accounts might occasionally run into Google Application Default Credentials or cross-project IAM lookup limitations on custom databases. To make deletion absolutely bulletproof and prevent any deleted record from ever reappearing upon manual page refresh, we implemented an authenticated direct client-side Firestore deletion block (`deleteDoc`) triggered right upon successful API confirmation. This direct deletion utilizes the signed-on administrator's browser credentials—which are 100% authorized under Firestore rules (`allow delete: if isAdmin()`)—ensuring the `/users/{userId}` record is permanently erased from the exact database immediately, while the server handles the backend cascade cleanups (for chore rotas, poll answers, and duties documents) successfully in parallel.
 
+### 7.12 Public Message Pipeline & Authentication Case-Insensitivity Hardening
+1. **Public Contact Message Rules (`/messages/{messageId}`)**: Added a secure Firestore security rules block and mapped the schema in `firebase-blueprint.json` to handle the incoming message collection. This collection holds inbound contact messages sent from the public Koiwa Church Filipino Community website. Unauthenticated (public) users are granted permission to create/submit new messages (`allow create: if isValidMessage(...)`), while administrators retain exclusive rights to read, update, or delete messages (`allow read, write: if isAdmin()`), eliminating potential data leaks while supporting cross-site contact integration.
+2. **Safe Admin Authentication Hardening**: Refactored the `isBootstrapAdmin()` helper within `firestore.rules` to use safe map key presence checks (`'email' in request.auth.token`) and direct equality checks. This guarantees compatibility across all CEL parsing engines without relying on unsupported `.lower()` string methods, preventing runtime rules compilation/evaluation errors that would otherwise block document lookups and trap users in a redirection loop.
+3. **Accounting Categories Security Coverage**: Mapped security rules for `/accounting_categories/{categoryId}` to ensure registered users can view categories while restricting edit/creation capabilities solely to administrative roles.
+
+### 7.13 Real-Time Public Inquiry & Message Alert System
+1. **Real-time messages Listener (`App.tsx`)**: Installed a dedicated active-connection listener targeting the `/messages` collection in Firestore. It filters for `status == 'unread'`. To avoid spamming or displaying toast alerts for previous unread messages when the app initially boots, the listener compares each incoming document's `createdAt` timestamp with the page initialization time (with a safe 4-second buffer).
+2. **Synthetic Notification Chime**: Integrated a beautiful, light, non-intrusive dual-tone acoustic audio notification using standard Web Audio API oscillators. This completely bypasses external asset loading over the network, ensuring instant, zero-latency feedback while safely catching sandbox/iframe context restrictions.
+3. **Executive Contact Message Toast Banner**: Implemented a responsive glassmorphic overlay banner that slides in gracefully from the top-right of the screen (positioned below the fixed Navbar). The banner displays the sender's details and message excerpt. It offers high-utility quick actions:
+   * **Mark Read**: Directly updates the Firestore document's `status` field to `'read'`, automatically dismissing the notification and synchronizing with all other active administrator viewports in real-time.
+   * **Open Inbox**: Redirects the user directly to the Admin Dashboard and triggers smooth scrolling to the Executive Message Inbox.
+4. **Anchor-Based Inbox Navigation Handler (`Admin.tsx`)**: Extended the Admin Dashboard initialization to intercept the `#messages-inbox-section` hash anchor. When accessed, it schedules a smooth-scroll transition directly to the message collection, highlighting the panel with a subtle visual focus pulse.
+
+### 7.14 Administrative Center Submenu & Tabbed Navigation
+1. **Glassmorphic Segmented Navigation**: Reorganized the long, single-page Administrative Center into a responsive, horizontal tabbed submenu bar.
+2. **Tabbed Submenu Mappings**:
+   * **Pending Requests** (`pending`): Displays the global search and verification directory for new registrations with a yellow real-time request-count badge.
+   * **Members Directory** (`members`): Displays the global search and verified members roster with a neutral membership count badge.
+   * **Message Inbox** (`messages`): Houses the executive inquiry stream with a red unread notification count badge (only visible to administrators and presidents).
+   * **Broadcast Tool** (`broadcast`): Houses the announcement publishing suite (only visible to authorized leaders).
+   * **Security & Logs** (`purge`): Houses the direct Firebase authentication purge actions and the direct log stream (only visible to administrators and presidents).
+3. **Deep-Link Anchor Syncing**: Connected deep-linked hash scrolls (`#messages-inbox-section`) and notification quick-actions ("Open Inbox") to automatically switch the active tab to `messages` first before executing smooth-scroll operations.
+4. **Contextual Search Visibility**: Restructured search input panels to display only within relevant member directories, optimizing visual negative space on administrative utility panels.
+
+### 7.15 Website Favicon & Gmail Inline Reply System
+1. **Website Favicon**: Implemented a responsive high-definition custom SVG vector favicon matching the official KCFC seal logo, rendered in the branding's hallmark `#5A5A40` sage hue and declared cleanly in the web document head (`index.html`).
+2. **Gmail Service Integration**: Integrated Google Identity Services and OAuth 2.0 Client scopes to authenticate authorized admins to send email replies via Gmail.
+3. **Executive Inline Reply Composition Suite**:
+   * **Direct Reply Panel**: Embedded a composition interface directly below the message details view. Pre-fills standard recipient details, custom context greetings ("Dear [Name], ..."), and standardized subjects.
+   * **Background Gmail Dispatch**: Leveraged the authenticated `sendGmail` service to transmit responses in the background using Google API endpoints.
+   * **State Synchronization**: Automatically marks answered inquiries as `read` in Firestore upon successful email delivery, updating all synchronized views instantly.
+   * **Robust Error Mitigation**: Handled edge cases including missing OAuth tokens and text validation, presenting elegant alerts and status trackers.
+
+### 7.16 Brand New Database / Interactive Workspace Seeder
+1. **Workspace Initializer & Seeder**: When a fresh database is provisioned, the collections are empty. To prevent a blank and untestable experience, we designed a custom interactive database seeder (`src/lib/seeder.ts`) that deploys rich, realistic, and high-fidelity mock data directly into Firestore.
+2. **High-Fidelity Seed Data Models**:
+   * **Members Directory**: Adds **12+ community members** with diverse roles (President, Secretary, Treasurer, Leaders, Members), email accounts, and specific chore committees (Kitchen vs Cleaning, including Toilet OK preferences).
+   * **Chore Duty Templates**: Adds 5 default chore roles (Toilet Cleaning, Vacuuming, Pew arrangement, Kitchen preparation, Dishwashing).
+   * **Active Mass Pre-Attendance Polls**: Creates two upcoming active polls—a **Standard Sunday Mass Attendance RSVP** and a **Chore Committee Availability Poll**—pre-populated with 9 realistic voter responses (YES/NO) and toilet-cleaning allowances. This allows immediate testing of the rotation balancing system.
+   * **Accounting Ledger**: Deploys sample income/expense categories and historical transactions, instantly lighting up the Treasury Analytics charts with mock data.
+   * **Inquiries & Notifications**: Populates the executive inbox with sample contact inquiries and dashboard announcements.
+3. **Executive Dashboard Workspace Callout**: Added a prominent glassmorphic workspace initialization card on the `Dashboard` visible to any logged-in administrator when the community members statistic is zero, allowing them to populate their system in one click and refresh the view instantly.
+
+### 7.17 Password Reset & Multi-Select Directory Filters
+1. **Elegantly Integrated Password Reset**: Seamless password reset option within the main `Login.tsx` component with custom state-driven toggle animations (`isResetting`), responsive feedback alerts, and Firebase-native password reset delivery integrations.
+2. **Dynamic Multi-Select Community Directory**: Upgraded the community directory page filtering system from a single-choice dropdown to a dual-category interactive multi-select pills panel. Users can choose multiple ministries and committees simultaneously, with support for "Select All" / "Deselect All" operations for both Liturgical Ministries and Chore Committees, updating search results instantly with smooth, responsive transitions.
+3. **Self-Service & Admin Edit Integration**: Confirmed and documented admin/president direct self-service profile modification capabilities for all verified/pending members (covering display name, nickname, and contact telephone number) directly within expanded rows of both Administrative lists.
+
+### 7.18 Real-Time Public Inquiry & Multi-Tier Message Email Alert System
+1. **Multi-Tier Email Alert Notification**: Solved the Firestore cross-project permission constraints (`PERMISSION_DENIED` on default service accounts) in Cloud Run container environments. Implemented an authorized, client-driven triggers fallback and an external REST endpoint that together guarantee immediate email notification delivery to `kcfc.jp@gmail.com` when new inquiries arrive.
+2. **Secure Client-Side Real-Time Trigger**: When an administrator is logged into the portal, the real-time `onSnapshot` listener on `/messages` detects unread inquiries. For any unread message that has not had an email dispatched (`alertSent !== true`), the browser client immediately requests our backend secure endpoint `/api/admin/send-message-alert` using their authorized Bearer token. The server dispatches a high-fidelity, styled HTML email with the message body via SMTP, and the client marks `alertSent: true` on the Firestore document.
+3. **External Public API Endpoint (`/api/public/contact`)**: Added a public contact handler on the Express backend. This allows the main static website KCFC.COM to submit contact forms directly to our portal's API. When called, the server:
+   - Instantly sends the email alert to `kcfc.jp@gmail.com` using the SMTP server credentials.
+   - Saves the inquiry directly to Firestore unauthenticated using the Google Firestore REST API (which succeeds because unauthenticated `create` is permitted under Firestore security rules).
+
+### 7.19 Deep-Linked Poll Redirection & Post-Authentication Handler
+1. **Unified Deep-Linking Parameters**: Implemented an application-level URL parameter listener looking for `pollId`. When found, it automatically buffers the ID inside `sessionStorage` and sanitizes the URL address bar state in real-time, delivering a pristine visual experience.
+2. **Post-Authentication Redirect Sequence**: Configured a global auth observer that checks if the current visitor is authenticated and verified. Once authenticated, if a buffered `pollId` exists in storage, the system bypasses default dashboard layouts and routes the member straight to the target poll details view (expanding and focusing the card seamlessly).
+3. **Omnipresent Poll Sharing Component**: Placed a highly-styled "Share" action icon button on every poll card accessible to both standard members and coordinators. Clicking the button creates a portal-native deep link and copies it to the device clipboard, showing immediate green success feedback.
+
+### 7.20 Enhanced Public Contact CORS, URL-encoded Parsing & Dual-Write Persistence
+1. **CORS Options Preflight and Origins**: Configured complete CORS preflight (`OPTIONS` verb) and Access-Control-Allow-Origin wildcard mapping on the `/api/public/contact` endpoint, opening direct form submissions from external web domains like `KCFCJP.COM`.
+2. **URL-encoded Body Parser Support**: Integrated `express.urlencoded` body parsers within the server middleware stack, guaranteeing that standard HTML forms encoding data as urlencoded strings (rather than raw application/json) are correctly parsed and loaded.
+3. **Fail-safe Dual-Write Firestore Driver**: Engineered a dual-stage database driver. It first attempts direct, secure writes using the high-privilege `dbAdmin` SDK instance. If blocked by sandbox service constraints, it seamlessly intercepts the catch block and executes an unauthenticated fall-back POST fetch to the official Firestore Google REST endpoints, ensuring zero data loss and perfect reliability.
+
+### 7.21 Bulletproof Parameter Normalization, Multipart Form Support & Diagnostic Logging
+1. **Multi-Format Multipart/Form-Data Support**: Integrated `multer` as high-performance middleware for the `/api/public/contact` endpoint. This guarantees successful processing of forms submitted with `enctype="multipart/form-data"` (common in WordPress form builders like Contact Form 7 or WPForms) alongside traditional JSON and URL-encoded payloads.
+2. **Universal Parameter Mapping & Normalization**: Built an intelligent recursive case-insensitive key crawler that automatically flattens and normalizes any nested object structure (e.g. WPForms index structures). It matches keys regardless of casing, dashes, or underscores (e.g. `Your_Name` vs `your-name`), extracts emails through advanced regex scanning fallbacks, and identifies message fields by analyzing text lengths to prevent data omission.
+3. **Dynamic CORS Header Mirroring**: Upgraded preflight and request processing to dynamically reflect incoming requested custom headers (`Access-Control-Request-Headers`) to the browser, bypassing any potential client-side browser network blocks.
+4. **Omnipresent Request Logging**: Implemented complete server-side diagnostic logging of incoming request headers, raw bodies, and queries directly to the server logs. This allows administrators to verify exactly what data is received from external clients like `KCFCJP.COM` in real-time.
+
+

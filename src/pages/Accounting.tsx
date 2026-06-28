@@ -131,6 +131,8 @@ export default function Accounting() {
       } else {
         setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingCategory)));
       }
+    }, (err) => {
+      console.error("Error listening to accounting categories:", err);
     });
 
     return () => {

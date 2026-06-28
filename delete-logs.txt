@@ -1,0 +1,49 @@
+
+[2026-06-28T15:30:58.623Z] [INBOUND CONTACT] Received request. Headers: {"host":"localhost:3000","connection":"keep-alive","content-type":"application/json","accept":"*/*","accept-language":"*","sec-fetch-mode":"cors","user-agent":"node","accept-encoding":"gzip, deflate","content-length":"134"} | Body: {"name":"Test JSON Name","email":"json@kcfcjp.com","subject":"Test JSON Subject","message":"This is a test message from JSON client."} | Query: {}
+[2026-06-28T15:30:58.623Z] [INBOUND CONTACT] Extracted fields => name: "Test JSON Name", email: "json@kcfcjp.com", subject: "Test JSON Subject", message: "This is a test message from JSON client...."
+[2026-06-28T15:30:58.623Z] [INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...
+[2026-06-28T15:31:00.660Z] [INBOUND CONTACT] SMTP mail dispatch SUCCESS.
+[2026-06-28T15:31:00.660Z] [INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...
+[2026-06-28T15:31:01.146Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
+[2026-06-28T15:31:01.147Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
+[2026-06-28T15:31:01.279Z] [SUCCESS] Message written to Firestore via REST API fallback.
+[2026-06-28T15:31:01.300Z] [INBOUND CONTACT] Received request. Headers: {"host":"localhost:3000","connection":"keep-alive","content-type":"application/x-www-form-urlencoded","accept":"*/*","accept-language":"*","sec-fetch-mode":"cors","user-agent":"node","accept-encoding":"gzip, deflate","content-length":"162"} | Body: {"your-name":"Test Urlencoded Name","your-email":"urlencoded@kcfcjp.com","your-subject":"Test Urlencoded Subject","your-message":"This is a test message from Urlencoded client."} | Query: {}
+[2026-06-28T15:31:01.300Z] [INBOUND CONTACT] Extracted fields => name: "Test Urlencoded Name", email: "urlencoded@kcfcjp.com", subject: "Test Urlencoded Subject", message: "This is a test message from Urlencoded client...."
+[2026-06-28T15:31:01.301Z] [INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...
+[2026-06-28T15:31:03.194Z] [INBOUND CONTACT] SMTP mail dispatch SUCCESS.
+[2026-06-28T15:31:03.194Z] [INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...
+[2026-06-28T15:31:03.281Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
+[2026-06-28T15:31:03.281Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
+[2026-06-28T15:31:03.368Z] [SUCCESS] Message written to Firestore via REST API fallback.
+[2026-06-28T15:31:03.382Z] [INBOUND CONTACT] Received request. Headers: {"host":"localhost:3000","connection":"keep-alive","content-type":"multipart/form-data; boundary=----formdata-undici-025372688110","accept":"*/*","accept-language":"*","sec-fetch-mode":"cors","user-agent":"node","accept-encoding":"gzip, deflate","content-length":"511"} | Body: {"your-name":"Test Multipart Name","your-email":"multipart@kcfcjp.com","your-subject":"Test Multipart Subject","your-message":"This is a test message from Multipart client."} | Query: {}
+[2026-06-28T15:31:03.383Z] [INBOUND CONTACT] Extracted fields => name: "Test Multipart Name", email: "multipart@kcfcjp.com", subject: "Test Multipart Subject", message: "This is a test message from Multipart client...."
+[2026-06-28T15:31:03.383Z] [INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...
+[2026-06-28T15:31:05.176Z] [INBOUND CONTACT] SMTP mail dispatch SUCCESS.
+[2026-06-28T15:31:05.176Z] [INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...
+[2026-06-28T15:31:05.292Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
+[2026-06-28T15:31:05.292Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
+[2026-06-28T15:31:05.368Z] [SUCCESS] Message written to Firestore via REST API fallback.
+[2026-06-28T15:34:29.382Z] [INBOUND CONTACT] Received request. Headers: {"host":"localhost:3000","connection":"keep-alive","content-type":"application/json","accept":"*/*","accept-language":"*","sec-fetch-mode":"cors","user-agent":"node","accept-encoding":"gzip, deflate","content-length":"134"} | Body: {"name":"Test JSON Name","email":"json@kcfcjp.com","subject":"Test JSON Subject","message":"This is a test message from JSON client."} | Query: {}
+[2026-06-28T15:34:29.383Z] [INBOUND CONTACT] Extracted fields => name: "Test JSON Name", email: "json@kcfcjp.com", subject: "Test JSON Subject", message: "This is a test message from JSON client...."
+[2026-06-28T15:34:29.383Z] [INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...
+[2026-06-28T15:34:31.521Z] [INBOUND CONTACT] SMTP mail dispatch SUCCESS.
+[2026-06-28T15:34:31.522Z] [INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...
+[2026-06-28T15:34:31.979Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
+[2026-06-28T15:34:31.979Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
+[2026-06-28T15:34:32.269Z] [SUCCESS] Message written to Firestore via REST API fallback.
+[2026-06-28T15:34:32.306Z] [INBOUND CONTACT] Received request. Headers: {"host":"localhost:3000","connection":"keep-alive","content-type":"application/x-www-form-urlencoded","accept":"*/*","accept-language":"*","sec-fetch-mode":"cors","user-agent":"node","accept-encoding":"gzip, deflate","content-length":"162"} | Body: {"your-name":"Test Urlencoded Name","your-email":"urlencoded@kcfcjp.com","your-subject":"Test Urlencoded Subject","your-message":"This is a test message from Urlencoded client."} | Query: {}
+[2026-06-28T15:34:32.306Z] [INBOUND CONTACT] Extracted fields => name: "Test Urlencoded Name", email: "urlencoded@kcfcjp.com", subject: "Test Urlencoded Subject", message: "This is a test message from Urlencoded client...."
+[2026-06-28T15:34:32.306Z] [INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...
+[2026-06-28T15:34:35.220Z] [INBOUND CONTACT] SMTP mail dispatch SUCCESS.
+[2026-06-28T15:34:35.220Z] [INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...
+[2026-06-28T15:34:35.295Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
+[2026-06-28T15:34:35.296Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
+[2026-06-28T15:34:35.389Z] [SUCCESS] Message written to Firestore via REST API fallback.
+[2026-06-28T15:34:35.403Z] [INBOUND CONTACT] Received request. Headers: {"host":"localhost:3000","connection":"keep-alive","content-type":"multipart/form-data; boundary=----formdata-undici-022375104456","accept":"*/*","accept-language":"*","sec-fetch-mode":"cors","user-agent":"node","accept-encoding":"gzip, deflate","content-length":"511"} | Body: {"your-name":"Test Multipart Name","your-email":"multipart@kcfcjp.com","your-subject":"Test Multipart Subject","your-message":"This is a test message from Multipart client."} | Query: {}
+[2026-06-28T15:34:35.404Z] [INBOUND CONTACT] Extracted fields => name: "Test Multipart Name", email: "multipart@kcfcjp.com", subject: "Test Multipart Subject", message: "This is a test message from Multipart client...."
+[2026-06-28T15:34:35.404Z] [INBOUND CONTACT] Attempting SMTP mail dispatch to kcfc.jp@gmail.com...
+[2026-06-28T15:34:38.495Z] [INBOUND CONTACT] SMTP mail dispatch SUCCESS.
+[2026-06-28T15:34:38.496Z] [INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...
+[2026-06-28T15:34:38.582Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
+[2026-06-28T15:34:38.582Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
+[2026-06-28T15:34:38.653Z] [SUCCESS] Message written to Firestore via REST API fallback.

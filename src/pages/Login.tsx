@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, Mail, Lock, User, ArrowRight, RefreshCw, Key, Eye, EyeOff } from 'lucide-react';
@@ -7,6 +7,7 @@ import { Logo } from '../components/ui/Logo';
 
 export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -33,7 +34,17 @@ export default function Login() {
       await signInWithPopup(auth, googleProvider);
     } catch (e: any) {
       console.error("Login failed", e);
-      setError(e.message || "Google Sign-In failed.");
+      let readableError = "Google Sign-In failed.";
+      if (e.code === 'auth/popup-closed-by-user') {
+        readableError = "The Google sign-in window was closed before completing. If you are viewing this inside the AI Studio preview window, please click the 'Open in New Tab' icon at the top right of the preview panel to log in, or use your Email and Password.";
+      } else if (e.code === 'auth/popup-blocked') {
+        readableError = "The Google sign-in window was blocked by your browser. Please allow popups for this site, click the 'Open in New Tab' icon at the top right of the preview panel, or use your Email and Password.";
+      } else if (e.code === 'auth/unauthorized-domain') {
+        readableError = "This domain is not authorized for Firebase Google Sign-In. Please ensure 'kcfcjp.com' and 'portal.kcfcjp.com' are added to Authorized Domains under Authentication -> Settings in your Firebase Console.";
+      } else if (e.message) {
+        readableError = e.message;
+      }
+      setError(readableError);
     } finally {
       setLoading(false);
     }
@@ -117,6 +128,33 @@ export default function Login() {
     }
   };
 
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setError("Please enter your email address to receive a password reset link.");
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setSuccessMsg("Password reset link has been sent to your email. Please check your inbox!");
+      setIsResetting(false);
+    } catch (e: any) {
+      console.error("Password reset error:", e);
+      let readableError = e.message;
+      if (e.code === 'auth/user-not-found') {
+        readableError = "No registered user found with this email address.";
+      } else if (e.code === 'auth/invalid-email') {
+        readableError = "Please enter a valid email address.";
+      }
+      setError(readableError);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] dark:bg-[#141411] p-4 font-sans transition-all duration-300">
       <motion.div 
@@ -137,20 +175,29 @@ export default function Login() {
           </div>
 
           {/* Form Actions Toggle */}
-          <div className="flex bg-gray-50 dark:bg-[#252520] p-1.5 rounded-2xl border border-gray-100/50 dark:border-white/5">
-            <button
-              onClick={() => { setIsSignUp(false); setError(null); setSuccessMsg(null); }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${!isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-            >
-              Log In
-            </button>
-            <button
-              onClick={() => { setIsSignUp(true); setError(null); setSuccessMsg(null); }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-            >
-              Sign Up
-            </button>
-          </div>
+          {isResetting ? (
+            <div className="space-y-2">
+              <h2 className="text-xl font-serif text-center text-[#1a1a1a] dark:text-white">Reset Password</h2>
+              <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                Enter your email address and we'll send you a secure link to reset your account credentials.
+              </p>
+            </div>
+          ) : (
+            <div className="flex bg-gray-50 dark:bg-[#252520] p-1.5 rounded-2xl border border-gray-100/50 dark:border-white/5">
+              <button
+                onClick={() => { setIsSignUp(false); setError(null); setSuccessMsg(null); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${!isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+              >
+                Log In
+              </button>
+              <button
+                onClick={() => { setIsSignUp(true); setError(null); setSuccessMsg(null); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
 
           {/* Alert Message Blocks */}
           <AnimatePresence mode="wait">
@@ -177,8 +224,8 @@ export default function Login() {
           </AnimatePresence>
 
           {/* Core Input Form */}
-          <form onSubmit={handleEmailAuthSubmit} className="space-y-4">
-            {isSignUp && (
+          <form onSubmit={isResetting ? handlePasswordReset : handleEmailAuthSubmit} className="space-y-4">
+            {isSignUp && !isResetting && (
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name</label>
                 <div className="relative">
@@ -210,41 +257,52 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-12 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 focus:outline-none cursor-pointer"
-                  title={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+            {!isResetting && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-12 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 focus:outline-none cursor-pointer"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Remember me Option Checkbox */}
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 dark:text-gray-400 select-none">
-                <input 
-                  type="checkbox" 
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-gray-250 dark:border-white/10 dark:bg-[#252520] w-4 h-4 cursor-pointer"
-                />
-                <span>Stay logged in for 90 days</span>
-              </label>
-            </div>
+            {!isSignUp && !isResetting && (
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 dark:text-gray-400 select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-gray-250 dark:border-white/10 dark:bg-[#252520] w-4 h-4 cursor-pointer"
+                  />
+                  <span>Stay logged in for 90 days</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setIsResetting(true); setError(null); setSuccessMsg(null); }}
+                  className="text-xs font-semibold text-[#5A5A40] dark:text-[#a5a58d] hover:underline cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
 
             <button
               type="submit"
@@ -255,31 +313,45 @@ export default function Login() {
                 <RefreshCw size={14} className="animate-spin" />
               ) : (
                 <>
-                  <span>{isSignUp ? 'Sign Up' : 'Log In'}</span>
+                  <span>{isResetting ? 'Send Reset Link' : isSignUp ? 'Sign Up' : 'Log In'}</span>
                   <ArrowRight size={14} />
                 </>
               )}
             </button>
+
+            {isResetting && (
+              <button
+                type="button"
+                onClick={() => { setIsResetting(false); setError(null); setSuccessMsg(null); }}
+                className="w-full flex items-center justify-center gap-2 py-3 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 text-xs font-bold uppercase tracking-widest rounded-full transition-all cursor-pointer mt-2"
+              >
+                Back to Log In
+              </button>
+            )}
           </form>
 
           {/* Social Logins Separator divider */}
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100 dark:border-white/5"></div></div>
-            <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest"><span className="bg-white dark:bg-[#1e1e1a] px-3 text-gray-400 dark:text-gray-550">Or continue with</span></div>
-          </div>
+          {!isResetting && (
+            <>
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100 dark:border-white/5"></div></div>
+                <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest"><span className="bg-white dark:bg-[#1e1e1a] px-3 text-gray-400 dark:text-gray-550">Or continue with</span></div>
+              </div>
 
-          {/* Social Active Login Buttons */}
-          <div>
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 bg-white dark:bg-[#252520] border border-gray-200 dark:border-white/5 rounded-full hover:bg-gray-50 dark:hover:bg-[#2c2c25] transition-colors shadow-xs cursor-pointer text-xs font-semibold text-gray-700 dark:text-[#f5f5f0]"
-            >
-              <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="" />
-              <span>Continue with Google</span>
-            </button>
-          </div>
+              {/* Social Active Login Buttons */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 bg-white dark:bg-[#252520] border border-gray-200 dark:border-white/5 rounded-full hover:bg-gray-50 dark:hover:bg-[#2c2c25] transition-colors shadow-xs cursor-pointer text-xs font-semibold text-gray-700 dark:text-[#f5f5f0]"
+                >
+                  <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="" />
+                  <span>Continue with Google</span>
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Portal Information Alert disclaimer block */}
           <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-950/10 rounded-2xl border border-blue-100/30 dark:border-blue-900/20">
