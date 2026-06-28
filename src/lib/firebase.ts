@@ -1,7 +1,22 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigFromFile from '../../firebase-applet-config.json';
+
+// Support loading from environment variables in production (Hostinger, etc.) to prevent git-overwrite of credentials
+const metaEnv = (import.meta as any).env || {};
+const envConfig = {
+  apiKey: metaEnv.VITE_FIREBASE_API_KEY,
+  authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: metaEnv.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: metaEnv.VITE_FIREBASE_APP_ID,
+  firestoreDatabaseId: metaEnv.VITE_FIREBASE_DATABASE_ID,
+};
+
+const hasEnvConfig = !!(envConfig.apiKey && envConfig.projectId);
+const firebaseConfig = hasEnvConfig ? envConfig : firebaseConfigFromFile;
 
 export const app = initializeApp(firebaseConfig);
 export const db = (firebaseConfig as any).firestoreDatabaseId 
