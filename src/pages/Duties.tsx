@@ -21,7 +21,7 @@ export default function Duties() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
-  const [activeTab, setActiveTab] = useState<'core' | 'liturgical'>((searchParams.get('tab') as any) === 'liturgical' ? 'liturgical' : 'core');
+  const [activeTab, setActiveTab] = useState<'core' | 'liturgical'>((searchParams.get('tab') as any) === 'core' ? 'core' : 'liturgical');
   
   // Committee polls state
   const [committeePolls, setCommitteePolls] = useState<Poll[]>([]);
@@ -281,18 +281,6 @@ export default function Duties() {
       {/* Tabs */}
       <div className="flex items-center gap-2 bg-white/50 dark:bg-[#1e1e1a]/50 p-1.5 rounded-[2rem] border border-gray-100 dark:border-white/5 w-fit">
         <button
-          onClick={() => setActiveTab('core')}
-          className={cn(
-            "flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all",
-            activeTab === 'core' 
-              ? "bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] shadow-lg" 
-              : "text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-[#252520]"
-          )}
-        >
-          <Users size={16} />
-          Chore Assignment
-        </button>
-        <button
           onClick={() => setActiveTab('liturgical')}
           className={cn(
             "flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all",
@@ -303,6 +291,18 @@ export default function Duties() {
         >
           <BookOpen size={16} />
           Liturgical Ministry Assignment & Scheduling
+        </button>
+        <button
+          onClick={() => setActiveTab('core')}
+          className={cn(
+            "flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all",
+            activeTab === 'core' 
+              ? "bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] shadow-lg" 
+              : "text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-[#252520]"
+          )}
+        >
+          <Users size={16} />
+          Chore Assignment
         </button>
       </div>
 

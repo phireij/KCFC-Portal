@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, memoryLocalCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import firebaseConfigFromFile from '../../firebase-applet-config.json';
 
 // Support loading from environment variables in production (Hostinger, etc.) to prevent git-overwrite of credentials
@@ -16,17 +16,56 @@ const envConfig = {
 };
 
 const hasEnvConfig = !!(envConfig.apiKey && envConfig.projectId);
-const firebaseConfig = hasEnvConfig ? envConfig : { ...firebaseConfigFromFile };
+const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
+const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasEnvConfig ? envConfig : {});
 
 // Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
-if (metaEnv.VITE_FIREBASE_DATABASE_ID) {
+// If the environment variable is set to "(default)", it should not overwrite our custom database ID
+if (metaEnv.VITE_FIREBASE_DATABASE_ID && metaEnv.VITE_FIREBASE_DATABASE_ID !== "(default)") {
   (firebaseConfig as any).firestoreDatabaseId = metaEnv.VITE_FIREBASE_DATABASE_ID;
+} else if ((firebaseConfig as any).firestoreDatabaseId === "(default)") {
+  if (hasFileConfig && firebaseConfigFromFile.firestoreDatabaseId && firebaseConfigFromFile.firestoreDatabaseId !== "(default)") {
+    (firebaseConfig as any).firestoreDatabaseId = firebaseConfigFromFile.firestoreDatabaseId;
+  } else {
+    delete (firebaseConfig as any).firestoreDatabaseId;
+  }
 }
 
 export const app = initializeApp(firebaseConfig);
-export const db = (firebaseConfig as any).firestoreDatabaseId 
-  ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId) 
-  : getFirestore(app);
+
+// Initialize Firestore with robust persistent local cache and graceful memory/standard fallbacks
+let firestoreInstance;
+const dbId = (firebaseConfig as any).firestoreDatabaseId;
+
+try {
+  const cacheSettings = {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  };
+  firestoreInstance = dbId 
+    ? initializeFirestore(app, cacheSettings, dbId)
+    : initializeFirestore(app, cacheSettings);
+  console.log("Firestore: Initialized successfully with persistent local cache.");
+} catch (err) {
+  console.warn("Firestore: Persistent local cache initialization failed or unsupported in this environment. Falling back to default/memory cache.", err);
+  try {
+    // If it was already registered or initialized, retrieve the existing instance
+    firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  } catch (err2) {
+    console.error("Firestore standard retrieval failed, initializing with memory local cache.", err2);
+    try {
+      firestoreInstance = dbId
+        ? initializeFirestore(app, { localCache: memoryLocalCache() }, dbId)
+        : initializeFirestore(app, { localCache: memoryLocalCache() });
+    } catch (err3) {
+      console.error("Firestore memory cache initialization failed, falling back to standard getFirestore:", err3);
+      firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+    }
+  }
+}
+
+export const db = firestoreInstance;
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const facebookProvider = new FacebookAuthProvider();

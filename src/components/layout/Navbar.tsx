@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { auth } from '../../lib/firebase';
 import { useAuth } from '../../App';
-import { LayoutDashboard, ClipboardList, BookOpen, Calendar, Settings, LogOut, ShieldCheck, UserCircle, Users, Megaphone, Bell, DollarSign } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, BookOpen, Calendar, Settings, LogOut, ShieldCheck, UserCircle, Users, Megaphone, Bell, DollarSign, Mail } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Logo } from '../ui/Logo';
 import NotificationCenter from '../ui/NotificationCenter';
@@ -23,7 +23,8 @@ export default function Navbar() {
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Duties', icon: Calendar, path: '/duties' },
     { label: 'Resources', icon: BookOpen, path: '/resources' },
-    { label: 'Profile', icon: UserCircle, path: '/profile' },
+    { label: 'Inbox', icon: Mail, path: '/inbox' },
+    { label: 'My Profile', icon: UserCircle, path: '/profile' },
     ...(isAdmin ? [{ label: 'Admin', icon: Settings, path: '/admin' }] : []),
   ];
 
@@ -36,7 +37,7 @@ export default function Navbar() {
               <Logo className="w-5 h-5 sm:w-7 sm:h-7" />
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-              <span className="font-serif text-sm sm:text-lg font-medium text-[#1a1a1a] dark:text-[#f5f5f0] whitespace-nowrap">KCFC Core Group</span>
+              <span className="font-serif text-sm sm:text-lg font-medium text-[#1a1a1a] dark:text-[#f5f5f0] whitespace-nowrap">KCFC Portal</span>
             </div>
           </Link>
           
@@ -52,7 +53,7 @@ export default function Navbar() {
                     : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1e1e1a]"
                 )}
               >
-                <item.icon size={16} />
+                <item.icon className="nav-icon-desktop shrink-0" />
                 {item.label}
               </Link>
             ))}
@@ -73,7 +74,7 @@ export default function Navbar() {
               className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
               title="Logout"
             >
-              <LogOut className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
+              <LogOut className="nav-icon-mobile" />
             </button>
           </div>
         </div>
@@ -93,7 +94,7 @@ export default function Navbar() {
                   : "text-gray-400 dark:text-[10px] dark:text-gray-500 active:bg-gray-50 dark:active:bg-[#1e1e1a]"
               )}
             >
-              <item.icon className="w-[18px] h-[18px] sm:w-[22px] sm:h-[22px]" strokeWidth={location.pathname === item.path ? 2.5 : 2} />
+              <item.icon className="nav-icon-mobile shrink-0" strokeWidth={location.pathname === item.path ? 2.5 : 2} />
               <span className={cn(
                 "text-[8px] sm:text-[9px] font-bold uppercase tracking-wider",
                 location.pathname === item.path ? "opacity-100" : "opacity-70"

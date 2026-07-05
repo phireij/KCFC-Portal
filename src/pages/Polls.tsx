@@ -26,6 +26,7 @@ export default function Polls() {
   const [filter, setFilter] = useState<'latest' | 'all' | 'core' | 'committee'>('latest');
   const [expandedPolls, setExpandedPolls] = useState<Record<string, boolean>>({});
   const [copiedPollId, setCopiedPollId] = useState<string | null>(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
 
   const handleSharePoll = (pollId: string, pollTitle: string) => {
     const shareUrl = `${window.location.origin}/?pollId=${pollId}`;
@@ -124,7 +125,7 @@ export default function Polls() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManage) return;
+    if (!canManage || formSubmitting) return;
 
     if (formData.category === 'core_member') {
       const duplicate = polls.find(p => p.category === formData.category && p.massDate === formData.massDate && (!editingPoll || p.id !== editingPoll.id));
@@ -133,6 +134,8 @@ export default function Polls() {
         return;
       }
     }
+
+    setFormSubmitting(true);
 
     try {
       const isDraft = (e.nativeEvent as any).submitter?.name === 'draft';
@@ -151,6 +154,7 @@ export default function Polls() {
         if (isStarted) {
           if (new Date(formData.endDate) < new Date()) {
             alert("End date cannot be set earlier than the current time for an active poll.");
+            setFormSubmitting(false);
             return;
           }
         }
@@ -225,6 +229,8 @@ export default function Polls() {
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'polls');
+    } finally {
+      setFormSubmitting(false);
     }
   };
 
@@ -641,7 +647,7 @@ export default function Polls() {
               </a>
             </p>
             <p style="font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; margin-top: 40px;">
-              This is an automated notification from the KCFC Core Group Portal.
+              This is an automated notification from the KCFC Portal.
             </p>
           </div>
         </div>
@@ -937,31 +943,56 @@ export default function Polls() {
                 <>
                   <button
                     type="submit"
-                    className="flex-1 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] shadow-lg hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all cursor-pointer"
+                    disabled={formSubmitting}
+                    className="flex-1 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] shadow-lg hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    Publish Poll
+                    {formSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Publishing...
+                      </>
+                    ) : (
+                      'Publish Poll'
+                    )}
                   </button>
                   <button
                     type="submit"
                     name="draft"
                     value="draft"
-                    className="flex-1 py-4 bg-white dark:bg-[#1e1e1a] text-[#5A5A40] dark:text-[#8a8a65] border-2 border-[#5A5A40] dark:border-[#8a8a65]/50 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-[#5A5A40]/5 dark:hover:bg-[#8a8a65]/5 transition-all cursor-pointer"
+                    disabled={formSubmitting}
+                    className="flex-1 py-4 bg-white dark:bg-[#1e1e1a] text-[#5A5A40] dark:text-[#8a8a65] border-2 border-[#5A5A40] dark:border-[#8a8a65]/50 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-[#5A5A40]/5 dark:hover:bg-[#8a8a65]/5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    Save as Draft
+                    {formSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save as Draft'
+                    )}
                   </button>
                 </>
               ) : (
                 <button
                   type="submit"
-                  className="flex-1 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] shadow-lg hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all cursor-pointer"
+                  disabled={formSubmitting}
+                  className="flex-1 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] shadow-lg hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Update Poll
+                  {formSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Poll'
+                  )}
                 </button>
               )}
               <button
                 type="button"
+                disabled={formSubmitting}
                 onClick={() => setShowingCreate(false)}
-                className="px-8 py-4 bg-gray-100 dark:bg-[#252520] text-gray-400 dark:text-gray-500 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-gray-200 dark:hover:bg-gray-700 transition-all cursor-pointer"
+                className="px-8 py-4 bg-gray-100 dark:bg-[#252520] text-gray-400 dark:text-gray-500 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-gray-200 dark:hover:bg-gray-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -980,7 +1011,11 @@ export default function Polls() {
       ) : (
         <div className="grid grid-cols-1 gap-8">
           {filteredPolls.map(poll => {
-            const hasVoted = !!userResponses[poll.id] && userResponses[poll.id].attendance !== null && userResponses[poll.id].attendance !== undefined;
+            const hasVoted = !!userResponses[poll.id] && (
+              poll.category === 'committee'
+                ? (Array.isArray(userResponses[poll.id].selectedOptions) && userResponses[poll.id].selectedOptions.length > 0)
+                : (userResponses[poll.id].attendance !== null && userResponses[poll.id].attendance !== undefined)
+            );
             const now = new Date();
             const start = new Date(poll.startDate);
             const end = new Date(poll.endDate);
@@ -994,7 +1029,11 @@ export default function Polls() {
             // Calculate non-responded (pending) users
             const respondedUserIds = new Set(
               (pollResponses[poll.id] || [])
-                .filter(r => r.attendance !== null && r.attendance !== undefined)
+                .filter(r => 
+                  poll.category === 'committee'
+                    ? (Array.isArray(r.selectedOptions) && r.selectedOptions.length > 0)
+                    : (r.attendance !== null && r.attendance !== undefined)
+                )
                 .map(r => r.userId)
             );
             const eligibleUsers = (poll.category === 'core_member'
@@ -1067,7 +1106,7 @@ export default function Polls() {
                          isActive ? 'Active' :
                          isFinished ? 'Finished' : 'Paused'}
                       </span>
-                      {poll.status === 'active' && pendingUsers.length === 0 && showPendingList && (
+                      {isActive && pendingUsers.length === 0 && showPendingList && (
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
@@ -1216,7 +1255,7 @@ export default function Polls() {
                       </div>
                     )}
 
-                    {poll.status === 'active' && pendingUsers.length === 0 && showPendingList && (
+                    {isActive && pendingUsers.length === 0 && showPendingList && (
                       <div className="p-5 bg-amber-50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900/30 rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 bg-amber-500 text-white rounded-full">

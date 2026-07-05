@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
+import { doc, setDoc, serverTimestamp, getDoc, updateDoc, getDocFromServer, query, collection, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { auth, googleProvider, db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, Mail, Lock, User, ArrowRight, RefreshCw, Key, Eye, EyeOff } from 'lucide-react';
 import { Logo } from '../components/ui/Logo';
@@ -16,6 +17,13 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isInIframe] = useState(() => {
+    try {
+      return window.self !== window.top;
+    } catch (e) {
+      return true;
+    }
+  });
 
   const saveRememberMeState = () => {
     localStorage.setItem('kcfc_remember_me', rememberMe ? 'true' : 'false');
@@ -31,7 +39,74 @@ export default function Login() {
     setLoading(true);
     try {
       saveRememberMeState();
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      
+      // Force direct write for Google login/signup to ensure profile document always exists in Firestore
+      if (result.user) {
+        sessionStorage.setItem('kcfc_just_authenticated', 'true');
+        const userDocRef = doc(db, 'users', result.user.uid);
+        const isBootstrapAdmin = result.user.email?.toLowerCase() === 'kcfc.jp@gmail.com';
+        
+        try {
+          const userDocSnap = await getDoc(userDocRef);
+          if (!userDocSnap.exists()) {
+            // Check if there is an existing pre-registered pending document with this email
+            const emailLower = (result.user.email || '').trim().toLowerCase();
+            let pendingData: any = null;
+            let pendingDocId: string | null = null;
+
+            if (emailLower) {
+              try {
+                const checkPendingId = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const pendingDocRef = doc(db, 'users', checkPendingId);
+                const pendingDocSnap = await getDoc(pendingDocRef);
+                if (pendingDocSnap.exists()) {
+                  pendingData = pendingDocSnap.data();
+                  pendingDocId = checkPendingId;
+                }
+              } catch (qErr) {
+                console.error("Error fetching pending user document during login:", qErr);
+              }
+            }
+
+            if (pendingData) {
+              await setDoc(userDocRef, {
+                uid: result.user.uid,
+                email: emailLower,
+                displayName: pendingData.displayName || result.user.displayName || 'Member',
+                photoURL: pendingData.photoURL || result.user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingData.displayName || 'Member')}&background=5A5A40&color=fff`,
+                roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
+                ministries: pendingData.ministries || [],
+                isEmailVerified: isBootstrapAdmin || result.user.emailVerified || pendingData.isEmailVerified || true,
+                isVerified: isBootstrapAdmin || pendingData.isVerified || false,
+                isDisabled: pendingData.isDisabled || false,
+                createdAt: pendingData.createdAt || serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+
+              if (pendingDocId) {
+                await deleteDoc(doc(db, 'users', pendingDocId));
+                console.log(`Login successfully migrated pending document ${pendingDocId} to real UID ${result.user.uid}`);
+              }
+            } else {
+              await setDoc(userDocRef, {
+                uid: result.user.uid,
+                email: result.user.email || '',
+                displayName: isBootstrapAdmin ? 'ADMIN' : (result.user.displayName || 'Member'),
+                photoURL: result.user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(result.user.displayName || 'Member')}&background=5A5A40&color=fff`,
+                roles: isBootstrapAdmin ? ['admin'] : ['member'],
+                ministries: [],
+                isEmailVerified: isBootstrapAdmin || result.user.emailVerified || true,
+                isVerified: isBootstrapAdmin,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            }
+          }
+        } catch (fsErr) {
+          console.error("Failed to write/check Firestore user document on Google Sign-In:", fsErr);
+        }
+      }
     } catch (e: any) {
       console.error("Login failed", e);
       let readableError = "Google Sign-In failed.";
@@ -68,12 +143,75 @@ export default function Login() {
           setLoading(false);
           return;
         }
+        // Prevent race conditions and premature unmounting in App.tsx by setting the flags BEFORE creating the Auth user
+        sessionStorage.setItem('kcfc_registration_in_progress', 'true');
+        sessionStorage.setItem('kcfc_just_authenticated', 'true');
+
         // 1. Create User
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        
         // 2. Set Profile Display Name
         await updateProfile(cred.user, {
           displayName: name.trim()
         });
+
+        // Create the user profile in Firestore directly to prevent race conditions or "Member" placeholder displayName
+        const userDocRef = doc(db, 'users', cred.user.uid);
+        const isBootstrapAdmin = cred.user.email?.toLowerCase() === 'kcfc.jp@gmail.com';
+        
+        // Since this is a newly created authenticated user, their UID document cannot exist yet.
+        // Check if there is an existing pre-registered pending document with their email
+        const emailLower = (cred.user.email || '').trim().toLowerCase();
+        let pendingData: any = null;
+        let pendingDocId: string | null = null;
+        
+        if (emailLower) {
+          try {
+            const checkPendingId = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const pendingDocRef = doc(db, 'users', checkPendingId);
+            const pendingDocSnap = await getDoc(pendingDocRef);
+            if (pendingDocSnap.exists()) {
+              pendingData = pendingDocSnap.data();
+              pendingDocId = checkPendingId;
+            }
+          } catch (qErr) {
+            console.error("Error fetching pending user document during signup:", qErr);
+          }
+        }
+        
+        if (pendingData) {
+          await setDoc(userDocRef, {
+            uid: cred.user.uid,
+            email: emailLower,
+            displayName: pendingData.displayName || name.trim(),
+            photoURL: pendingData.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=5A5A40&color=fff`,
+            roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
+            ministries: pendingData.ministries || [],
+            isEmailVerified: isBootstrapAdmin || pendingData.isEmailVerified || false,
+            isVerified: isBootstrapAdmin || pendingData.isVerified || false,
+            isDisabled: pendingData.isDisabled || false,
+            createdAt: pendingData.createdAt || serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+          
+          if (pendingDocId) {
+            await deleteDoc(doc(db, 'users', pendingDocId));
+            console.log(`Signup successfully migrated pending document ${pendingDocId} to real UID ${cred.user.uid}`);
+          }
+        } else {
+          await setDoc(userDocRef, {
+            uid: cred.user.uid,
+            email: cred.user.email || '',
+            displayName: isBootstrapAdmin ? 'ADMIN' : name.trim(),
+            photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=5A5A40&color=fff`,
+            roles: isBootstrapAdmin ? ['admin'] : ['member'],
+            ministries: [],
+            isEmailVerified: isBootstrapAdmin || false,
+            isVerified: isBootstrapAdmin,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
         
         // 3. Send Verification Email (Attempt server SMTP dispatch, with fallback to standard Firebase Client email)
         try {
@@ -109,6 +247,7 @@ export default function Login() {
       } else {
         // Sign In
         await signInWithEmailAndPassword(auth, email.trim(), password);
+        sessionStorage.setItem('kcfc_just_authenticated', 'true');
       }
     } catch (e: any) {
       console.error("Authentication error:", e);
@@ -174,195 +313,221 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Form Actions Toggle */}
-          {isResetting ? (
-            <div className="space-y-2">
-              <h2 className="text-xl font-serif text-center text-[#1a1a1a] dark:text-white">Reset Password</h2>
-              <p className="text-center text-xs text-gray-500 dark:text-gray-400">
-                Enter your email address and we'll send you a secure link to reset your account credentials.
-              </p>
-            </div>
-          ) : (
-            <div className="flex bg-gray-50 dark:bg-[#252520] p-1.5 rounded-2xl border border-gray-100/50 dark:border-white/5">
-              <button
-                onClick={() => { setIsSignUp(false); setError(null); setSuccessMsg(null); }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${!isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-              >
-                Log In
-              </button>
-              <button
-                onClick={() => { setIsSignUp(true); setError(null); setSuccessMsg(null); }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-              >
-                Sign Up
-              </button>
-            </div>
-          )}
-
-          {/* Alert Message Blocks */}
-          <AnimatePresence mode="wait">
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-xs leading-relaxed text-center"
-              >
-                {error}
-              </motion.div>
-            )}
-            {successMsg && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="bg-green-50 border border-green-100 text-green-600 p-4 rounded-2xl text-xs leading-relaxed text-center font-medium"
-              >
-                {successMsg}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Core Input Form */}
-          <form onSubmit={isResetting ? handlePasswordReset : handleEmailAuthSubmit} className="space-y-4">
-            {isSignUp && !isResetting && (
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter your name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full pl-11 pr-5 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  type="email"
-                  required
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-11 pr-5 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
-                />
-              </div>
-            </div>
-
-            {!isResetting && (
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-11 pr-12 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 focus:outline-none cursor-pointer"
-                    title={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Remember me Option Checkbox */}
-            {!isSignUp && !isResetting && (
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 dark:text-gray-400 select-none">
-                  <input 
-                    type="checkbox" 
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-gray-250 dark:border-white/10 dark:bg-[#252520] w-4 h-4 cursor-pointer"
-                  />
-                  <span>Stay logged in for 90 days</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => { setIsResetting(true); setError(null); setSuccessMsg(null); }}
-                  className="text-xs font-semibold text-[#5A5A40] dark:text-[#a5a58d] hover:underline cursor-pointer"
+          {/* Form Actions Toggle / Success View */}
+          {successMsg ? (
+            <div className="space-y-6 pt-4">
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-green-50/80 border border-green-150 text-green-850 p-6 rounded-3xl text-xs leading-relaxed text-center font-medium shadow-sm space-y-4"
                 >
-                  Forgot password?
-                </button>
-              </div>
-            )}
+                  <div className="w-12 h-12 bg-green-100 text-green-650 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </div>
+                  <p className="text-sm font-semibold">{successMsg}</p>
+                </motion.div>
+              </AnimatePresence>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-4 bg-[#5A5A40] hover:bg-[#4E4E37] text-white text-xs font-bold uppercase tracking-widest rounded-full transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-            >
-              {loading ? (
-                <RefreshCw size={14} className="animate-spin" />
-              ) : (
-                <>
-                  <span>{isResetting ? 'Send Reset Link' : isSignUp ? 'Sign Up' : 'Log In'}</span>
-                  <ArrowRight size={14} />
-                </>
-              )}
-            </button>
-
-            {isResetting && (
               <button
                 type="button"
-                onClick={() => { setIsResetting(false); setError(null); setSuccessMsg(null); }}
-                className="w-full flex items-center justify-center gap-2 py-3 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 text-xs font-bold uppercase tracking-widest rounded-full transition-all cursor-pointer mt-2"
+                onClick={() => {
+                  sessionStorage.removeItem('kcfc_registration_in_progress');
+                  window.location.reload();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-[#5A5A40] hover:bg-[#4E4E37] text-white text-xs font-bold uppercase tracking-widest rounded-full shadow-md hover:shadow-lg transition-all cursor-pointer font-sans"
               >
-                Back to Log In
+                <span>Proceed to Verification Page</span>
+                <ArrowRight size={14} />
               </button>
-            )}
-          </form>
-
-          {/* Social Logins Separator divider */}
-          {!isResetting && (
+            </div>
+          ) : (
             <>
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100 dark:border-white/5"></div></div>
-                <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest"><span className="bg-white dark:bg-[#1e1e1a] px-3 text-gray-400 dark:text-gray-550">Or continue with</span></div>
+              {isResetting ? (
+                <div className="space-y-2">
+                  <h2 className="text-xl font-serif text-center text-[#1a1a1a] dark:text-white">Reset Password</h2>
+                  <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                    Enter your email address and we'll send you a secure link to reset your account credentials.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex bg-gray-50 dark:bg-[#252520] p-1.5 rounded-2xl border border-gray-100/50 dark:border-white/5">
+                  <button
+                    onClick={() => { setIsSignUp(false); setError(null); setSuccessMsg(null); }}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${!isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                  >
+                    Log In
+                  </button>
+                  <button
+                    onClick={() => { setIsSignUp(true); setError(null); setSuccessMsg(null); }}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all cursor-pointer ${isSignUp ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+              )}
+
+              {/* Alert Message Blocks */}
+              <AnimatePresence mode="wait">
+                {error && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-xs leading-relaxed text-center"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Core Input Form */}
+              <form onSubmit={isResetting ? handlePasswordReset : handleEmailAuthSubmit} className="space-y-4">
+                {isSignUp && !isResetting && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name</label>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Enter your name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full pl-11 pr-5 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                      type="email"
+                      required
+                      placeholder="name@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-11 pr-5 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
+                    />
+                  </div>
+                </div>
+
+                {!isResetting && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full pl-11 pr-12 py-3.5 bg-gray-50 dark:bg-[#252520] focus:bg-white dark:focus:bg-[#1e1e1a] rounded-2xl border border-gray-100 dark:border-white/5 focus:border-[#5A5A40] dark:focus:border-[#8a8a65] focus:ring-1 focus:ring-[#5A5A40] text-gray-900 dark:text-white transition-all text-sm outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 focus:outline-none cursor-pointer"
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Remember me Option Checkbox */}
+                {!isSignUp && !isResetting && (
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 dark:text-gray-400 select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-gray-250 dark:border-white/10 dark:bg-[#252520] w-4 h-4 cursor-pointer"
+                      />
+                      <span>Stay logged in for 90 days</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => { setIsResetting(true); setError(null); setSuccessMsg(null); }}
+                      className="text-xs font-semibold text-[#5A5A40] dark:text-[#a5a58d] hover:underline cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-4 bg-[#5A5A40] hover:bg-[#4E4E37] text-white text-xs font-bold uppercase tracking-widest rounded-full transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                >
+                  {loading ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <>
+                      <span>{isResetting ? 'Send Reset Link' : isSignUp ? 'Sign Up' : 'Log In'}</span>
+                      <ArrowRight size={14} />
+                    </>
+                  )}
+                </button>
+
+                {isResetting && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsResetting(false); setError(null); setSuccessMsg(null); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 text-xs font-bold uppercase tracking-widest rounded-full transition-all cursor-pointer mt-2"
+                  >
+                    Back to Log In
+                  </button>
+                )}
+              </form>
+
+              {/* Social Logins Separator divider */}
+              {!isResetting && (
+                <>
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100 dark:border-white/5"></div></div>
+                    <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest"><span className="bg-white dark:bg-[#1e1e1a] px-3 text-gray-400 dark:text-gray-550">Or continue with</span></div>
+                  </div>
+
+                  {/* Social Active Login Buttons */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      disabled={loading}
+                      className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 bg-white dark:bg-[#252520] border border-gray-200 dark:border-white/5 rounded-full hover:bg-gray-50 dark:hover:bg-[#2c2c25] transition-colors shadow-xs cursor-pointer text-xs font-semibold text-gray-700 dark:text-[#f5f5f0]"
+                    >
+                      <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="" />
+                      <span>Continue with Google</span>
+                    </button>
+                    {isInIframe && (
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium leading-relaxed text-center mt-3">
+                        💡 If you are viewing this inside the AI Studio preview, Google Sign-In requires opening the app in a <strong>New Tab</strong> (using the arrow icon at top-right of the preview panel). Otherwise, please use your Email and Password.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Portal Information Alert disclaimer block */}
+              <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-950/10 rounded-2xl border border-blue-100/30 dark:border-blue-900/20">
+                <p className="text-[10px] text-blue-600/80 dark:text-blue-400 font-medium leading-relaxed text-center">
+                  Please make sure your registered name matches your church records for faster coordinator approval.
+                </p>
               </div>
 
-              {/* Social Active Login Buttons */}
-              <div>
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 bg-white dark:bg-[#252520] border border-gray-200 dark:border-white/5 rounded-full hover:bg-gray-50 dark:hover:bg-[#2c2c25] transition-colors shadow-xs cursor-pointer text-xs font-semibold text-gray-700 dark:text-[#f5f5f0]"
-                >
-                  <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="" />
-                  <span>Continue with Google</span>
-                </button>
+              <div className="text-[10px] text-gray-300 uppercase tracking-widest font-bold text-center">
+                Membership Management System
               </div>
             </>
           )}
-
-          {/* Portal Information Alert disclaimer block */}
-          <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-950/10 rounded-2xl border border-blue-100/30 dark:border-blue-900/20">
-            <p className="text-[10px] text-blue-600/80 dark:text-blue-400 font-medium leading-relaxed text-center">
-              Please make sure your registered name matches your church records for faster coordinator approval.
-              </p>
-          </div>
-
-          <div className="text-[10px] text-gray-300 uppercase tracking-widest font-bold text-center">
-            Membership Management System
-          </div>
         </div>
       </motion.div>
     </div>

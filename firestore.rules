@@ -143,7 +143,11 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isApproved();
       allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
-                    (isBootstrapAdmin() || (incoming().roles == ['member'] && incoming().isVerified == false));
+                    (isBootstrapAdmin() || (
+                      incoming().roles.hasAll(['member']) && 
+                      incoming().roles.size() == 1 && 
+                      incoming().isVerified == false
+                    ));
       allow update: if isSignedIn() && (
         (isOwner(userId) && (
           isBootstrapAdmin() || 
@@ -172,7 +176,7 @@ service cloud.firestore {
       match /responses/{responseId} {
         function isValidResponse(data) {
           return data.pollId == pollId &&
-                 data.userId == request.auth.uid &&
+                 (data.userId == request.auth.uid || isAdmin()) &&
                  (!('attendance' in data) || data.attendance == null || data.attendance in ['yes', 'no', 'maybe']) &&
                  (!('toiletOk' in data) || data.toiletOk is bool) &&
                  (!('selectedOptions' in data) || data.selectedOptions is list);
@@ -180,8 +184,9 @@ service cloud.firestore {
 
         allow read: if isApproved();
         allow create: if isApproved() && isValidResponse(incoming());
-        allow update: if isApproved() && isOwner(existing().userId) && isValidResponse(incoming()) &&
-                      incoming().diff(existing()).affectedKeys().hasOnly(['attendance', 'notes', 'selectedOptions', 'submittedAt', 'toiletOk']);
+        allow update: if (isApproved() && isOwner(existing().userId) && isValidResponse(incoming()) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['attendance', 'notes', 'selectedOptions', 'submittedAt', 'toiletOk'])) ||
+                      (isAdmin() && isValidResponse(incoming()));
         allow delete: if isAdmin();
       }
     }
@@ -232,7 +237,13 @@ service cloud.firestore {
 
     // --- Notifications Collection ---
     match /notifications/{notificationId} {
-      allow read, update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read, update: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.get('userId', '') == request.auth.uid);
+      allow delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.get('userId', '') == request.auth.uid ||
+        isAdmin() ||
+        isBootstrapAdmin()
+      );
       allow create: if isAdmin() || isLeader();
     }
 

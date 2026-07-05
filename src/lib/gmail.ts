@@ -61,10 +61,15 @@ export const sendGmail = async (to: string, subject: string, body: string) => {
   
   const utf8Subject = `=?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`;
   const message = [
+    'From: "KCFC Liturgical Scheduler" <me>',
     `To: ${to}`,
     `Subject: ${utf8Subject}`,
     'Content-Type: text/html; charset=utf-8',
     'MIME-Version: 1.0',
+    'X-Priority: 1',
+    'Priority: Urgent',
+    'Importance: High',
+    'X-Auto-Response-Suppress: All',
     '',
     body
   ].join('\r\n');

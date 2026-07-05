@@ -241,6 +241,7 @@ export async function seedDatabase(callerUid: string, callerEmail: string) {
       subject: "Membership Application Inquiry",
       message: "Hello! I am a newly arrived Filipino resident in Yamashina, Kyoto, and would love to join the KCFC choir. Could you kindly let me know if there are audition requirements?",
       status: "unread",
+      alertSent: true,
       createdAt: new Date().toISOString()
     },
     {
@@ -249,6 +250,7 @@ export async function seedDatabase(callerUid: string, callerEmail: string) {
       subject: "Fellowship Food Guidelines",
       message: "Peace be with you. I would like to sponsor a sheet of home-baked cassava cake for next Sunday's fellowship. Whom should I contact in the kitchen committee to log this?",
       status: "unread",
+      alertSent: true,
       createdAt: new Date().toISOString()
     }
   ];

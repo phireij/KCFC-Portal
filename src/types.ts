@@ -71,6 +71,7 @@ export interface UserProfile {
   createdAt: string;
   updatedAt: string;
   preferences?: NotificationPreferences;
+  fcmTokens?: string[];
 }
 
 export interface MassOption {

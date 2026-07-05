@@ -1,0 +1,32 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded container background representing a premium iOS/Android icon -->
+  <rect width="512" height="512" rx="112" fill="#141411"/>
+  <!-- Elegant gold outer ring -->
+  <circle cx="256" cy="230" r="160" stroke="#d4d4bc" stroke-width="8" />
+  <!-- Inner dividing lines -->
+  <line x1="256" y1="70" x2="256" y2="390" stroke="#d4d4bc" stroke-width="4" />
+  <line x1="96" y1="230" x2="416" y2="230" stroke="#d4d4bc" stroke-width="4" />
+  
+  <!-- Quadrant 1 (Top Left): Fish -->
+  <path d="M140 165 Q180 120 220 165 Q180 210 140 165 Z" stroke="#d4d4bc" stroke-width="4" fill="none" />
+  <path d="M220 165 L235 150 L235 180 Z" stroke="#d4d4bc" stroke-width="4" fill="#d4d4bc" />
+  
+  <!-- Quadrant 2 (Top Right): Mitre -->
+  <path d="M280 200 L315 110 L350 200 Z" stroke="#d4d4bc" stroke-width="4" fill="none" />
+  <line x1="315" y1="110" x2="315" y2="200" stroke="#d4d4bc" stroke-width="4" />
+  
+  <!-- Quadrant 3 (Bottom Left): Axe -->
+  <line x1="185" y1="260" x2="185" y2="360" stroke="#d4d4bc" stroke-width="6" stroke-linecap="round" />
+  <path d="M185 290 L145 270 L145 310 Z" stroke="#d4d4bc" stroke-width="4" fill="#d4d4bc" />
+  
+  <!-- Quadrant 4 (Bottom Right): Olive Branch -->
+  <line x1="285" y1="340" x2="350" y2="275" stroke="#d4d4bc" stroke-width="4" stroke-linecap="round" />
+  <circle cx="300" cy="315" r="8" fill="#d4d4bc" />
+  <circle cx="325" cy="290" r="8" fill="#d4d4bc" />
+  <circle cx="345" cy="310" r="6" fill="#d4d4bc" />
+  <circle cx="290" cy="295" r="6" fill="#d4d4bc" />
+  
+  <!-- Typography at the bottom for "KCFC Portal" -->
+  <rect x="60" y="415" width="392" height="60" rx="30" fill="#5A5A40" stroke="#d4d4bc" stroke-width="3" />
+  <text x="256" y="457" text-anchor="middle" font-size="30" font-weight="bold" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" letter-spacing="3">KCFC PORTAL</text>
+</svg>

@@ -1,6 +1,6 @@
 {
-  "name": "KCFC Core Group",
-  "description": "Exclusive management portal for the KCFC Core Group.",
+  "name": "KCFC Portal",
+  "description": "Exclusive management portal for the KCFC Portal.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

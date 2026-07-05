@@ -47,3 +47,5 @@
 [2026-06-28T15:34:38.582Z] [WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: 7 PERMISSION_DENIED: Missing or insufficient permissions.
 [2026-06-28T15:34:38.582Z] [INBOUND CONTACT] POSTing to REST endpoint: https://firestore.googleapis.com/v1/projects/gen-lang-client-0597227043/databases/ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2/documents/messages?key=AIzaSyAOXrdBFqn7i4HItC8Jn1ovLndGHvEar7Q
 [2026-06-28T15:34:38.653Z] [SUCCESS] Message written to Firestore via REST API fallback.
+[2026-06-30T08:33:13.930Z] --- BEGIN OF DELETE USER BY UID REQUEST ---
+[2026-06-30T08:33:13.930Z] [WARN] Unauthorized: Missing bearer token header

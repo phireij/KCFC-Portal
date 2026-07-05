@@ -5,6 +5,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { motion } from 'motion/react';
 import { User, Mail, Phone, Home, Calendar, AtSign, Save, ShieldCheck, BellRing, Palette } from 'lucide-react';
 import { cn } from '../lib/utils';
+import InstallPWA from '../components/InstallPWA';
 
 export default function Profile() {
   const { profile, user } = useAuth();
@@ -114,7 +115,7 @@ export default function Profile() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Profile Card */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-6">
           <div className="bg-white dark:bg-[#1e1e1a] rounded-[40px] p-8 shadow-sm border border-gray-100 dark:border-white/5 flex flex-col items-center text-center">
             <div className="relative group">
               <div className={cn(
@@ -428,6 +429,8 @@ export default function Profile() {
           </motion.form>
         </div>
       </div>
+
+      <InstallPWA />
     </div>
   );
 }

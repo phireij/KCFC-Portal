@@ -5,15 +5,44 @@
 /* Font Size Settings */
 html.font-size-small {
   font-size: 14px;
+  --nav-icon-desktop: 14px;
+  --nav-icon-mobile: 15px;
+  --nav-icon-sm: 18px;
 }
 html.font-size-normal {
   font-size: 16px;
+  --nav-icon-desktop: 16px;
+  --nav-icon-mobile: 18px;
+  --nav-icon-sm: 22px;
 }
 html.font-size-medium {
   font-size: 18px;
+  --nav-icon-desktop: 18px;
+  --nav-icon-mobile: 22px;
+  --nav-icon-sm: 26px;
 }
 html.font-size-big {
   font-size: 20px;
+  --nav-icon-desktop: 21px;
+  --nav-icon-mobile: 28px;
+  --nav-icon-sm: 34px;
+}
+
+.nav-icon-desktop {
+  width: var(--nav-icon-desktop, 16px) !important;
+  height: var(--nav-icon-desktop, 16px) !important;
+}
+
+.nav-icon-mobile {
+  width: var(--nav-icon-mobile, 18px) !important;
+  height: var(--nav-icon-mobile, 18px) !important;
+}
+
+@media (min-width: 640px) {
+  .nav-icon-mobile {
+    width: var(--nav-icon-sm, 22px) !important;
+    height: var(--nav-icon-sm, 22px) !important;
+  }
 }
 
 /* Set root and body backgrounds globally so there is never a browser-fallback white background */

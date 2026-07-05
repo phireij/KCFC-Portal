@@ -90,6 +90,16 @@ export default function Announcements() {
 
         // Dispatch Firebase Cloud Messaging push broadcast via our backend service
         try {
+          const recipientTokens: string[] = [];
+          usersSnap.docs.forEach(userDoc => {
+            const userData = userDoc.data();
+            if (userData.preferences?.announcements === false) return;
+            const tokens = userData.fcmTokens || [];
+            if (Array.isArray(tokens)) {
+              recipientTokens.push(...tokens.filter((tk: any) => typeof tk === "string" && tk.trim() !== ""));
+            }
+          });
+
           const idToken = await user.getIdToken();
           const pResponse = await fetch('/api/admin/broadcast-announcement-push', {
             method: 'POST',
@@ -99,7 +109,8 @@ export default function Announcements() {
             },
             body: JSON.stringify({
               title: `New Announcement: ${formData.title}`,
-              body: formData.content
+              body: formData.content,
+              recipientTokens: recipientTokens
             })
           });
           const pResult = await pResponse.json();

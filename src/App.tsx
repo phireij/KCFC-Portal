@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, User, sendEmailVerification } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
@@ -18,6 +18,7 @@ import Profile from './pages/Profile';
 import Members from './pages/Members';
 import Announcements from './pages/Announcements';
 import Accounting from './pages/Accounting';
+import Inbox from './pages/Inbox';
 import Navbar from './components/layout/Navbar';
 
 interface AuthContextType {
@@ -74,13 +75,33 @@ export default function App() {
                   });
                 }
 
+                // Sync displayName to firestore if it was missing or default 'Member' previously, but is available on the auth record now.
+                if (authenticatedUser.displayName && 
+                    (!currentProfile.displayName || currentProfile.displayName === 'Member') && 
+                    currentProfile.displayName !== authenticatedUser.displayName) {
+                  updateDoc(userDocRef, {
+                    displayName: authenticatedUser.displayName,
+                    updatedAt: serverTimestamp()
+                  }).then(() => {
+                    setProfile(prev => prev ? { ...prev, displayName: authenticatedUser.displayName! } : null);
+                  }).catch((err) => {
+                    console.warn("Background displayName sync failed:", err);
+                  });
+                }
+
                 // Ensure bootstrap admin is always admin and verified
                 if (isBootstrapAdmin) {
-                  if (!(currentProfile.roles || []).includes('admin') || !currentProfile.isVerified || currentProfile.displayName !== 'ADMIN') {
+                  const currentRoles = currentProfile.roles || [];
+                  const hasAdminRole = currentRoles.includes('admin');
+                  const isVerified = currentProfile.isVerified === true;
+                  const hasDisplayName = !!currentProfile.displayName;
+
+                  if (!hasAdminRole || !isVerified || !hasDisplayName) {
+                    const updatedRoles = hasAdminRole ? currentRoles : [...currentRoles, 'admin' as UserRole];
                     const updatedProfile = {
                       ...currentProfile,
-                      displayName: 'ADMIN',
-                      roles: ['admin' as UserRole],
+                      displayName: currentProfile.displayName || 'ADMIN',
+                      roles: updatedRoles,
                       isVerified: true,
                       isEmailVerified: true,
                       updatedAt: new Date().toISOString()
@@ -99,31 +120,87 @@ export default function App() {
                   }
                 }
               } else {
-                // New user registration
-                const newProfile: UserProfile = {
-                  uid: authenticatedUser.uid,
-                  email: authenticatedUser.email || '',
-                  displayName: isBootstrapAdmin ? 'ADMIN' : (authenticatedUser.displayName || 'Member'),
-                  photoURL: authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authenticatedUser.displayName || 'Member')}&background=5A5A40&color=fff`,
-                  roles: isBootstrapAdmin ? ['admin'] : ['member'],
-                  ministries: [],
-                  isEmailVerified: isBootstrapAdmin || emailVerified, // Google/FB logins are auto-verified
-                  isVerified: isBootstrapAdmin, // Admin is auto-verified
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
+                // Check if there is an existing pre-registered pending document with this email
+                const emailLower = (authenticatedUser.email || '').trim().toLowerCase();
+                let migrated = false;
 
-                // Optimistically set the profile state
-                setProfile(newProfile);
+                if (emailLower) {
+                  try {
+                    const pendingDocId = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    const pendingDocRef = doc(db, 'users', pendingDocId);
+                    const pendingDocSnap = await getDoc(pendingDocRef);
 
-                // Write to Firestore in the background
-                setDoc(userDocRef, {
-                  ...newProfile,
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp()
-                }).catch((err) => {
-                  console.error("Background new user registration write failed:", err);
-                });
+                    if (pendingDocSnap.exists()) {
+                      const pendingData = pendingDocSnap.data();
+                      const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
+
+                      const newProfile: UserProfile = {
+                        uid: authenticatedUser.uid,
+                        email: emailLower,
+                        displayName: pendingData.displayName || authenticatedUser.displayName || 'Member',
+                        photoURL: pendingData.photoURL || authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingData.displayName || 'Member')}&background=5A5A40&color=fff`,
+                        roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
+                        ministries: pendingData.ministries || [],
+                        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || true,
+                        isVerified: isBootstrapAdmin || pendingData.isVerified || false,
+                        isDisabled: pendingData.isDisabled || false,
+                        createdAt: pendingData.createdAt || new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                      };
+
+                      // Write to standard UID
+                      await setDoc(userDocRef, {
+                        ...newProfile,
+                        updatedAt: serverTimestamp()
+                      });
+
+                      // Delete old pending document
+                      await deleteDoc(pendingDocRef);
+                      console.log(`Successfully migrated pre-registered pending document ${pendingDocId} to real UID ${authenticatedUser.uid}`);
+                      migrated = true;
+                    }
+                  } catch (migrationErr) {
+                    console.error("Failed to migrate pre-registered pending document:", migrationErr);
+                  }
+                }
+
+                if (!migrated) {
+                  // If the user's document does not exist, they might be a newly registered user whose document is being written by Login.tsx.
+                  // We give them a 60-second grace period from their authentication creation time, or check if they just logged in.
+                  const creationTimeStr = authenticatedUser.metadata.creationTime;
+                  const authTime = creationTimeStr ? new Date(creationTimeStr).getTime() : Date.now();
+                  const now = Date.now();
+                  const isNewUserGrace = (now - authTime) < 60000; // 60 seconds grace period
+                  const isJustAuthenticated = sessionStorage.getItem('kcfc_just_authenticated') === 'true';
+
+                  if (isNewUserGrace || isJustAuthenticated) {
+                    // Do nothing and let Login.tsx complete the registration write to Firestore.
+                    // This prevents any race conditions where App.tsx overwrites Login.tsx with placeholder values.
+                    console.log("Newly registered/authenticated user detected. Grace period active; waiting for Login.tsx Firestore write.");
+                    
+                    const tempProfile: UserProfile = {
+                      uid: authenticatedUser.uid,
+                      email: authenticatedUser.email || '',
+                      displayName: isBootstrapAdmin ? 'ADMIN' : (authenticatedUser.displayName || 'Member'),
+                      photoURL: authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authenticatedUser.displayName || 'Member')}&background=5A5A40&color=fff`,
+                      roles: isBootstrapAdmin ? ['admin'] : ['member'],
+                      ministries: [],
+                      isEmailVerified: isBootstrapAdmin || emailVerified || false,
+                      isVerified: isBootstrapAdmin,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    setProfile(tempProfile);
+                  } else {
+                    // Past grace period, meaning the admin deleted their document from Firestore.
+                    // Sign out immediately to prevent recreating the document and clean up the zombie session.
+                    console.warn("User document deleted from Firestore. Force signing out zombie session:", authenticatedUser.uid);
+                    setProfile(null);
+                    auth.signOut().catch((err) => {
+                      console.error("Force sign out failed:", err);
+                    });
+                  }
+                }
               }
             } catch (err) {
               console.error("Profile snapshot processing error:", err);
@@ -205,7 +282,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const pollId = params.get('pollId');
-    if (pollId) {
+    if (pollId && window.location.pathname !== '/duties') {
       sessionStorage.setItem('redirect_poll_id', pollId);
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
@@ -257,6 +334,74 @@ export default function App() {
         activeCleanup();
       }
     };
+  }, [user]);
+
+  // Real-time Firestore notification document listener to display live popups & trigger native Web Notifications
+  useEffect(() => {
+    if (!user) return;
+
+    const mountTime = Date.now();
+    let isFirst = true;
+
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', user.uid),
+      where('status', '==', 'unread')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // If it's the very first snapshot (on mount), we just read the state but do not show banners
+      if (isFirst) {
+        isFirst = false;
+        return;
+      }
+
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          const title = data.title || 'New Portal Alert';
+          const body = data.message || '';
+          
+          // Verify that this notification was created after the listener was mounted
+          const createdTime = data.createdAt?.toMillis 
+            ? data.createdAt.toMillis() 
+            : (data.createdAt ? new Date(data.createdAt).getTime() : Date.now());
+          
+          // Give 5 seconds grace period from mount time to avoid race conditions on first load
+          if (createdTime > mountTime - 5000) {
+            // 1. Pop up in-app notification card
+            setFcmNotification({ title, body });
+
+            // 2. Trigger native browser Web Notification if permission is granted
+            if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+              try {
+                new Notification(title, {
+                  body: body,
+                  icon: '/favicon.ico',
+                  badge: '/favicon.ico'
+                });
+              } catch (err) {
+                console.warn("FCM Fallback: Native Notification constructor failed inside iframe:", err);
+                if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                  navigator.serviceWorker.ready.then((reg) => {
+                    reg.showNotification(title, {
+                      body: body,
+                      icon: '/favicon.ico'
+                    }).catch(swErr => {
+                      console.warn("FCM Fallback: Service worker showNotification failed:", swErr);
+                    });
+                  });
+                }
+              }
+            }
+          }
+        }
+      });
+    }, (error) => {
+      console.warn("FCM Fallback: Error listening to Firestore notifications:", error);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   // Real-time listener for incoming public contact messages (for Admin / President)
@@ -361,15 +506,8 @@ export default function App() {
               }
             }
 
-            // Automatically normalize status in database if it was missing/undefined
-            if (!data.status) {
-              updateDoc(doc(db, 'messages', change.doc.id), {
-                status: 'unread'
-              }).catch(err => console.error("[ERROR] Failed to normalize message status in Firestore:", err));
-            }
-
-            // Automatically send an email notification if it has not been dispatched yet
-            if (data.alertSent !== true) {
+            // Automatically send an email notification if it has not been dispatched yet (only for newly arrived messages)
+            if (data.alertSent !== true && messageTimeMs > listenerMountTime - 4000) {
               sendEmailAlert(change.doc.id, data);
             }
 
@@ -487,7 +625,8 @@ export default function App() {
   }
 
   // Email Verification Holding State
-  if (user && !user.emailVerified && profile && !profile.isEmailVerified && !profile.isVerified) {
+  const isRegistering = sessionStorage.getItem('kcfc_registration_in_progress') === 'true';
+  if (user && !user.emailVerified && profile && !profile.isEmailVerified && !profile.isVerified && !isRegistering) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
@@ -538,7 +677,10 @@ export default function App() {
               Resend Verification Email
             </button>
             <button 
-              onClick={() => auth.signOut()}
+              onClick={() => {
+                sessionStorage.removeItem('kcfc_registration_in_progress');
+                auth.signOut();
+              }}
               className="text-gray-400 font-bold uppercase tracking-widest text-[10px] hover:underline cursor-pointer"
             >
               Sign Out & Back to Login
@@ -550,7 +692,7 @@ export default function App() {
   }
 
   // Pending Approval View
-  if (user && profile && !profile.isVerified) {
+  if (user && profile && !profile.isVerified && !isRegistering) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl">
@@ -560,7 +702,10 @@ export default function App() {
           <h1 className="text-2xl font-serif mb-4">Membership Pending</h1>
           <p className="text-gray-500 mb-8">Hello {profile.displayName}, your registration has been received. An administrator needs to approve your membership before you can access the community portal.</p>
           <button 
-            onClick={() => auth.signOut()}
+            onClick={() => {
+              sessionStorage.removeItem('kcfc_registration_in_progress');
+              auth.signOut();
+            }}
             className="text-[#5A5A40] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
           >
             Sign Out
@@ -594,6 +739,7 @@ export default function App() {
               <Route path="/announcements" element={isAuthReady ? <Announcements /> : <Navigate to="/login" />} />
               <Route path="/accounting" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'treasurer'].includes(r))) ? <Accounting /> : <Navigate to="/" />} />
               <Route path="/profile" element={isAuthReady ? <Profile /> : <Navigate to="/login" />} />
+              <Route path="/inbox" element={isAuthReady ? <Inbox /> : <Navigate to="/login" />} />
               {/* Fallback for deep-linking unmatched routes or /index.html pathing */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

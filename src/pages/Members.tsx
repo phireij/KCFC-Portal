@@ -94,7 +94,7 @@ export default function Members() {
     
   const displayRegularMembers = filteredUsers
     .filter(u => !u.isCoreMember)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 
   if (loading) return <div className="p-8 text-center font-serif italic text-gray-400">Loading directory...</div>;
 

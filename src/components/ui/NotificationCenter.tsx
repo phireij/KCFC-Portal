@@ -88,7 +88,7 @@ export default function NotificationCenter() {
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-gray-400 hover:text-[#5A5A40] hover:bg-[#5A5A40]/5 rounded-full transition-all relative"
       >
-        <Bell size={20} />
+        <Bell className="nav-icon-mobile" />
         {unreadCount > 0 && (
           <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -161,8 +161,11 @@ export default function NotificationCenter() {
               )}
             </div>
 
-            <div className="p-3 border-t border-gray-50 text-center bg-gray-50/30">
-              <Link to="/profile" onClick={() => setIsOpen(false)} className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] hover:text-[#5A5A40]">
+            <div className="p-3 border-t border-gray-50 text-center bg-gray-50/30 flex flex-col gap-2">
+              <Link to="/inbox" onClick={() => setIsOpen(false)} className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider hover:underline">
+                Open Personal Inbox
+              </Link>
+              <Link to="/profile" onClick={() => setIsOpen(false)} className="text-[9px] font-bold text-gray-400 uppercase tracking-widest hover:text-[#5A5A40]">
                 Configure Preferences
               </Link>
             </div>

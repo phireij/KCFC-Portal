@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
-import { collection, onSnapshot, updateDoc, doc, serverTimestamp, deleteDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, doc, serverTimestamp, deleteDoc, query, where, getDocs, writeBatch, setDoc } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { UserProfile, UserRole, MinistryType, ContactMessage } from '../types';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, ShieldAlert, UserCheck, Search, Ban, UserX, Trash2, X, ChevronDown, ChevronRight, Megaphone, FileText, RefreshCw, Mail, Inbox, Archive, Check, AlertCircle, Eye, EyeOff, Reply, Send, Loader2 } from 'lucide-react';
+import { Shield, ShieldAlert, UserCheck, UserPlus, Search, Ban, UserX, Trash2, X, ChevronDown, ChevronRight, Megaphone, FileText, RefreshCw, Mail, Inbox, Archive, Check, AlertCircle, Eye, EyeOff, Reply, Send, Loader2 } from 'lucide-react';
 import BroadcastTool from '../components/admin/BroadcastTool';
 import { sendGmail } from '../lib/gmail';
 import { useSearchParams } from 'react-router-dom';
@@ -56,6 +56,43 @@ export default function Admin() {
   
   // Executive Submenu Navigation Active Tab
   const [activeTab, setActiveTab] = useState<'pending' | 'members' | 'messages' | 'broadcast' | 'purge'>('pending');
+
+  const [showAddPendingModal, setShowAddPendingModal] = useState(false);
+  const [newPendingEmail, setNewPendingEmail] = useState('');
+  const [newPendingName, setNewPendingName] = useState('');
+  const [isAddingPending, setIsAddingPending] = useState(false);
+
+  const quickAddPendingUser = async (email: string, displayName: string) => {
+    try {
+      const emailLower = email.trim().toLowerCase();
+      const generatedUid = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
+      
+      const newProfile: any = {
+        uid: generatedUid,
+        email: emailLower,
+        displayName: displayName,
+        photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5A5A40&color=fff`,
+        roles: ["member"],
+        ministries: [],
+        isEmailVerified: true,
+        isVerified: false,
+        isDisabled: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'users', generatedUid), {
+        ...newProfile,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      alert(`Successfully added ${displayName} (${emailLower}) to Firestore as Membership Pending!`);
+    } catch (err: any) {
+      console.error("Failed to add pending user client-side:", err);
+      alert(`Failed to add user: ${err.message}`);
+    }
+  };
 
   useEffect(() => {
     if (!isMessageManager) {
@@ -579,23 +616,33 @@ export default function Admin() {
         throw new Error("Could not acquire administrative credentials for validation.");
       }
 
-      const response = await fetch('/api/admin/delete-user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ targetUserId: userId })
-      });
+      let serverSuccess = true;
+      let serverMsg = "";
 
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        throw new Error("The custom Express server is not running or failed to handle API requests (received HTML fallback instead of JSON). This means server.ts failed to start or is bypassed. Please try again after restarting server.");
-      }
+      try {
+        const response = await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ targetUserId: userId })
+        });
 
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error || `Failed to remove member and clean up records on the server.`);
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          throw new Error("The custom Express server is bypassed or not running (received HTML response).");
+        }
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.error || `Server responded with error status ${response.status}`);
+        }
+        serverMsg = result.message || "Member and all matching attributes, assignments, and records have been successfully cleaned up on the server.";
+      } catch (serverErr: any) {
+        console.warn("Server-side cascade cleanup failed or was bypassed:", serverErr.message);
+        serverSuccess = false;
+        serverMsg = `Note: Server-side authentication credentials cleanup was bypassed (${serverErr.message}).\n\nDirect client-side database document deletion is now proceeding!`;
       }
 
       // Direct client-side delete using authenticated administrator privileges to guarantee instant permanent deletion from the correct database
@@ -605,8 +652,34 @@ export default function Admin() {
         console.warn("Client-side direct users doc delete ignored: ", clientFsError);
       }
 
+      // Also clean up any other orphaned user documents in Firestore that have this email (case-insensitive) to prevent database duplicates
+      const targetUser = users.find(u => u.uid === userId);
+      if (targetUser && targetUser.email) {
+        const emailToPurge = targetUser.email.trim().toLowerCase();
+        try {
+          const usersRef = collection(db, 'users');
+          const qExact = query(usersRef, where('email', '==', targetUser.email.trim()));
+          const snapExact = await getDocs(qExact);
+          for (const docSnap of snapExact.docs) {
+            await deleteDoc(docSnap.ref);
+            console.log("Client-side successfully cleaned up duplicate document with exact email:", docSnap.id);
+          }
+
+          if (emailToPurge !== targetUser.email.trim()) {
+            const qLower = query(usersRef, where('email', '==', emailToPurge));
+            const snapLower = await getDocs(qLower);
+            for (const docSnap of snapLower.docs) {
+              await deleteDoc(docSnap.ref);
+              console.log("Client-side successfully cleaned up duplicate document with lowercase email:", docSnap.id);
+            }
+          }
+        } catch (clientFsQueryError: any) {
+          console.warn("Client-side query-based duplicate cleanup failed: ", clientFsQueryError);
+        }
+      }
+
       setUsers(prev => prev.filter(u => u.uid !== userId));
-      alert(result.message || "Member and all matching attributes, assignments, and records have been successfully cleaned up.");
+      alert(serverMsg);
     } catch (err: any) {
       console.error(err);
       alert(`Error cleaning up member records: ${err.message}`);
@@ -642,53 +715,77 @@ export default function Admin() {
         throw new Error("Could not acquire administrative credentials for validation.");
       }
 
-      const response = await fetch('/api/admin/delete-user-by-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ email: emailToPurge })
-      });
+      let serverSuccess = true;
+      let serverMsg = "";
+      let targetDeletedUid = null;
 
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        throw new Error("The custom Express server is not running or failed to handle API requests (received HTML fallback instead of JSON). This means server.ts failed to start or is bypassed. Please try again after restarting server.");
+      try {
+        const response = await fetch('/api/admin/delete-user-by-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ email: emailToPurge })
+        });
+
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          throw new Error("The custom Express server is bypassed or not running (received HTML response).");
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Server responded with error status ${response.status}`);
+        }
+        serverMsg = data.message || `Account with email ${emailToPurge} successfully purged on the server.`;
+        targetDeletedUid = data.details?.deletedUid;
+      } catch (serverErr: any) {
+        console.warn("Server-side email purge failed or was bypassed:", serverErr.message);
+        serverSuccess = false;
+        serverMsg = `Note: Server-side email purge was bypassed (${serverErr.message}).\n\nProceeding with direct database cleanup of matching accounts!`;
       }
 
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.error || `Failed to purge authentication records.`);
-      }
-
-      const successMsg = data.message || `Account with email ${emailToPurge} successfully purged.`;
-      alert(successMsg);
+      alert(serverMsg);
 
       // Direct client-side delete using authenticated administrator privileges to guarantee instant permanent deletion from the correct database
-      const targetDeletedUid = data.details?.deletedUid;
       if (targetDeletedUid) {
         try {
           await deleteDoc(doc(db, 'users', targetDeletedUid));
         } catch (clientFsError: any) {
           console.warn("Client-side direct users doc delete ignored: ", clientFsError);
         }
-      } else {
-        const matchedLocalUser = users.find(u => u.email.trim().toLowerCase() === emailToPurge.toLowerCase());
-        if (matchedLocalUser) {
-          try {
-            await deleteDoc(doc(db, 'users', matchedLocalUser.uid));
-          } catch (clientFsError: any) {
-            console.warn("Client-side direct users doc delete ignored: ", clientFsError);
+      }
+
+      // Query and delete ALL documents in Firestore with this email address (case-insensitive) to fully sanitize the database
+      try {
+        const usersRef = collection(db, 'users');
+        const emailLower = emailToPurge.toLowerCase();
+        
+        const qExact = query(usersRef, where('email', '==', emailToPurge));
+        const snapExact = await getDocs(qExact);
+        for (const docSnap of snapExact.docs) {
+          await deleteDoc(docSnap.ref);
+          console.log("Client-side purge deleted exact email match document:", docSnap.id);
+        }
+
+        if (emailLower !== emailToPurge) {
+          const qLower = query(usersRef, where('email', '==', emailLower));
+          const snapLower = await getDocs(qLower);
+          for (const docSnap of snapLower.docs) {
+            await deleteDoc(docSnap.ref);
+            console.log("Client-side purge deleted lowercase email match document:", docSnap.id);
           }
         }
+      } catch (clientFsQueryError: any) {
+        console.warn("Client-side query-based purge failed: ", clientFsQueryError);
       }
 
       // Dynamically remove from local state list if found
-      if (data.details && data.details.deletedUid) {
-        setUsers(prev => prev.filter(u => u.uid !== data.details.deletedUid));
+      if (targetDeletedUid) {
+        setUsers(prev => prev.filter(u => u.uid !== targetDeletedUid));
       } else {
-        setUsers(prev => prev.filter(u => u.email.toLowerCase() !== emailToPurge.toLowerCase()));
+        setUsers(prev => prev.filter(u => (u.email || '').toLowerCase() !== emailToPurge.toLowerCase()));
       }
 
       setPurgeEmail('');
@@ -716,6 +813,9 @@ export default function Admin() {
 
   const pendingUsers = filteredUsers.filter(u => !u.isVerified);
   const acceptedUsers = filteredUsers.filter(u => u.isVerified);
+
+  const hasKaizen = users.some(u => (u.email || '').trim().toLowerCase() === 'kaizen.webmktg@gmail.com');
+  const hasPhil = users.some(u => (u.email || '').trim().toLowerCase() === 'philbalgotr@gmail.com');
 
   const canBroadcast = (profile?.roles || []).some(r => 
     ['admin', 'president', 'secretary', 'pro'].includes(r)
@@ -1751,6 +1851,88 @@ export default function Admin() {
               New registration requests requiring validation before access is enabled.
             </p>
           </div>
+
+          {/* Quick-setup and custom manual addition area */}
+          <div className="bg-[#5A5A40]/5 dark:bg-[#252520] p-6 rounded-2xl border border-[#5A5A40]/15 dark:border-white/5 space-y-4">
+            <h3 className="text-xs font-semibold text-[#5A5A40] dark:text-[#8a8a65] flex items-center gap-2">
+              <UserPlus size={16} />
+              Manual Member Registration Helper (Client-Side)
+            </h3>
+            <p className="text-[11px] text-gray-650 dark:text-gray-400 leading-relaxed">
+              In sandbox environments, the server-side backend service account is restricted from updating Firestore directly (throwing <code>7 PERMISSION_DENIED</code>). However, because you are authenticated as <strong>kcfc.jp@gmail.com</strong>, your browser session bypasses rules and holds full write authorization! You can easily register pending accounts below:
+            </p>
+
+            {/* Quick Actions for Kaizen and Phil */}
+            {(!hasKaizen || !hasPhil) && (
+              <div className="flex flex-col gap-2 pt-2">
+                <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Quick-add requested pending accounts:</span>
+                <div className="flex flex-wrap gap-2">
+                  {!hasKaizen && (
+                    <button
+                      onClick={() => quickAddPendingUser('kaizen.webmktg@gmail.com', 'Kaizen WebMktg')}
+                      className="px-3 py-1.5 bg-[#5A5A40] hover:bg-[#484833] text-white text-xs font-medium rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <UserPlus size={13} />
+                      Add kaizen.webmktg@gmail.com (Pending)
+                    </button>
+                  )}
+                  {!hasPhil && (
+                    <button
+                      onClick={() => quickAddPendingUser('philbalgotr@gmail.com', 'Phil Balgotr')}
+                      className="px-3 py-1.5 bg-[#5A5A40] hover:bg-[#484833] text-white text-xs font-medium rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <UserPlus size={13} />
+                      Add philbalgotr@gmail.com (Pending)
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Standard Custom Member Addition Form */}
+            <div className="pt-2 border-t border-gray-150 dark:border-white/5 space-y-2">
+              <span className="text-[10px] font-medium text-gray-550 dark:text-gray-400 uppercase tracking-wider block">Or register any other new pending member:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  placeholder="Full Name (e.g., John Doe)"
+                  value={newPendingName}
+                  onChange={(e) => setNewPendingName(e.target.value)}
+                  className="px-3 py-2 text-xs bg-white dark:bg-[#1e1e1a] text-gray-900 dark:text-white rounded-lg border border-gray-200 dark:border-white/10 outline-none focus:ring-1 focus:ring-[#5A5A40]"
+                />
+                <input
+                  type="email"
+                  placeholder="Email (e.g., john@example.com)"
+                  value={newPendingEmail}
+                  onChange={(e) => setNewPendingEmail(e.target.value)}
+                  className="px-3 py-2 text-xs bg-white dark:bg-[#1e1e1a] text-gray-900 dark:text-white rounded-lg border border-gray-200 dark:border-white/10 outline-none focus:ring-1 focus:ring-[#5A5A40]"
+                />
+                <button
+                  onClick={async () => {
+                    if (!newPendingName.trim() || !newPendingEmail.trim()) {
+                      alert("Please enter both a name and a valid email.");
+                      return;
+                    }
+                    setIsAddingPending(true);
+                    await quickAddPendingUser(newPendingEmail, newPendingName);
+                    setNewPendingName('');
+                    setNewPendingEmail('');
+                    setIsAddingPending(false);
+                  }}
+                  disabled={isAddingPending}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 text-white text-xs font-semibold rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isAddingPending ? (
+                    <RefreshCw className="animate-spin" size={13} />
+                  ) : (
+                    <UserPlus size={13} />
+                  )}
+                  Register Member (Pending)
+                </button>
+              </div>
+            </div>
+          </div>
+
           {loading ? (
             <div className="py-12 text-center text-gray-400 dark:text-gray-500 italic font-serif text-sm">Syncing requests...</div>
           ) : renderTable(pendingUsers)}
