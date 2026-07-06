@@ -4,28 +4,28 @@
 
 /* Font Size Settings */
 html.font-size-small {
-  font-size: 14px;
-  --nav-icon-desktop: 14px;
-  --nav-icon-mobile: 15px;
-  --nav-icon-sm: 18px;
-}
-html.font-size-normal {
   font-size: 16px;
   --nav-icon-desktop: 16px;
   --nav-icon-mobile: 18px;
   --nav-icon-sm: 22px;
 }
-html.font-size-medium {
-  font-size: 18px;
-  --nav-icon-desktop: 18px;
-  --nav-icon-mobile: 22px;
-  --nav-icon-sm: 26px;
-}
-html.font-size-big {
+html.font-size-normal {
   font-size: 20px;
   --nav-icon-desktop: 21px;
   --nav-icon-mobile: 28px;
   --nav-icon-sm: 34px;
+}
+html.font-size-medium {
+  font-size: 24px;
+  --nav-icon-desktop: 25px;
+  --nav-icon-mobile: 32px;
+  --nav-icon-sm: 40px;
+}
+html.font-size-big {
+  font-size: 28px;
+  --nav-icon-desktop: 29px;
+  --nav-icon-mobile: 36px;
+  --nav-icon-sm: 46px;
 }
 
 .nav-icon-desktop {

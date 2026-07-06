@@ -727,7 +727,7 @@ export default function App() {
             : "bg-[#f5f5f0] text-[#1a1a1a]"
         )}>
           {isAuthReady && <Navbar />}
-          <main className={cn("min-h-screen", isAuthReady ? "pt-20 pb-24 md:pb-8 px-4" : "")}>
+          <main className={cn("min-h-screen", isAuthReady ? "pt-20 pb-24 md:pb-8 px-2 sm:px-4" : "")}>
             <Routes>
               <Route path="/login" element={!isAuthReady ? <Login /> : <Navigate to="/" replace />} />
               <Route path="/" element={isAuthReady ? <Dashboard /> : <Navigate to="/login" />} />

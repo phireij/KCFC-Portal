@@ -69,6 +69,12 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
   
   // Custom states for adjustable columns, easy horizontal scroll, and mobile view
   const [columnWidth, setColumnWidth] = useState<number>(185);
+  const [nameColumnWidth, setNameColumnWidth] = useState<number>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 90; // default for mobile (smaller/2/3 of normal)
+    }
+    return 160; // default for desktop
+  });
   const [viewMode, setViewMode] = useState<'grid' | 'cards'>('grid');
   const [selectedMobileDate, setSelectedMobileDate] = useState<string>('');
   const [assigningMobileCell, setAssigningMobileCell] = useState<{ date: string, role: string } | null>(null);
@@ -92,12 +98,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
   const startXRef = useRef(0);
   const scrollLeftRef = useRef(0);
 
-  // Set default view to mobile cards on small screens, and default selected date
-  useEffect(() => {
-    if (window.innerWidth < 768) {
-      setViewMode('cards');
-    }
-  }, []);
+  // Default view is grid view on all screen sizes as requested
 
   useEffect(() => {
     if (poll.massDates && poll.massDates.length > 0) {
@@ -892,8 +893,8 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
   };
 
   return (
-    <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 mt-8">
-      <div className="p-6 bg-[#00e5ff]/20 border-b border-[#00e5ff]/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div className="bg-white dark:bg-[#1e1e1a] rounded-xl md:rounded-3xl overflow-hidden shadow-xs md:shadow-sm border border-gray-100 dark:border-white/5 mt-4 md:mt-8">
+      <div className="p-4 md:p-6 bg-[#00e5ff]/20 border-b border-[#00e5ff]/30 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="hidden sm:block w-10"></div> {/* Spacer for perfect alignment of center title */}
         <h3 className="uppercase tracking-widest font-black text-[#008b99] text-sm text-center">Liturgical Ministry Assignment & Scheduling</h3>
         <div className="flex flex-wrap items-center justify-center gap-2 self-stretch sm:self-auto">
@@ -929,68 +930,70 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
         </div>
       </div>
       
-      {/* Workflow Tracker */}
-      <div className="px-6 py-4 flex flex-wrap gap-4 items-center justify-between bg-gray-50 border-b border-gray-100">
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
-          <span className={cn(
-            "px-3 py-1 rounded-full",
-            completed.includes('lector') ? "bg-green-100 text-green-700" : currentPhase === 'lector' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
-          )}>
-            1. Lector/Commentator
-          </span>
-          <span className="text-gray-400">→</span>
-          <span className={cn(
-            "px-3 py-1 rounded-full",
-            completed.includes('altar_server') ? "bg-green-100 text-green-700" : currentPhase === 'altar_server' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
-          )}>
-            2. Altar Server
-          </span>
-          <span className="text-gray-400">→</span>
-          <span className={cn(
-            "px-3 py-1 rounded-full",
-            completed.includes('usher') ? "bg-green-100 text-green-700" : currentPhase === 'usher' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
-          )}>
-            3. Usher
-          </span>
-          <span className="text-gray-400">→</span>
-          <span className={cn(
-            "px-3 py-1 rounded-full",
-            completed.includes('ppt') ? "bg-green-100 text-green-700" : currentPhase === 'ppt' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
-          )}>
-            4. PPT
-          </span>
-        </div>
-
-        {canEditCurrentPhase && currentPhase !== 'completed' && (
-          <button
-            onClick={handleCompletePhase}
-            disabled={isCompleting}
-            className="flex items-center gap-2 px-4 py-2 bg-[#5A5A40] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-[#4a4a35] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isCompleting ? <Loader2 size={14} className="animate-spin" /> : null}
-            Mark {currentPhase === 'lector' ? 'Lector/Commentator' : currentPhase === 'altar_server' ? 'Altar Server' : currentPhase === 'usher' ? 'Usher' : 'PPT'} Done
-          </button>
-        )}
-
-        {hasStagedChanges && (
-          <div className="flex items-center gap-2">
-             <button
-              onClick={discardStagedChanges}
-              className="px-4 py-2 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
-            >
-              Discard Changes
-            </button>
-            <button
-              onClick={applyStagedChanges}
-              disabled={isApplying}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-green-700 transition-all shadow-md"
-            >
-              {isApplying ? <Loader2 size={14} className="animate-spin" /> : null}
-              Apply Changes
-            </button>
+      {/* Workflow Tracker - Hidden once completed/assignment is done */}
+      {currentPhase !== 'completed' && (
+        <div className="px-4 md:px-6 py-3 md:py-4 flex flex-wrap gap-4 items-center justify-between bg-gray-50 border-b border-gray-100">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
+            <span className={cn(
+              "px-3 py-1 rounded-full",
+              completed.includes('lector') ? "bg-green-100 text-green-700" : currentPhase === 'lector' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
+            )}>
+              1. Lector/Commentator
+            </span>
+            <span className="text-gray-400">→</span>
+            <span className={cn(
+              "px-3 py-1 rounded-full",
+              completed.includes('altar_server') ? "bg-green-100 text-green-700" : currentPhase === 'altar_server' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
+            )}>
+              2. Altar Server
+            </span>
+            <span className="text-gray-400">→</span>
+            <span className={cn(
+              "px-3 py-1 rounded-full",
+              completed.includes('usher') ? "bg-green-100 text-green-700" : currentPhase === 'usher' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
+            )}>
+              3. Usher
+            </span>
+            <span className="text-gray-400">→</span>
+            <span className={cn(
+              "px-3 py-1 rounded-full",
+              completed.includes('ppt') ? "bg-green-100 text-green-700" : currentPhase === 'ppt' ? "bg-blue-100 text-blue-700 ring-2 ring-blue-500 ring-offset-2" : "bg-gray-200 text-gray-500"
+            )}>
+              4. PPT
+            </span>
           </div>
-        )}
-      </div>
+
+          {canEditCurrentPhase && (
+            <button
+              onClick={handleCompletePhase}
+              disabled={isCompleting}
+              className="flex items-center gap-2 px-4 py-2 bg-[#5A5A40] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-[#4a4a35] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isCompleting ? <Loader2 size={14} className="animate-spin" /> : null}
+              Mark {currentPhase === 'lector' ? 'Lector/Commentator' : currentPhase === 'altar_server' ? 'Altar Server' : currentPhase === 'usher' ? 'Usher' : 'PPT'} Done
+            </button>
+          )}
+
+          {hasStagedChanges && (
+            <div className="flex items-center gap-2">
+               <button
+                onClick={discardStagedChanges}
+                className="px-4 py-2 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
+              >
+                Discard Changes
+              </button>
+              <button
+                onClick={applyStagedChanges}
+                disabled={isApplying}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-green-700 transition-all shadow-md"
+              >
+                {isApplying ? <Loader2 size={14} className="animate-spin" /> : null}
+                Apply Changes
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {isPollActive && (
         <div className="mx-6 mt-4 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-400 rounded-2xl flex items-center gap-2.5 text-xs font-semibold">
@@ -1000,13 +1003,15 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
       )}
 
       {/* Controls & Mode Selector Utility Bar */}
-      <div className="px-6 py-3.5 bg-gray-50/50 border-b border-gray-100 flex flex-wrap gap-4 items-center justify-between">
-        <div className="flex items-center gap-1.5 bg-gray-100/85 p-1 rounded-xl">
+      <div className="px-4 md:px-6 py-2.5 md:py-3.5 bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex items-center gap-1.5 bg-gray-100/85 dark:bg-white/5 p-1 rounded-xl">
           <button
             onClick={() => setViewMode('grid')}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              viewMode === 'grid' ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-800"
+              viewMode === 'grid' 
+                ? "bg-white dark:bg-[#1e1e1a] text-gray-800 dark:text-[#f5f5f0] shadow-sm" 
+                : "text-gray-500 hover:text-gray-800 dark:hover:text-white"
             )}
           >
             <Grid size={13} />
@@ -1016,7 +1021,9 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
             onClick={() => setViewMode('cards')}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              viewMode === 'cards' ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-800"
+              viewMode === 'cards' 
+                ? "bg-white dark:bg-[#1e1e1a] text-gray-800 dark:text-[#f5f5f0] shadow-sm" 
+                : "text-gray-500 hover:text-gray-800 dark:hover:text-white"
             )}
           >
             <Layers size={13} />
@@ -1027,9 +1034,9 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
         {viewMode === 'grid' && (
           <div className="flex items-center gap-4 flex-wrap">
             {/* Column Width Adjuster Slider */}
-            <div className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-2.5 py-1.5 text-xs text-gray-500 shadow-sm">
-              <Sliders size={12} className="text-gray-400" />
-              <span>Column Width:</span>
+            <div className="flex items-center gap-2 bg-white dark:bg-[#1e1e1a] border border-gray-100 dark:border-white/5 rounded-xl px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 shadow-sm">
+              <Sliders size={12} className="text-gray-400 dark:text-gray-500" />
+              <span>Mass Column:</span>
               <input
                 type="range"
                 min="130"
@@ -1038,23 +1045,38 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                 onChange={(e) => setColumnWidth(Number(e.target.value))}
                 className="w-20 accent-[#008b99] cursor-pointer"
               />
-              <span className="font-mono text-[10px] bg-gray-50 border px-1.5 py-0.5 rounded font-bold text-[#008b99]">{columnWidth}px</span>
+              <span className="font-mono text-[10px] bg-gray-50 dark:bg-white/5 border dark:border-white/5 px-1.5 py-0.5 rounded font-bold text-[#008b99]">{columnWidth}px</span>
+            </div>
+
+            {/* Name Column Width Adjuster Slider */}
+            <div className="flex items-center gap-2 bg-white dark:bg-[#1e1e1a] border border-gray-100 dark:border-white/5 rounded-xl px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 shadow-sm">
+              <Sliders size={12} className="text-gray-400 dark:text-gray-500" />
+              <span>Name Column:</span>
+              <input
+                type="range"
+                min="75"
+                max="200"
+                value={nameColumnWidth}
+                onChange={(e) => setNameColumnWidth(Number(e.target.value))}
+                className="w-20 accent-[#008b99] cursor-pointer"
+              />
+              <span className="font-mono text-[10px] bg-gray-50 dark:bg-white/5 border dark:border-white/5 px-1.5 py-0.5 rounded font-bold text-[#008b99]">{nameColumnWidth}px</span>
             </div>
 
             {/* Quick Horizontal Scroll Buttons */}
-            <div className="flex items-center gap-1 bg-white border border-gray-100 rounded-xl p-1 shadow-sm">
+            <div className="flex items-center gap-1 bg-white dark:bg-[#1e1e1a] border border-gray-100 dark:border-white/5 rounded-xl p-1 shadow-sm">
               <button
                 onClick={() => scrollTable('left')}
                 title="Scroll Left"
-                className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
               >
                 <ChevronLeft size={15} />
               </button>
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1">Scroll</span>
+              <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">Scroll</span>
               <button
                 onClick={() => scrollTable('right')}
                 title="Scroll Right"
-                className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
               >
                 <ChevronRight size={15} />
               </button>
@@ -1075,7 +1097,14 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
           <table className="w-full text-left border-collapse min-w-max">
             <thead>
               <tr>
-                <th className="p-4 border-b border-r border-[#00e5ff]/20 bg-[#00e5ff]/10 text-xs font-bold text-center">NAME</th>
+                <th 
+                  className="p-2.5 md:p-4 border-b border-r border-[#00e5ff]/20 bg-[#e0fcff] dark:bg-[#1a383d] text-xs font-bold text-center sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.02)]"
+                  style={{ minWidth: `${nameColumnWidth}px`, width: `${nameColumnWidth}px`, maxWidth: `${nameColumnWidth}px` }}
+                >
+                  <div style={{ maxWidth: `calc(${nameColumnWidth}px - 0.5rem)` }} className="truncate mx-auto">
+                    NAME
+                  </div>
+                </th>
                     {(poll.massDates || []).map(option => {
                   let availableCount = 0;
                   if (currentPhase !== 'completed') {
@@ -1130,11 +1159,14 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                 return (
                   <tr key={user.id} className="border-b border-gray-100 last:border-none hover:bg-gray-50/50">
                     <td 
-                      className="p-4 border-r border-gray-100 font-medium text-sm text-gray-700 whitespace-nowrap bg-white sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)] group cursor-help"
+                      className="p-2 md:p-3 border-r border-gray-100 dark:border-white/5 font-medium text-xs md:text-sm text-gray-700 dark:text-gray-200 whitespace-normal break-words bg-white dark:bg-[#1e1e1a] sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)] group cursor-help leading-snug"
+                      style={{ minWidth: `${nameColumnWidth}px`, width: `${nameColumnWidth}px`, maxWidth: `${nameColumnWidth}px` }}
                       onClick={() => setShownUserInfo(user.id)}
                     >
-                      <div className="flex flex-col relative">
-                        <span>{idx + 1}. {user.name}</span>
+                      <div className="flex flex-col relative" style={{ maxWidth: `calc(${nameColumnWidth}px - 1rem)` }}>
+                        <span className="font-semibold block break-words" title={userProfile?.displayName || user.name}>
+                          {idx + 1}. {userProfile?.nickname?.trim() || userProfile?.displayName || user.name}
+                        </span>
                         <div className="flex flex-wrap gap-1 mt-1">
                           <span className={cn(
                             "text-[11px] font-extrabold px-2 py-0.5 rounded-md whitespace-nowrap",
@@ -1208,7 +1240,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                       return (
                         <td 
                           key={option.date} 
-                          className="p-3 border-r border-gray-100 text-center align-middle"
+                          className="p-1.5 md:p-3 border-r border-gray-100 text-center align-middle"
                           style={{ minWidth: `${columnWidth}px`, width: `${columnWidth}px` }}
                         >
                           <div className="flex items-center justify-center gap-2 relative">

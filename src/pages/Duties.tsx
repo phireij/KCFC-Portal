@@ -597,10 +597,10 @@ export default function Duties() {
                  </div>
               ) : (
                 chorePolls.map(poll => (
-                  <div key={poll.id} className="bg-white dark:bg-[#1e1e1a] rounded-[32px] border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
+                  <div key={poll.id} className="bg-white dark:bg-[#1e1e1a] rounded-none sm:rounded-[32px] border-x-0 sm:border border-y border-gray-100 dark:border-white/5 shadow-none sm:shadow-sm overflow-hidden mx-[-8px] sm:mx-0">
                     <button 
                       onClick={() => setExpandedPolls(prev => ({ ...prev, [poll.id]: !prev[poll.id] }))}
-                      className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-[#252520] transition-all text-left"
+                      className="w-full flex items-center justify-between p-4 md:p-6 hover:bg-gray-50 dark:hover:bg-[#252520] transition-all text-left"
                     >
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 bg-orange-50 dark:bg-orange-950/20 rounded-2xl flex items-center justify-center text-orange-600 dark:text-orange-400">
@@ -617,7 +617,7 @@ export default function Duties() {
                     </button>
                     
                     {expandedPolls[poll.id] && (
-                      <div className="p-6 pt-0 border-t border-gray-50 dark:border-white/5">
+                      <div className="p-0 md:p-6 pt-0 md:pt-0 border-t border-gray-50 dark:border-white/5">
                         <ChoreCommitteeDashboard 
                           poll={poll} 
                           pollResponses={pollResponses[poll.id] || []} 
@@ -820,10 +820,10 @@ export default function Duties() {
               </div>
             ) : (
               committeePolls.map(poll => (
-                <div key={poll.id} id={`assignment-${poll.id}`} className="bg-white dark:bg-[#1e1e1a] rounded-[32px] border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
+                <div key={poll.id} id={`assignment-${poll.id}`} className="bg-white dark:bg-[#1e1e1a] rounded-none sm:rounded-[32px] border-x-0 sm:border border-y border-gray-100 dark:border-white/5 shadow-none sm:shadow-sm overflow-hidden mx-[-8px] sm:mx-0">
                    <button 
                     onClick={() => setExpandedPolls(prev => ({ ...prev, [poll.id]: !prev[poll.id] }))}
-                    className="w-full border-l-4 border-blue-500 flex flex-col md:flex-row md:items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-[#252520] transition-all text-left gap-4"
+                    className="w-full border-l-4 border-blue-500 flex flex-col md:flex-row md:items-center justify-between p-4 md:p-6 hover:bg-gray-50 dark:hover:bg-[#252520] transition-all text-left gap-4"
                   >
                     <div>
                       <h2 className="text-xl font-serif font-bold text-gray-800 dark:text-white flex items-center gap-2">
@@ -846,7 +846,7 @@ export default function Duties() {
                   </button>
                   
                   {expandedPolls[poll.id] && (
-                    <div className="p-6 pt-0 border-t border-gray-50 dark:border-white/5">
+                    <div className="p-0 md:p-6 pt-0 md:pt-0 border-t border-gray-50 dark:border-white/5">
                       <CommitteeAssignments 
                         poll={poll} 
                         pollResponses={pollResponses[poll.id] || []} 
