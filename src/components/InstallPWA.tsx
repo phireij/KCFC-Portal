@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Download, Share, PlusSquare, BellRing, CheckCircle, X, Info, ChevronRight, Bell } from 'lucide-react';
+import { Smartphone, Download, Share, PlusSquare, BellRing, CheckCircle, X, Info, ChevronRight, Bell, RefreshCw } from 'lucide-react';
 import { useAuth } from '../App';
-import { registerDeviceToken, requestNotificationPermission, VAPID_KEY } from '../lib/fcmClient';
+import { registerDeviceToken, requestNotificationPermission, VAPID_KEY, preloadVapidKeyFromServer } from '../lib/fcmClient';
 
 export default function InstallPWA() {
   const { user } = useAuth();
@@ -15,10 +15,38 @@ export default function InstallPWA() {
   const [registeredToken, setRegisteredToken] = useState<string | null>(() => {
     return typeof window !== "undefined" ? localStorage.getItem("kcfc_registered_fcm_token") : null;
   });
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
   const [testingPush, setTestingPush] = useState(false);
   const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
   const [testCountdown, setTestCountdown] = useState<number | null>(null);
   const testTimerRef = React.useRef<{ interval: any; timeout: any } | null>(null);
+
+  const checkActivePushSubscription = async () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        const reg = regs.find(r => r.active && r.active.scriptURL.includes('firebase-messaging-sw'));
+        if (reg && reg.pushManager) {
+          const sub = await reg.pushManager.getSubscription();
+          setHasActiveSubscription(!!sub);
+        } else {
+          // Fallback to checking the default registration if none match specifically
+          const defaultReg = await navigator.serviceWorker.getRegistration();
+          if (defaultReg && defaultReg.pushManager) {
+            const sub = await defaultReg.pushManager.getSubscription();
+            setHasActiveSubscription(!!sub);
+          } else {
+            setHasActiveSubscription(false);
+          }
+        }
+      } catch (e) {
+        console.warn("Error checking active push subscription:", e);
+        setHasActiveSubscription(false);
+      }
+    } else {
+      setHasActiveSubscription(false);
+    }
+  };
 
   useEffect(() => {
     // 1. Check if already installed / standalone
@@ -54,6 +82,30 @@ export default function InstallPWA() {
     const dismissed = localStorage.getItem('kcfc_pwa_install_dismissed') === 'true';
     setIsDismissed(dismissed);
 
+    // 6. Preload VAPID key and auto-register silently if permission already granted
+    preloadVapidKeyFromServer()
+      .then(() => {
+        if (user && 'Notification' in window && Notification.permission === 'granted') {
+          console.log("PWA: Notifications granted. Silently auto-registering standard Web Push on mount...");
+          return registerDeviceToken(user.uid, false);
+        }
+      })
+      .then((token) => {
+        if (token) {
+          setRegisteredToken(token);
+          setHasActiveSubscription(true);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("kcfc_registered_fcm_token", token);
+          }
+        } else {
+          checkActivePushSubscription();
+        }
+      })
+      .catch((err) => {
+        console.warn("PWA: Preload or background auto-registration failed on mount:", err);
+        checkActivePushSubscription();
+      });
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       if (testTimerRef.current) {
@@ -61,7 +113,7 @@ export default function InstallPWA() {
         clearTimeout(testTimerRef.current.timeout);
       }
     };
-  }, []);
+  }, [user]);
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) return;
@@ -124,8 +176,16 @@ export default function InstallPWA() {
     try {
       const token = await registerDeviceToken(user.uid, true);
       if (token) {
-        if (!token.startsWith("simulated")) {
+        await checkActivePushSubscription();
+        if (token.includes("webpush-registered")) {
+          setHasActiveSubscription(true);
           setRegisteredToken(token);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("kcfc_registered_fcm_token", token);
+          }
+        } else if (!token.startsWith("simulated")) {
+          setRegisteredToken(token);
+          setHasActiveSubscription(true);
           if (typeof window !== "undefined") {
             localStorage.setItem("kcfc_registered_fcm_token", token);
           }
@@ -134,7 +194,7 @@ export default function InstallPWA() {
           setNotificationPermission(Notification.permission);
         }
         
-        if (token.startsWith("simulated")) {
+        if (token.startsWith("simulated") && !token.includes("webpush-registered")) {
           let reason = "An unknown browser issue occurred during device registration.";
           if (token === "simulated-browser-token") {
             reason = "Firebase Cloud Messaging (FCM) is not fully supported in this browser environment or inside an iframe.";
@@ -374,9 +434,11 @@ export default function InstallPWA() {
           {/* Notification diagnostic confirmation and self-testing panel */}
           {hasNotificationsActive && (
             <div className="mt-4 pt-3.5 border-t border-[#5a5a40]/10 dark:border-white/5 space-y-3">
-              <p className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-1 font-semibold uppercase tracking-wider">
-                <CheckCircle size={10} /> Push Notifications Active on This Device
-              </p>
+              {hasActiveSubscription === true && (
+                <p className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-1.5 font-semibold uppercase tracking-wider">
+                  <CheckCircle size={10} /> Smartphone Push Alerts Active on This Device
+                </p>
+              )}
               
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 {testCountdown !== null ? (

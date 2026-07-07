@@ -18,7 +18,12 @@ export default function NotificationCenter() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
+        (navigator as any).clearAppBadge().catch(() => {});
+      }
+      return;
+    }
 
     const q = query(
       collection(db, 'notifications'),
@@ -30,7 +35,21 @@ export default function NotificationCenter() {
     const unsubscribe = onSnapshot(q, (snap) => {
       const notes = snap.docs.map(d => ({ id: d.id, ...d.data() } as NotificationType));
       setNotifications(notes);
-      setUnreadCount(notes.filter(n => n.status === 'unread').length);
+      const count = notes.filter(n => n.status === 'unread').length;
+      setUnreadCount(count);
+
+      // PWA Badging API Integration
+      if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+        if (count > 0) {
+          (navigator as any).setAppBadge(count).catch((err: any) => {
+            console.warn('Failed to set application icon badge count:', err);
+          });
+        } else {
+          (navigator as any).clearAppBadge().catch((err: any) => {
+            console.warn('Failed to clear application icon badge count:', err);
+          });
+        }
+      }
     });
 
     return () => unsubscribe();
@@ -102,7 +121,7 @@ export default function NotificationCenter() {
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-[100]"
+            className="fixed top-[68px] left-4 right-4 sm:absolute sm:top-auto sm:left-auto sm:right-0 sm:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-[100]"
           >
             <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
               <h3 className="font-serif font-bold text-sm">Notifications</h3>

@@ -237,9 +237,8 @@ service cloud.firestore {
 
     // --- Notifications Collection ---
     match /notifications/{notificationId} {
-      allow read, update: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.get('userId', '') == request.auth.uid);
+      allow read, update: if isSignedIn() && resource.data.get('userId', '') == request.auth.uid;
       allow delete: if isSignedIn() && (
-        resource.data.userId == request.auth.uid || 
         resource.data.get('userId', '') == request.auth.uid ||
         isAdmin() ||
         isBootstrapAdmin()

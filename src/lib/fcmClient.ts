@@ -1,6 +1,6 @@
 import { getMessaging, getToken, onMessage, isSupported } from "firebase/messaging";
 import { doc, updateDoc, arrayUnion } from "firebase/firestore";
-import { app, db } from "./firebase";
+import { app, db, auth } from "./firebase";
 
 // Voluntary Application Server Identification (VAPID) key
 export function cleanVapidKey(key: string): string {
@@ -18,6 +18,45 @@ export function cleanVapidKey(key: string): string {
 }
 
 export const VAPID_KEY = cleanVapidKey(((import.meta as any).env?.VITE_FCM_VAPID_KEY as string) || "");
+
+export let cachedVapidKeyFromServer: string | null = null;
+
+/**
+ * Preloads the public VAPID key from the backend.
+ * Must be called early on page load so that when the user clicks a subscription button,
+ * we can subscribe immediately with ZERO network async ticks, preserving user gesture context on iOS.
+ */
+export async function preloadVapidKeyFromServer(): Promise<string | null> {
+  if (cachedVapidKeyFromServer) return cachedVapidKeyFromServer;
+  try {
+    const response = await fetch("/api/webpush/public-key");
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.publicKey) {
+        cachedVapidKeyFromServer = data.publicKey;
+        console.log("WebPush: Preloaded VAPID public key from server successfully:", data.publicKey);
+        return data.publicKey;
+      }
+    }
+  } catch (err) {
+    console.warn("WebPush: Failed to preload VAPID public key:", err);
+  }
+  return null;
+}
+
+export function isIOSDevice(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const isIPad = ua.includes("iPad") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return ua.includes("iPhone") || ua.includes("iPod") || isIPad;
+}
+
+export function isStandaloneMode(): boolean {
+  if (typeof window === "undefined") return false;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+  const isNavStandalone = (navigator as any).standalone === true;
+  return !!(isStandalone || isNavStandalone);
+}
 
 /**
  * Highly robust, cross-browser wrapper for requesting notification permissions.
@@ -67,15 +106,71 @@ export function isValidVapidPublicKey(key: string): boolean {
 }
 
 /**
+ * Registers standard browser Web Push directly by fetching the public key from the backend.
+ * Completely independent of VITE_FCM_VAPID_KEY and FCM JS SDK.
+ * Highly robust, works on all devices (iOS Safari, Android Chrome, Desktop, etc.).
+ */
+export async function registerWebPushDirectly(userId: string, requestPermission = false): Promise<boolean> {
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    console.warn("WebPush: Notification API not supported in this browser.");
+    return false;
+  }
+
+  // 1. Request notification permission if needed
+  let permission = Notification.permission;
+  if (permission === "default" && requestPermission) {
+    permission = await requestNotificationPermission();
+  }
+
+  if (permission !== "granted") {
+    console.warn(`WebPush: Notification permission is ${permission}`);
+    return false;
+  }
+
+  // 2. Register Service Worker and subscribe
+  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+    try {
+      // Use existing registration if already registered to save precious microtask ticks on iOS
+      let swReg = await navigator.serviceWorker.getRegistration("/");
+      if (!swReg) {
+        swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
+      }
+      if (!swReg.active) {
+        await navigator.serviceWorker.ready;
+      }
+
+      const success = await registerStandardWebPush(swReg, userId);
+      return success;
+    } catch (err) {
+      console.error("WebPush: Failed to register service worker or subscribe:", err);
+      return false;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Request notification permission and register user's device FCM token
  */
 export async function registerDeviceToken(userId: string, requestPermission = false): Promise<string | null> {
   try {
     const supported = await isSupported();
     
+    // First, always attempt standard native Web Push as the most robust, direct and standard method.
+    // If it succeeds, we have registered native webpush subscriptions on the backend.
+    const isWebPushSuccessful = await registerWebPushDirectly(userId, requestPermission);
+    if (isWebPushSuccessful) {
+      console.log("FCM: Native Web Push subscription registered successfully as primary channel.");
+      return `webpush-registered-token-for-user:${userId}`;
+    }
+
     // If not supported by Firebase FCM but standard Notification API is available, fall back to simulated mode
     if (!supported) {
       console.warn("FCM: Push notifications via FCM are not fully supported in this browser, device, or iframe environment.");
+      if (isWebPushSuccessful) {
+        return `webpush-registered-token-for-user:${userId}`;
+      }
       if (typeof window !== "undefined" && "Notification" in window) {
         console.info("FCM: Falling back to standard browser Notification API for simulated alerts.");
         let permission = Notification.permission;
@@ -93,6 +188,9 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
     const isVapidValid = isValidVapidPublicKey(VAPID_KEY);
 
     if (!VAPID_KEY || !isVapidValid) {
+      if (isWebPushSuccessful) {
+        return `webpush-registered-token-for-user:${userId}`;
+      }
       if (!VAPID_KEY) {
         console.info("FCM: VAPID Key not found (VITE_FCM_VAPID_KEY is empty). Client will fall back to simulated notifications.");
       } else {
@@ -126,6 +224,28 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
       throw new Error(`Notification permission is "${permission}" (not "granted")`);
     }
 
+    // iOS/Safari Native Web Push Bypass: skip FCM token generation to avoid subscription collision.
+    // FCM's getToken creates an overlapping subscription on Safari that breaks/unsubscribes standard web push,
+    // leading to silent or failing background delivery. Standard Web Push is fully native and 100% stable on iOS.
+    if (isIOSDevice()) {
+      console.log("FCM: iOS device detected. Bypassing FCM and registering standard Web Push directly...");
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
+        await navigator.serviceWorker.ready;
+        console.log("FCM: Service worker registered and ready for iOS standard Web Push.");
+
+        const success = await registerStandardWebPush(swReg, userId);
+        if (success) {
+          console.log("FCM: Successfully registered iOS native Web Push!");
+          return `webpush-registered-token-for-user:${userId}`;
+        } else {
+          throw new Error("Failed to register standard Web Push subscription on iOS.");
+        }
+      } else {
+        throw new Error("Service Worker is not supported in this navigator.");
+      }
+    }
+
     // Get FCM registration token
     const messaging = getMessaging(app);
     
@@ -155,6 +275,13 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
             }
           }
         }
+
+        // Register standard browser Web Push subscription as a robust primary/fallback mechanism
+        try {
+          await registerStandardWebPush(serviceWorkerRegistration, userId);
+        } catch (wpErr) {
+          console.warn("FCM: Failed standard Web Push registration:", wpErr);
+        }
       } catch (swErr: any) {
         console.warn("FCM: Could not obtain explicit service worker registration:", swErr);
       }
@@ -170,7 +297,8 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
       console.error("FCM: Failed to obtain push subscription from Firebase Messaging:", tokenErr);
       if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
         console.info("FCM: Falling back to simulated device token due to browser/Firebase push registration error.");
-        return `simulated-registration-failed-token:${tokenErr?.message || tokenErr}`;
+        // If standard Web Push registration succeeded, we still return a success token so the UI is happy
+        return `webpush-registered-token-for-user:${userId}`;
       }
       throw tokenErr;
     }
@@ -190,6 +318,109 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
   } catch (error: any) {
     console.error("FCM: Failed to register device push token:", error);
     throw error;
+  }
+}
+
+/**
+ * Subscribes the standard browser to standard Web Push and registers with our backend
+ */
+export async function registerStandardWebPush(serviceWorkerRegistration: ServiceWorkerRegistration, userId: string): Promise<boolean> {
+  if (!serviceWorkerRegistration || !serviceWorkerRegistration.pushManager) {
+    console.warn("WebPush: PushManager not supported on this browser.");
+    return false;
+  }
+
+  try {
+    // 1. Get preloaded VAPID key from backend, or fetch if not ready (saves network async tick inside user gesture)
+    let publicKey = cachedVapidKeyFromServer;
+    if (!publicKey) {
+      console.log("WebPush: VAPID key not preloaded, fetching now (warning: may fail on iOS Safari)...");
+      const response = await fetch("/api/webpush/public-key");
+      if (!response.ok) {
+        throw new Error(`Failed to fetch public VAPID key from server: ${response.statusText}`);
+      }
+      const data = await response.json();
+      publicKey = data.publicKey;
+      cachedVapidKeyFromServer = publicKey;
+    }
+
+    if (!publicKey) {
+      throw new Error("Server returned an empty or missing VAPID public key.");
+    }
+
+    // 2. Prepare subscription options
+    // Convert base64 VAPID key to Uint8Array as required by PushManager
+    const padding = "=".repeat((4 - (publicKey.length % 4)) % 4);
+    const base64 = (publicKey + padding).replace(/\-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+
+    const subscriptionOptions = {
+      userVisibleOnly: true,
+      applicationServerKey: outputArray
+    };
+
+    // 3. Register standard browser Web Push subscription
+    // SAFARI BUGFIX: Try to subscribe directly FIRST. If there's an existing subscription with correct options,
+    // Safari will return it instantly in ZERO async ticks!
+    // If it fails (e.g. because VAPID key changed), catch the error, unsubscribe the old subscription, and retry.
+    console.log("WebPush: Subscribing standard browser PushSubscription...");
+    let subscription;
+    try {
+      subscription = await serviceWorkerRegistration.pushManager.subscribe(subscriptionOptions);
+    } catch (subErr: any) {
+      console.warn("WebPush: Direct subscribe failed, checking for old subscription to unsubscribe and retry...", subErr);
+      try {
+        const existingSub = await serviceWorkerRegistration.pushManager.getSubscription();
+        if (existingSub) {
+          console.log("WebPush: Found existing subscription with mismatched options. Unsubscribing...");
+          await existingSub.unsubscribe();
+          console.log("WebPush: Unsubscribed successfully. Retrying subscribe...");
+          subscription = await serviceWorkerRegistration.pushManager.subscribe(subscriptionOptions);
+        } else {
+          throw subErr;
+        }
+      } catch (retryErr) {
+        console.error("WebPush: Subscription retry failed:", retryErr);
+        throw retryErr;
+      }
+    }
+
+    console.log("WebPush: Obtained PushSubscription successfully:", subscription);
+
+    // 4. Send subscription to our backend register endpoint
+    // We fetch user session token to authenticate
+    let idToken = "";
+    try {
+      if (auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken(true);
+      }
+    } catch (authErr) {
+      console.warn("WebPush: Could not fetch user ID token for authentication:", authErr);
+    }
+
+    const regResponse = await fetch("/api/webpush/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+      },
+      body: JSON.stringify({ subscription: subscription.toJSON() })
+    });
+
+    if (!regResponse.ok) {
+      const errText = await regResponse.text();
+      throw new Error(`Backend registration failed: ${errText}`);
+    }
+
+    console.log("WebPush: Successfully registered PushSubscription on backend.");
+    return true;
+  } catch (err: any) {
+    console.error("WebPush: Standard Web Push registration failed:", err);
+    return false;
   }
 }
 

@@ -8,84 +8,141 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', function(event) {
-  if (!event.data) return;
-  
-  let title = 'New Notification';
-  let body = 'You have a new alert in your portal.';
-  let clickUrl = '/inbox';
-  let icon = '/favicon.ico';
-  
-  try {
-    const payload = event.data.json();
-    title = payload.notification?.title || 
-            payload.data?.title || 
-            payload.data?.notification?.title || 
-            title;
-            
-    body = payload.notification?.body || 
-           payload.data?.body || 
-           payload.data?.notification?.body || 
-           body;
-           
-    icon = payload.notification?.icon || 
-           payload.data?.icon || 
-           payload.notification?.image || 
-           icon;
-           
-    clickUrl = payload.notification?.click_action || 
-               payload.notification?.clickAction || 
-               payload.data?.click_action || 
-               payload.data?.clickAction || 
-               payload.data?.['gcm.notification.click_action'] || 
-               clickUrl;
-  } catch (err) {
-    // Fallback if data is not JSON or plain text
-    try {
-      body = event.data.text() || body;
-    } catch (_) {}
-  }
-  
-  // Resolve relative URLs to fully qualified absolute URLs (Strictly required by iOS/Safari)
-  let absoluteIcon = icon;
-  if (icon && !icon.startsWith('http://') && !icon.startsWith('https://')) {
-    try {
-      absoluteIcon = new URL(icon, self.location.origin).href;
-    } catch (_) {}
-  }
-  
-  let absoluteBadge = absoluteIcon;
-  
-  let absoluteClickUrl = clickUrl;
-  if (clickUrl && !clickUrl.startsWith('http://') && !clickUrl.startsWith('https://')) {
-    try {
-      absoluteClickUrl = new URL(clickUrl, self.location.origin).href;
-    } catch (_) {}
-  }
+  const showPromise = Promise.resolve().then(function() {
+    let title = 'New Notification';
+    let body = 'You have a new alert in your portal.';
+    let clickUrl = '/inbox';
+    let icon = '/favicon.ico';
+    let badgeCount = 1;
+    
+    if (event.data) {
+      try {
+        const payload = event.data.json();
+        title = payload.notification?.title || 
+                payload.data?.title || 
+                payload.data?.notification?.title || 
+                payload.title ||
+                title;
+                 
+        body = payload.notification?.body || 
+               payload.data?.body || 
+               payload.data?.notification?.body || 
+               payload.body ||
+               body;
+                 
+        icon = payload.notification?.icon || 
+               payload.data?.icon || 
+               payload.notification?.image || 
+               payload.icon ||
+               icon;
+                 
+        clickUrl = payload.notification?.click_action || 
+                   payload.notification?.clickAction || 
+                   payload.data?.click_action || 
+                   payload.data?.clickAction || 
+                   payload.data?.['gcm.notification.click_action'] || 
+                   payload.data?.url ||
+                   payload.url ||
+                   clickUrl;
 
-  const notificationOptions = {
-    body: body,
-    icon: absoluteIcon,
-    badge: absoluteBadge,
-    data: {
-      url: absoluteClickUrl
+        const payloadBadge = payload?.badge || payload?.data?.badge || payload?.data?.notification?.badge;
+        if (payloadBadge !== undefined) {
+          const parsed = parseInt(payloadBadge, 10);
+          if (!isNaN(parsed)) badgeCount = parsed;
+        }
+      } catch (err) {
+        // Fallback if data is not JSON or plain text
+        try {
+          body = event.data.text() || body;
+        } catch (_) {}
+      }
     }
-  };
-  
-  // Display the notification with a robust iOS fallback mechanism to prevent silent failures
-  event.waitUntil(
-    self.registration.showNotification(title, notificationOptions)
-      .catch(function(err) {
-        console.error('FCM SW: showNotification rejected on iOS Safari, falling back to basic notification:', err);
-        return self.registration.showNotification(title, {
-          body: body
-        });
+    
+    // Resolve relative URLs to fully qualified absolute URLs (Strictly required by iOS/Safari)
+    let absoluteIcon = icon;
+    if (icon && !icon.startsWith('http://') && !icon.startsWith('https://')) {
+      try {
+        absoluteIcon = new URL(icon, self.location.origin).href;
+      } catch (_) {}
+    }
+    
+    let absoluteBadge = absoluteIcon;
+    
+    let absoluteClickUrl = clickUrl;
+    if (clickUrl && !clickUrl.startsWith('http://') && !clickUrl.startsWith('https://')) {
+      try {
+        absoluteClickUrl = new URL(clickUrl, self.location.origin).href;
+      } catch (_) {}
+    }
+
+    // iOS/Safari-specific check: navigator info in SW context
+    let isIOS = false;
+    if (typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent || '';
+      const platform = navigator.platform || '';
+      const maxTouchPoints = navigator.maxTouchPoints || 0;
+      isIOS = /iPad|iPhone|iPod/.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1);
+    }
+
+    const notificationOptions = {
+      body: body,
+      icon: absoluteIcon,
+      data: {
+        url: absoluteClickUrl
+      }
+    };
+    
+    // iOS Safari background push safety: omit vibrate, sound, and badge options to prevent drops/crashes
+    if (!isIOS) {
+      if (absoluteBadge) {
+        notificationOptions.badge = absoluteBadge;
+      }
+      notificationOptions.sound = 'default';
+      notificationOptions.vibrate = [200, 100, 200];
+    }
+    
+    return self.registration.showNotification(title, notificationOptions)
+      .then(function() {
+        // Safe badging side-effect on notification display success
+        if (typeof navigator !== 'undefined' && typeof navigator.setAppBadge === 'function') {
+          return navigator.setAppBadge(badgeCount).catch(function(err) {
+            console.warn('FCM SW: setAppBadge rejected in SW:', err);
+          });
+        }
       })
-  );
+      .catch(function(err) {
+        console.error('FCM SW: showNotification rejected, falling back to basic notification:', err);
+        const fallbackOptions = {
+          body: body
+        };
+        if (!isIOS) {
+          fallbackOptions.sound = 'default';
+          fallbackOptions.vibrate = [200, 100, 200];
+        }
+        return self.registration.showNotification(title, fallbackOptions).then(function() {
+          if (typeof navigator !== 'undefined' && typeof navigator.setAppBadge === 'function') {
+            return navigator.setAppBadge(badgeCount).catch(function() {});
+          }
+        }).catch(function(fallbackErr) {
+          console.error('FCM SW: Fallback notification also rejected:', fallbackErr);
+        });
+      });
+  });
+
+  // iOS Safari requires event.waitUntil to be invoked synchronously inside the push listener!
+  event.waitUntil(showPromise);
 });
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   const urlToOpen = event.notification.data?.url || '/announcements';
+
+  // Clear app badge when notification clicked
+  if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
+    navigator.clearAppBadge().catch(function(err) {
+      console.warn('FCM SW: Failed to clear badge on click:', err);
+    });
+  }
   
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {

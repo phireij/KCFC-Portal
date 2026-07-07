@@ -1240,10 +1240,10 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                       return (
                         <td 
                           key={option.date} 
-                          className="p-1.5 md:p-3 border-r border-gray-100 text-center align-middle"
+                          className="p-1 md:p-1.5 border-r border-gray-100 dark:border-white/5 text-center align-middle"
                           style={{ minWidth: `${columnWidth}px`, width: `${columnWidth}px` }}
                         >
-                          <div className="flex items-center justify-center gap-2 relative">
+                          <div className="flex items-center justify-center gap-1 md:gap-1.5 relative">
                             {hasSelected ? (
                               <CheckSquare className="text-gray-500 w-4 h-4 shrink-0" />
                             ) : (
@@ -1252,18 +1252,18 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
 
                             <div className="flex-1 text-left">
                               {!hasSelected ? (
-                                <div className="h-6 bg-gray-100 rounded-full w-full opacity-50" />
+                                <div className="h-6 bg-gray-100 dark:bg-white/5 rounded-full w-full opacity-50" />
                               ) : (
                                 <>
                                   {isAssigningThisCell ? (
                                     <div 
                                       ref={menuRef}
-                                      className="absolute top-1/2 left-6 -translate-y-1/2 z-20 bg-white rounded-lg shadow-xl border border-gray-200 p-1 min-w-[150px]"
+                                      className="absolute top-1/2 left-6 -translate-y-1/2 z-20 bg-white dark:bg-[#1e1e1a] rounded-lg shadow-xl border border-gray-200 dark:border-white/5 p-1 min-w-[150px]"
                                     >
                                       <div className="max-h-48 overflow-y-auto flex flex-col gap-1 pr-1">
                                         <button
                                           onClick={() => handleAssignRole(option.date, user.id, '')}
-                                          className="text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                                          className="text-left px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 rounded"
                                         >
                                           None / Clear
                                         </button>
@@ -1289,11 +1289,11 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                                         }
                                       }}
                                       className={cn(
-                                        "px-3 py-1 rounded-full text-[10px] font-bold w-full text-center transition-all border",
+                                        "px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-xs md:text-sm font-bold w-full text-center transition-all border",
                                         editable ? "cursor-pointer" : "cursor-default",
                                         currentAssignment 
                                           ? ROLE_COLORS[currentAssignment] + " border-transparent" 
-                                          : (editable ? "bg-gray-50 text-gray-400 border-gray-200 hover:border-[#008b99] hover:bg-[#008b99]/5" : "bg-gray-50 text-gray-400 border-gray-200 opacity-60"),
+                                          : (editable ? "bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-white/5 hover:border-[#008b99] hover:bg-[#008b99]/5" : "bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-white/5 opacity-60"),
                                         isStaged && "ring-2 ring-orange-400 ring-offset-1"
                                       )}
                                     >

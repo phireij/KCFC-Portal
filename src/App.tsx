@@ -305,17 +305,81 @@ export default function App() {
 
   // FCM Push Registration & Foreground Listeners
   const [fcmNotification, setFcmNotification] = useState<{ title: string; body: string } | null>(null);
+  const [showPwaNotificationPrompt, setShowPwaNotificationPrompt] = useState(false);
+  const [enablingPwaNotifications, setEnablingPwaNotifications] = useState(false);
+
+  // Monitor first-launch standalone (PWA from Home Screen) mode to auto-prompt for notifications
+  useEffect(() => {
+    if (!user) {
+      setShowPwaNotificationPrompt(false);
+      return;
+    }
+
+    import('./lib/fcmClient').then(({ isStandaloneMode }) => {
+      const isStandalone = isStandaloneMode();
+      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
+      const isPermissionDefault = hasNotification && Notification.permission === 'default';
+      const hasDismissed = localStorage.getItem('kcfc_pwa_notification_prompt_dismissed') === 'true';
+
+      if (isStandalone && isPermissionDefault && !hasDismissed) {
+        // Trigger a gentle, highly-polished modal prompt after a small delay on launch
+        const timer = setTimeout(() => {
+          setShowPwaNotificationPrompt(true);
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    }).catch((err) => {
+      console.warn("FWA: PWA detection failed:", err);
+    });
+  }, [user]);
+
+  const handleEnablePwaNotifications = async () => {
+    if (!user) return;
+    setEnablingPwaNotifications(true);
+    try {
+      const { registerDeviceToken, requestNotificationPermission } = await import('./lib/fcmClient');
+      // Direct call on the user gesture thread ensures permission prompt is never blocked by Safari/Chrome
+      const permission = await requestNotificationPermission();
+      if (permission === 'granted') {
+        await registerDeviceToken(user.uid, true);
+        setShowPwaNotificationPrompt(false);
+      } else {
+        setShowPwaNotificationPrompt(false);
+        localStorage.setItem('kcfc_pwa_notification_prompt_dismissed', 'true');
+      }
+    } catch (err) {
+      console.warn("PWA prompt: failed to enable notifications:", err);
+      setShowPwaNotificationPrompt(false);
+    } finally {
+      setEnablingPwaNotifications(false);
+    }
+  };
+
+  const handleDismissPwaNotifications = () => {
+    setShowPwaNotificationPrompt(false);
+    localStorage.setItem('kcfc_pwa_notification_prompt_dismissed', 'true');
+  };
 
   useEffect(() => {
     if (!user) return;
 
     let activeCleanup: (() => void) | null = null;
 
-    import('./lib/fcmClient').then(async ({ registerDeviceToken, observeForegroundMessages }) => {
-      // 1. Attempt token registration
-      await registerDeviceToken(user.uid);
+    import('./lib/fcmClient').then(async ({ registerDeviceToken, observeForegroundMessages, preloadVapidKeyFromServer }) => {
+      // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
+      await preloadVapidKeyFromServer();
 
-      // 2. Setup active window listener for push alerts
+      // 2. Attempt token registration. If permission is already granted, update silently.
+      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
+      if (hasNotification && Notification.permission === 'granted') {
+        try {
+          await registerDeviceToken(user.uid, false);
+        } catch (e) {
+          console.warn("Auto-registering device token failed silently on load:", e);
+        }
+      }
+
+      // 3. Setup active window listener for push alerts
       const unsubscribeMessages = await observeForegroundMessages((payload) => {
         const title = payload.notification?.title || 'Notification';
         const body = payload.notification?.body || '';
@@ -840,6 +904,42 @@ export default function App() {
                     className="text-[9px] font-extrabold text-[#5A5A40] dark:text-[#8a8a65] uppercase tracking-widest bg-[#5A5A40]/10 dark:bg-[#8a8a65]/10 px-2.5 py-1.5 rounded-lg hover:bg-[#5A5A40]/20 dark:hover:bg-[#8a8a65]/25 transition-all cursor-pointer"
                   >
                     Open Inbox &rarr;
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Home-screen/Standalone Auto-Prompting Glassmorphic Modal */}
+          {showPwaNotificationPrompt && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300 animate-fade-in">
+              <div className="w-full max-w-sm bg-[#fafafa]/90 dark:bg-[#121210]/95 backdrop-blur-xl rounded-2xl p-6 shadow-2xl border border-gray-200/50 dark:border-white/10 text-center flex flex-col items-center">
+                <div className="p-3 bg-[#5A5A40]/10 text-[#5A5A40] rounded-full mb-4">
+                  <Bell className="w-8 h-8 animate-pulse" />
+                </div>
+                <h3 className="font-serif font-bold text-lg text-gray-900 dark:text-gray-50 mb-2">
+                  Enable Smartphone Alerts
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
+                  Stay updated with real-time duties, committee announcements, and church events directly on your lock screen.
+                </p>
+                <div className="flex flex-col gap-2 w-full">
+                  <button
+                    onClick={handleEnablePwaNotifications}
+                    disabled={enablingPwaNotifications}
+                    className="w-full py-2.5 px-4 bg-[#5a5a40] hover:bg-[#484833] text-white rounded-xl text-xs font-semibold shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {enablingPwaNotifications ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      "Enable Alerts Now"
+                    )}
+                  </button>
+                  <button
+                    onClick={handleDismissPwaNotifications}
+                    className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl text-xs font-medium transition-all cursor-pointer"
+                  >
+                    Maybe Later
                   </button>
                 </div>
               </div>

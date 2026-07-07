@@ -9,6 +9,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getMessaging as getMessagingAdmin } from "firebase-admin/messaging";
 import nodemailer from "nodemailer";
 import multer from "multer";
+import webpush from "web-push";
 
 const hasImportMeta = typeof import.meta !== "undefined" && "url" in import.meta;
 const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== "undefined" ? __filename : "");
@@ -81,6 +82,75 @@ const dbAdmin = firebaseConfig.firestoreDatabaseId
 
 const authAdmin = getAuth(appAdmin);
 
+// Web Push (VAPID) credentials & initialization
+let vapidPublicKey = "";
+let vapidPrivateKey = "";
+
+async function initializeWebPush() {
+  try {
+    const configRef = dbAdmin.collection("configurations").doc("webpush_vapid_keys");
+    const docSnap = await configRef.get();
+    
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      vapidPublicKey = data?.publicKey || "";
+      vapidPrivateKey = data?.privateKey || "";
+      logMessage(`[WEBPUSH] Loaded existing persistent VAPID keys from Firestore.`);
+    } else {
+      // Generate new VAPID keys programmatically
+      const keys = webpush.generateVAPIDKeys();
+      vapidPublicKey = keys.publicKey;
+      vapidPrivateKey = keys.privateKey;
+      await configRef.set({
+        publicKey: vapidPublicKey,
+        privateKey: vapidPrivateKey,
+        createdAt: new Date().toISOString()
+      });
+      logMessage(`[WEBPUSH] Generated and saved new persistent VAPID keys in Firestore.`);
+    }
+
+    if (vapidPublicKey && vapidPrivateKey) {
+      webpush.setVapidDetails(
+        "mailto:kcfc.jp@gmail.com",
+        vapidPublicKey,
+        vapidPrivateKey
+      );
+      logMessage(`[WEBPUSH] setVapidDetails completed successfully.`);
+    }
+  } catch (err: any) {
+    console.error("[WEBPUSH] Failed to initialize web-push credentials:", err);
+  }
+}
+
+async function sendWebPushNotification(subscription: any, title: string, body: string, clickUrl: string) {
+  const payload = JSON.stringify({
+    title,
+    body,
+    icon: "/favicon.ico",
+    data: {
+      url: clickUrl
+    }
+  });
+
+  const options = {
+    TTL: 86400, // 24 hours
+    headers: {
+      "Urgency": "high"
+    }
+  };
+
+  try {
+    await webpush.sendNotification(subscription, payload, options);
+    return { success: true };
+  } catch (err: any) {
+    console.error(`[WEBPUSH SEND ERROR] Failed to deliver to endpoint ${subscription?.endpoint}:`, err.message);
+    if (err.statusCode === 410 || err.statusCode === 404) {
+      return { success: false, expired: true };
+    }
+    return { success: false, error: err.message };
+  }
+}
+
 // Helpers for Firestore REST API fallback (for robust database reads when Admin SDK encounters permission denied)
 function parseRESTValue(valObj: any): any {
   if (!valObj) return null;
@@ -126,7 +196,9 @@ interface UserProfileData {
   uid: string;
   email?: string;
   displayName?: string;
+  nickname?: string;
   fcmTokens?: string[];
+  webPushSubscriptions?: any[];
   preferences?: {
     broadcasts?: boolean;
     announcements?: boolean;
@@ -259,6 +331,9 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
 }
 
 async function startServer() {
+  // Initialize Web Push credentials at server start
+  await initializeWebPush();
+
   const app = express();
   const PORT = 3000;
 
@@ -269,6 +344,63 @@ async function startServer() {
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // Web Push API endpoints
+  app.get("/api/webpush/public-key", (req, res) => {
+    res.json({ publicKey: vapidPublicKey });
+  });
+
+  app.post("/api/webpush/register", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized: Missing authorization token" });
+      return;
+    }
+
+    const token = authHeader.split("Bearer ")[1];
+    const { subscription } = req.body;
+
+    if (!subscription || !subscription.endpoint) {
+      res.status(400).json({ error: "Missing required subscription data" });
+      return;
+    }
+
+    try {
+      // Verify user identity using decoded ID token
+      const decodedToken = await authAdmin.verifyIdToken(token);
+      const userId = decodedToken.uid;
+
+      const userRef = dbAdmin.collection("users").doc(userId);
+      const userDoc = await userRef.get();
+
+      let webPushSubscriptions: any[] = [];
+      if (userDoc.exists) {
+        webPushSubscriptions = userDoc.data()?.webPushSubscriptions || [];
+      }
+
+      // Filter out existing subscription with same endpoint to avoid duplicates
+      webPushSubscriptions = webPushSubscriptions.filter(
+        (sub: any) => sub.endpoint !== subscription.endpoint
+      );
+
+      // Add new subscription
+      webPushSubscriptions.push({
+        ...subscription,
+        registeredAt: new Date().toISOString()
+      });
+
+      await userRef.set({
+        webPushSubscriptions,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      logMessage(`[WEBPUSH REGISTER] Successfully registered web push subscription for user ${userId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[WEBPUSH REGISTER ERROR]", err);
+      res.status(500).json({ error: err.message || "Failed to register web push subscription" });
+    }
   });
 
   app.get("/api/public/db-diagnostics", async (req, res) => {
@@ -1067,14 +1199,72 @@ async function startServer() {
         logMessage(logMsgText);
       }
 
+      // --- Standard Web Push Delivery for Announcements (iOS Safari Support) ---
+      let webPushSuccessCount = 0;
+      let webPushFailureCount = 0;
+      try {
+        logMessage(`[WEBPUSH ANNOUNCEMENT BROADCAST] Attempting to deliver standard Web Push notifications...`);
+        const allUsers = await fetchAllUsersWithFallback(token);
+
+        for (const u of allUsers) {
+          if (u.preferences?.announcements === false) continue; // Opted out of announcements
+
+          const subs = u.webPushSubscriptions || [];
+          if (Array.isArray(subs) && subs.length > 0) {
+            const updatedSubs = [...subs];
+            let needsUpdate = false;
+
+            for (const sub of subs) {
+              const userDisplayName = u.displayName || 'Member';
+              const userNickname = u.nickname || userDisplayName;
+              const personalizedMsg = body
+                .replace(/\[name\]/gi, userDisplayName)
+                .replace(/\{name\}/gi, userDisplayName)
+                .replace(/\[nickname\]/gi, userNickname)
+                .replace(/\{nickname\}/gi, userNickname);
+
+              const result = await sendWebPushNotification(sub, title, personalizedMsg, "/announcements");
+              if (result.success) {
+                webPushSuccessCount++;
+              } else {
+                webPushFailureCount++;
+                if (result.expired) {
+                  const idx = updatedSubs.indexOf(sub);
+                  if (idx > -1) {
+                    updatedSubs.splice(idx, 1);
+                    needsUpdate = true;
+                  }
+                }
+              }
+            }
+
+            if (needsUpdate) {
+              try {
+                await dbAdmin.collection("users").doc(u.id).update({
+                  webPushSubscriptions: updatedSubs
+                });
+                logMessage(`[WEBPUSH ANNOUNCEMENT PRUNE] Pruned expired subscriptions for user ${u.id}`);
+              } catch (pruneErr) {
+                console.error(`[WEBPUSH ANNOUNCEMENT PRUNE ERROR] Failed to prune for user ${u.id}:`, pruneErr);
+              }
+            }
+          }
+        }
+        logMessage(`[WEBPUSH ANNOUNCEMENT BROADCAST COMPLETE] Delivered: ${webPushSuccessCount}, Failed: ${webPushFailureCount}`);
+      } catch (wpErr: any) {
+        console.error("[WEBPUSH ANNOUNCEMENT BROADCAST ERROR] Standard Web Push failed:", wpErr);
+      }
+
       res.json({
         success: true,
-        message: realTokens.length > 0 ? "FCM broadcast executed." : "FCM simulated successfully (no real devices subscribed yet).",
+        message: (realTokens.length > 0 || webPushSuccessCount > 0) ? "Announcement broadcast executed." : "Announcement broadcast simulated successfully.",
         totalTokens: realTokens.length,
         simulatedTokens: uniqueTokens.length - realTokens.length,
         successCount,
         failureCount,
-        details: logMsgText
+        webPushSuccessCount,
+        webPushFailureCount,
+        details: logMsgText + ` | Web Push Delivered: ${webPushSuccessCount}, Failed: ${webPushFailureCount}`
       });
 
     } catch (error: any) {
@@ -1231,6 +1421,64 @@ async function startServer() {
         logMessage(logMsgText);
       }
 
+      // --- Standard Web Push Delivery ---
+      let webPushSuccessCount = 0;
+      let webPushFailureCount = 0;
+      try {
+        logMessage(`[WEBPUSH BROADCAST] Attempting to deliver standard Web Push notifications...`);
+        const allUsers = await fetchAllUsersWithFallback(token);
+        const userIdsSet = new Set(userIds);
+
+        for (const u of allUsers) {
+          if (!userIdsSet.has(u.id)) continue;
+          if (u.preferences?.broadcasts === false) continue;
+
+          const subs = u.webPushSubscriptions || [];
+          if (Array.isArray(subs) && subs.length > 0) {
+            const updatedSubs = [...subs];
+            let needsUpdate = false;
+
+            for (const sub of subs) {
+              const userDisplayName = u.displayName || 'Member';
+              const userNickname = u.nickname || userDisplayName;
+              const personalizedMsg = body
+                .replace(/\[name\]/gi, userDisplayName)
+                .replace(/\{name\}/gi, userDisplayName)
+                .replace(/\[nickname\]/gi, userNickname)
+                .replace(/\{nickname\}/gi, userNickname);
+
+              const result = await sendWebPushNotification(sub, title, personalizedMsg, clickAction || "/inbox");
+              if (result.success) {
+                webPushSuccessCount++;
+              } else {
+                webPushFailureCount++;
+                if (result.expired) {
+                  const idx = updatedSubs.indexOf(sub);
+                  if (idx > -1) {
+                    updatedSubs.splice(idx, 1);
+                    needsUpdate = true;
+                  }
+                }
+              }
+            }
+
+            if (needsUpdate) {
+              try {
+                await dbAdmin.collection("users").doc(u.id).update({
+                  webPushSubscriptions: updatedSubs
+                });
+                logMessage(`[WEBPUSH PRUNE] Pruned expired subscriptions for user ${u.id}`);
+              } catch (pruneErr) {
+                console.error(`[WEBPUSH PRUNE ERROR] Failed to prune for user ${u.id}:`, pruneErr);
+              }
+            }
+          }
+        }
+        logMessage(`[WEBPUSH BROADCAST COMPLETE] Delivered: ${webPushSuccessCount}, Failed: ${webPushFailureCount}`);
+      } catch (wpErr: any) {
+        console.error("[WEBPUSH BROADCAST ERROR] Error sending standard Web Push:", wpErr);
+      }
+
       res.json({
         success: true,
         message: realTokens.length > 0 ? "FCM broadcast executed." : "FCM simulated successfully (no real devices subscribed yet).",
@@ -1238,6 +1486,8 @@ async function startServer() {
         simulatedTokens: uniqueTokens.length - realTokens.length,
         successCount,
         failureCount,
+        webPushSuccessCount,
+        webPushFailureCount,
         details: logMsgText
       });
 
@@ -1285,10 +1535,13 @@ async function startServer() {
       const uniqueTokens = Array.from(new Set(allTokens));
       const realTokens = uniqueTokens.filter(tk => !tk.startsWith("simulated"));
 
-      if (realTokens.length === 0) {
+      // Standard Web Push subscriptions
+      const callerWebPushSubs = callerProfile.webPushSubscriptions || [];
+
+      if (realTokens.length === 0 && callerWebPushSubs.length === 0) {
         res.json({
           success: false,
-          error: "No registered real browser push tokens found for this device.",
+          error: "No registered push credentials found for this device.",
           message: "Please click 'Enable Smartphone Alerts' to subscribe first before testing.",
           totalTokens: 0,
           simulatedTokens: uniqueTokens.length
@@ -1296,91 +1549,136 @@ async function startServer() {
         return;
       }
 
-      const messagingAdmin = getMessagingAdmin(appAdmin);
       const targetUrl = "/inbox";
       const title = "🔔 KCFC Smartphone Alert Test";
       const body = "Success! Smartphone push alerts are working perfectly on your device.";
-
-      logMessage(`[FCM TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${realTokens.length} tokens...`);
 
       let successCount = 0;
       let failureCount = 0;
       const responseErrors: any[] = [];
       let isCredentialMismatch = false;
 
-      try {
-        const fcmResponse = await messagingAdmin.sendEachForMulticast({
-          tokens: realTokens,
-          notification: {
-            title,
-            body,
-          },
-          data: {
-            click_action: targetUrl,
-            clickAction: targetUrl,
-            url: targetUrl,
-          },
-          webpush: {
+      // Send standard FCM notifications if we have real tokens
+      if (realTokens.length > 0) {
+        const messagingAdmin = getMessagingAdmin(appAdmin);
+        logMessage(`[FCM TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${realTokens.length} tokens...`);
+
+        try {
+          const fcmResponse = await messagingAdmin.sendEachForMulticast({
+            tokens: realTokens,
             notification: {
               title,
               body,
-              icon: "/favicon.ico",
-              clickAction: targetUrl,
             },
             data: {
               click_action: targetUrl,
               clickAction: targetUrl,
               url: targetUrl,
-            }
-          }
-        });
-
-        successCount = fcmResponse.successCount;
-        failureCount = fcmResponse.failureCount;
-
-        if (fcmResponse.responses) {
-          fcmResponse.responses.forEach((resp, idx) => {
-            if (!resp.success && resp.error) {
-              const errCode = resp.error.code || "";
-              const errMsg = resp.error.message || "";
-              responseErrors.push({
-                token: realTokens[idx].substring(0, 15) + "...",
-                errorCode: errCode,
-                errorMessage: errMsg
-              });
-
-              if (
-                errCode.includes("mismatched-credential") ||
-                errCode.includes("permission-denied") ||
-                errMsg.includes("cloudmessaging.messages.create") ||
-                errMsg.includes("denied")
-              ) {
-                isCredentialMismatch = true;
+            },
+            webpush: {
+              notification: {
+                title,
+                body,
+                icon: "/favicon.ico",
+                clickAction: targetUrl,
+              },
+              data: {
+                click_action: targetUrl,
+                clickAction: targetUrl,
+                url: targetUrl,
               }
             }
           });
-        }
-      } catch (fcmErr: any) {
-        console.warn("[FCM TEST SENDER] sendEachForMulticast threw direct exception:", fcmErr);
-        const errMsg = fcmErr?.message || "";
-        const errCode = fcmErr?.code || "";
-        if (
-          errCode.includes("mismatched-credential") ||
-          errCode.includes("permission-denied") ||
-          errMsg.includes("cloudmessaging.messages.create") ||
-          errMsg.includes("denied")
-        ) {
-          isCredentialMismatch = true;
-        } else {
-          throw fcmErr;
+
+          successCount = fcmResponse.successCount;
+          failureCount = fcmResponse.failureCount;
+
+          if (fcmResponse.responses) {
+            fcmResponse.responses.forEach((resp, idx) => {
+              if (!resp.success && resp.error) {
+                const errCode = resp.error.code || "";
+                const errMsg = resp.error.message || "";
+                responseErrors.push({
+                  token: realTokens[idx].substring(0, 15) + "...",
+                  errorCode: errCode,
+                  errorMessage: errMsg
+                });
+
+                if (
+                  errCode.includes("mismatched-credential") ||
+                  errCode.includes("permission-denied") ||
+                  errMsg.includes("cloudmessaging.messages.create") ||
+                  errMsg.includes("denied")
+                ) {
+                  isCredentialMismatch = true;
+                }
+              }
+            });
+          }
+        } catch (fcmErr: any) {
+          console.warn("[FCM TEST SENDER] sendEachForMulticast threw direct exception:", fcmErr);
+          const errMsg = fcmErr?.message || "";
+          const errCode = fcmErr?.code || "";
+          if (
+            errCode.includes("mismatched-credential") ||
+            errCode.includes("permission-denied") ||
+            errMsg.includes("cloudmessaging.messages.create") ||
+            errMsg.includes("denied")
+          ) {
+            isCredentialMismatch = true;
+          } else {
+            throw fcmErr;
+          }
         }
       }
 
-      // If we failed due to a Google sandbox project credential restriction, fallback gracefully to a Real-time Firestore notification push!
-      if (isCredentialMismatch || (successCount === 0 && realTokens.length > 0)) {
-        logMessage(`[FCM TEST FALLBACK] Standard FCM blocked by Sandbox IAM rules. Bypassing and delivering instantly via real-time Firestore database router.`);
+      // Send standard Web Push notifications if we have any standard subscriptions
+      let webPushSuccessCount = 0;
+      let webPushFailureCount = 0;
+      if (Array.isArray(callerWebPushSubs) && callerWebPushSubs.length > 0) {
+        logMessage(`[WEBPUSH TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${callerWebPushSubs.length} subscriptions...`);
+        const updatedSubs = [...callerWebPushSubs];
+        let needsUpdate = false;
+
+        for (const sub of callerWebPushSubs) {
+          const result = await sendWebPushNotification(
+            sub,
+            title,
+            body,
+            targetUrl
+          );
+          if (result.success) {
+            webPushSuccessCount++;
+          } else {
+            webPushFailureCount++;
+            if (result.expired) {
+              const idx = updatedSubs.indexOf(sub);
+              if (idx > -1) {
+                updatedSubs.splice(idx, 1);
+                needsUpdate = true;
+              }
+            }
+          }
+        }
+
+        if (needsUpdate) {
+          try {
+            await dbAdmin.collection("users").doc(callerUid).update({
+              webPushSubscriptions: updatedSubs
+            });
+            logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for user ${callerUid}`);
+          } catch (err) {
+            console.error("[WEBPUSH TEST PRUNE ERROR]", err);
+          }
+        }
+      }
+
+      const hasAnySuccess = successCount > 0 || webPushSuccessCount > 0;
+
+      // If both standard Web Push and FCM failed or was simulated, fallback to Firestore
+      if (!hasAnySuccess && (realTokens.length > 0 || callerWebPushSubs.length > 0) && (isCredentialMismatch || successCount === 0)) {
+        logMessage(`[FCM TEST FALLBACK] Both standard Web Push & FCM blocked or failed. Bypassing and delivering instantly via real-time Firestore database router.`);
         
-        // Write the notification to Firestore. This triggers the real-time listener on the client!
         await dbAdmin.collection("notifications").add({
           userId: callerUid,
           title: "🔔 KCFC Smartphone Alert Test",
@@ -1394,15 +1692,17 @@ async function startServer() {
         res.json({
           success: true,
           isSandboxSimulated: true,
-          message: "Google Cloud Sandbox constraint detected: Firebase Cloud Messaging (FCM) API credentials are locked or restricted on default AI Studio trial projects (requires your own billing/private GCP setup).\n\nHowever, the KCFC Portal successfully bypassed this restriction and routed this alert instantly to your device! A live fallback notification has been dispatched to your In-App Notification Center and native browser alerts.",
+          message: "A live fallback notification has been dispatched to your In-App Notification Center and native browser alerts.",
           totalTokens: realTokens.length,
           successCount: realTokens.length,
-          failureCount: 0
+          failureCount: 0,
+          webPushSuccessCount,
+          webPushFailureCount
         });
         return;
       }
 
-      logMessage(`[FCM TEST SUCCESS] Test push dispatched. Succeeded: ${successCount}, Failed: ${failureCount}`);
+      logMessage(`[FCM TEST SUCCESS] Test push dispatched. FCM: ${successCount}, WebPush: ${webPushSuccessCount}`);
 
       res.json({
         success: true,
@@ -1410,6 +1710,8 @@ async function startServer() {
         totalTokens: realTokens.length,
         successCount,
         failureCount,
+        webPushSuccessCount,
+        webPushFailureCount,
         errors: responseErrors.length > 0 ? responseErrors : undefined
       });
 
