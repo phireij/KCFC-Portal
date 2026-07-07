@@ -973,25 +973,32 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
               Mark {currentPhase === 'lector' ? 'Lector/Commentator' : currentPhase === 'altar_server' ? 'Altar Server' : currentPhase === 'usher' ? 'Usher' : 'PPT'} Done
             </button>
           )}
+        </div>
+      )}
 
-          {hasStagedChanges && (
-            <div className="flex items-center gap-2">
-               <button
-                onClick={discardStagedChanges}
-                className="px-4 py-2 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
-              >
-                Discard Changes
-              </button>
-              <button
-                onClick={applyStagedChanges}
-                disabled={isApplying}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-green-700 transition-all shadow-md"
-              >
-                {isApplying ? <Loader2 size={14} className="animate-spin" /> : null}
-                Apply Changes
-              </button>
-            </div>
-          )}
+      {/* Save modification bar for completed phase or active phases with staged changes */}
+      {hasStagedChanges && (
+        <div className="px-4 md:px-6 py-3.5 md:py-4.5 flex flex-wrap gap-4 items-center justify-between bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-300">
+          <div className="flex items-center gap-2.5 text-xs font-bold">
+            <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse shrink-0" />
+            <span>You have unsaved role modifications to this schedule. Click 'Save Modifications' to apply them.</span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={discardStagedChanges}
+              className="px-4 py-2 bg-white dark:bg-transparent border border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/5 transition-all cursor-pointer"
+            >
+              Discard Changes
+            </button>
+            <button
+              onClick={applyStagedChanges}
+              disabled={isApplying}
+              className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isApplying ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              Save Modifications
+            </button>
+          </div>
         </div>
       )}
 
