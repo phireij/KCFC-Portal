@@ -225,7 +225,9 @@ async function fetchAllUsersWithFallback(idToken: string): Promise<UserProfileDa
         uid: data.uid || doc.id,
         email: data.email,
         displayName: data.displayName,
+        nickname: data.nickname,
         fcmTokens: data.fcmTokens || [],
+        webPushSubscriptions: data.webPushSubscriptions || [],
         preferences: data.preferences,
         roles: data.roles || [],
       });
@@ -264,7 +266,9 @@ async function fetchAllUsersWithFallback(idToken: string): Promise<UserProfileDa
             uid: simplified.uid || id,
             email: simplified.email,
             displayName: simplified.displayName,
+            nickname: simplified.nickname,
             fcmTokens: simplified.fcmTokens || [],
+            webPushSubscriptions: simplified.webPushSubscriptions || [],
             preferences: simplified.preferences,
             roles: simplified.roles || [],
           });
@@ -289,7 +293,9 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       uid: data?.uid || docSnap.id,
       email: data?.email,
       displayName: data?.displayName,
+      nickname: data?.nickname,
       fcmTokens: data?.fcmTokens || [],
+      webPushSubscriptions: data?.webPushSubscriptions || [],
       preferences: data?.preferences,
       roles: data?.roles || [],
     };
@@ -322,7 +328,9 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
           uid: simplified.uid || userId,
           email: simplified.email,
           displayName: simplified.displayName,
+          nickname: simplified.nickname,
           fcmTokens: simplified.fcmTokens || [],
+          webPushSubscriptions: simplified.webPushSubscriptions || [],
           preferences: simplified.preferences,
           roles: simplified.roles || [],
         };

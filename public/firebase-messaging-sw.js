@@ -74,15 +74,10 @@ self.addEventListener('push', function(event) {
     } catch (_) {}
   }
 
-  // iOS/Safari-specific check: navigator info in SW context
-  let isIOS = false;
-  if (typeof navigator !== 'undefined') {
-    const ua = navigator.userAgent || '';
-    const platform = navigator.platform || '';
-    const maxTouchPoints = navigator.maxTouchPoints || 0;
-    isIOS = /iPad|iPhone|iPod/.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1);
-  }
-
+  // Use ONLY highly-compatible, universally-supported properties in notificationOptions.
+  // We completely omit 'sound', 'vibrate', and 'badge' by default for all browsers.
+  // This guarantees that iOS Safari/Chrome will never drop the notification due to strict validation,
+  // while Android/Desktop browsers still use their system defaults for sound and vibration.
   const notificationOptions = {
     body: body,
     icon: absoluteIcon,
@@ -91,42 +86,33 @@ self.addEventListener('push', function(event) {
     }
   };
   
-  // iOS Safari background push safety: omit vibrate, sound, and badge options to prevent drops/crashes
-  if (!isIOS) {
-    if (absoluteBadge) {
-      notificationOptions.badge = absoluteBadge;
-    }
-    notificationOptions.sound = 'default';
-    notificationOptions.vibrate = [200, 100, 200];
-  }
-  
-  // Directly invoke showNotification synchronously in the main thread of event listener!
-  const showPromise = self.registration.showNotification(title, notificationOptions)
-    .then(function() {
-      // Safe badging side-effect on notification display success
-      if (typeof navigator !== 'undefined' && typeof navigator.setAppBadge === 'function') {
-        return navigator.setAppBadge(badgeCount).catch(function(err) {
-          console.warn('FCM SW: setAppBadge rejected in SW:', err);
-        });
-      }
-    })
-    .catch(function(err) {
-      console.error('FCM SW: showNotification rejected, falling back to basic notification:', err);
-      const fallbackOptions = {
-        body: body
-      };
-      if (!isIOS) {
-        fallbackOptions.sound = 'default';
-        fallbackOptions.vibrate = [200, 100, 200];
-      }
-      return self.registration.showNotification(title, fallbackOptions).then(function() {
+  // Directly invoke showNotification synchronously in the main thread of the event listener.
+  // We also wrap the invocation in a synchronous try-catch block to handle any immediate parameter validation exceptions,
+  // preventing the Service Worker from crashing before the promise is returned.
+  let showPromise;
+  try {
+    showPromise = self.registration.showNotification(title, notificationOptions)
+      .then(function() {
+        // Safe, isolated badging side-effect (runs asynchronously and does not affect the display promise)
         if (typeof navigator !== 'undefined' && typeof navigator.setAppBadge === 'function') {
-          return navigator.setAppBadge(badgeCount).catch(function() {});
+          navigator.setAppBadge(badgeCount).catch(function(err) {
+            console.warn('FCM SW: setAppBadge rejected:', err);
+          });
         }
-      }).catch(function(fallbackErr) {
-        console.error('FCM SW: Fallback notification also rejected:', fallbackErr);
+      })
+      .catch(function(err) {
+        console.error('FCM SW: showNotification promise rejected, retrying with minimal options:', err);
+        return self.registration.showNotification(title, { body: body });
       });
-    });
+  } catch (syncErr) {
+    console.error('FCM SW: showNotification threw synchronous error:', syncErr);
+    try {
+      showPromise = self.registration.showNotification(title, { body: body });
+    } catch (innerSyncErr) {
+      console.error('FCM SW: Dual-sync crash:', innerSyncErr);
+      showPromise = Promise.resolve();
+    }
+  }
 
   // Pass the promise directly to event.waitUntil synchronously!
   event.waitUntil(showPromise);
