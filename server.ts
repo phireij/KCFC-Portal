@@ -126,7 +126,12 @@ async function sendWebPushNotification(subscription: any, title: string, body: s
   const payload = JSON.stringify({
     title,
     body,
-    icon: "/favicon.ico",
+    icon: "/logo-v4.png",
+    notification: {
+      title,
+      body,
+      icon: "/logo-v4.png"
+    },
     data: {
       url: clickUrl
     }

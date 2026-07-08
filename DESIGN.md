@@ -481,4 +481,13 @@ We will implement a visual reports widget in the lower half of the **Chore Assig
    - **Interactive Consent Overlay**: Designed a highly polished, responsive glassmorphic overlay modal in `src/App.tsx` that triggers automatically when the app is launched from the home screen (standalone mode) for the first time while permission is `"default"`.
    - **Single-Click Handshake**: When the user clicks "Enable Alerts Now" inside the glassmorphic modal, the permission request and device registration are invoked directly in the user gesture click thread, guaranteeing 100% success on first-launch PWA openings.
 
+### 7.34 Versioned iOS Icon Cache Invalidation and Microtask-Free Background Push Execution
+1. **Versioned Apple Touch Icons (Safari Cache Invalidation)**:
+   - **Bypassing Aggressive iOS Caches**: iOS Safari aggressively caches `apple-touch-icon.png` at the hostname level. To bypass this, generated brand-new physical image files: `/public/apple-touch-icon-v4.png` and `/public/apple-touch-icon-precomposed-v4.png`.
+   - **Explicit Version Reference**: Configured `index.html` to link directly to the new file paths with additional cache-busting query parameters (`/apple-touch-icon-v4.png?v=4`), ensuring iOS Safari invalidates stale caches and renders the full-color customized vector logo immediately upon "Add to Home Screen" actions.
+2. **Elimination of Microtask Delays in Push Event Handlers**:
+   - **Removing `.then()` in Promise.resolve()**: Refactored `/public/firebase-messaging-sw.js` to parse payload data and configure layout elements entirely synchronously on the main thread during the `push` event.
+   - **Sync Event Handshake**: Replaced `Promise.resolve().then(...)` with immediate, synchronous calls to `self.registration.showNotification(...)`. This ensures iOS Safari receives a pending promise in the very first tick of the event loop, preventing Safari's background thread manager from terminating the service worker before the notification is displayed when backgrounded or locked.
+   - **Double-Redundancy Notification Payload**: Added explicit root-level `notification` properties (`notification: { title, body, icon }`) inside `sendWebPushNotification` in `server.ts` to guarantee immediate native parsing by all modern browsers.
+
 
