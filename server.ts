@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { readFileSync, appendFileSync } from "fs";
+import { readFileSync, appendFileSync, writeFileSync, existsSync } from "fs";
 import { initializeApp, getApps, getApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
@@ -86,39 +86,108 @@ const authAdmin = getAuth(appAdmin);
 let vapidPublicKey = "";
 let vapidPrivateKey = "";
 
+function configureWebPushVapidDetails() {
+  if (!vapidPublicKey || !vapidPrivateKey) return;
+  webpush.setVapidDetails(
+    "mailto:kcfc.jp@gmail.com",
+    vapidPublicKey,
+    vapidPrivateKey
+  );
+}
+
 async function initializeWebPush() {
+  const localKeysPath = path.resolve(process.cwd(), "vapid-keys.json");
   try {
-    const configRef = dbAdmin.collection("configurations").doc("webpush_vapid_keys");
-    const docSnap = await configRef.get();
-    
-    if (docSnap.exists) {
-      const data = docSnap.data();
-      vapidPublicKey = data?.publicKey || "";
-      vapidPrivateKey = data?.privateKey || "";
-      logMessage(`[WEBPUSH] Loaded existing persistent VAPID keys from Firestore.`);
-    } else {
+    const envPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || "";
+    const envPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY || "";
+
+    if (envPublicKey && envPrivateKey) {
+      vapidPublicKey = envPublicKey;
+      vapidPrivateKey = envPrivateKey;
+      configureWebPushVapidDetails();
+      logMessage(`[WEBPUSH] Loaded VAPID keys from server environment variables.`);
+      return;
+    }
+
+    // 1. Try reading from local persistent file in development workspace
+    if (existsSync(localKeysPath)) {
+      try {
+        const fileContent = readFileSync(localKeysPath, "utf-8");
+        const parsed = JSON.parse(fileContent);
+        if (parsed.publicKey && parsed.privateKey) {
+          vapidPublicKey = parsed.publicKey;
+          vapidPrivateKey = parsed.privateKey;
+          configureWebPushVapidDetails();
+          logMessage(`[WEBPUSH] Loaded stable VAPID keys from local persistent cache file.`);
+          return;
+        }
+      } catch (fileReadErr: any) {
+        console.warn("[WEBPUSH] Failed to read vapid-keys.json cache file:", fileReadErr.message);
+      }
+    }
+
+    // 2. Try Firestore configurations doc snap
+    let fetchedFromFirestore = false;
+    try {
+      const configRef = dbAdmin.collection("configurations").doc("webpush_vapid_keys");
+      const docSnap = await configRef.get();
+      
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        vapidPublicKey = data?.publicKey || "";
+        vapidPrivateKey = data?.privateKey || "";
+        logMessage(`[WEBPUSH] Loaded existing persistent VAPID keys from Firestore.`);
+        fetchedFromFirestore = true;
+      }
+    } catch (fsErr: any) {
+      console.warn("[WEBPUSH] Firestore query failed for webpush_vapid_keys doc:", fsErr.message);
+    }
+
+    // 3. If not found or Firestore failed, generate new keys
+    if (!vapidPublicKey || !vapidPrivateKey) {
       // Generate new VAPID keys programmatically
       const keys = webpush.generateVAPIDKeys();
       vapidPublicKey = keys.publicKey;
       vapidPrivateKey = keys.privateKey;
-      await configRef.set({
+      logMessage(`[WEBPUSH] Programmatically generated brand-new VAPID keys.`);
+      
+      // Save programmatically generated keys to Firestore as best effort
+      try {
+        const configRef = dbAdmin.collection("configurations").doc("webpush_vapid_keys");
+        await configRef.set({
+          publicKey: vapidPublicKey,
+          privateKey: vapidPrivateKey,
+          createdAt: new Date().toISOString()
+        });
+        logMessage(`[WEBPUSH] Saved new VAPID keys to Firestore configurations.`);
+      } catch (saveFsErr: any) {
+        console.warn("[WEBPUSH] Could not write new VAPID keys to Firestore (Best-effort skipped):", saveFsErr.message);
+      }
+    }
+
+    // 4. Save to local persistent file so subsequent reloads are stable even if Firestore is unauthenticated
+    try {
+      writeFileSync(localKeysPath, JSON.stringify({
         publicKey: vapidPublicKey,
         privateKey: vapidPrivateKey,
-        createdAt: new Date().toISOString()
-      });
-      logMessage(`[WEBPUSH] Generated and saved new persistent VAPID keys in Firestore.`);
+        savedAt: new Date().toISOString()
+      }, null, 2), "utf-8");
+      logMessage(`[WEBPUSH] Cached stable VAPID keys to local file 'vapid-keys.json'.`);
+    } catch (fileWriteErr: any) {
+      console.warn("[WEBPUSH] Failed to cache VAPID keys to file:", fileWriteErr.message);
     }
 
     if (vapidPublicKey && vapidPrivateKey) {
-      webpush.setVapidDetails(
-        "mailto:kcfc.jp@gmail.com",
-        vapidPublicKey,
-        vapidPrivateKey
-      );
+      configureWebPushVapidDetails();
       logMessage(`[WEBPUSH] setVapidDetails completed successfully.`);
     }
   } catch (err: any) {
     console.error("[WEBPUSH] Failed to initialize web-push credentials:", err);
+    const keys = webpush.generateVAPIDKeys();
+    vapidPublicKey = keys.publicKey;
+    vapidPrivateKey = keys.privateKey;
+    configureWebPushVapidDetails();
+    logMessage(`[WEBPUSH] WARNING: Using in-memory fallback VAPID keys because persistent key initialization failed. Set WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY in production for stable iOS subscriptions.`);
   }
 }
 
@@ -154,6 +223,16 @@ async function sendWebPushNotification(subscription: any, title: string, body: s
     }
     return { success: false, error: err.message };
   }
+}
+
+function isDeliverableFcmToken(token: unknown): token is string {
+  if (typeof token !== "string") return false;
+  const trimmed = token.trim();
+  if (!trimmed) return false;
+  return !(
+    trimmed.startsWith("simulated") ||
+    trimmed.startsWith("webpush-registered-token-for-user:")
+  );
 }
 
 // Helpers for Firestore REST API fallback (for robust database reads when Admin SDK encounters permission denied)
@@ -359,8 +438,16 @@ async function startServer() {
     res.json({ status: "ok", time: new Date().toISOString() });
   });
 
+  app.get("/api/client-id", (req, res) => {
+    res.json({ clientId: process.env.VITE_CLIENT_ID || process.env.CLIENT_ID || "" });
+  });
+
   // Web Push API endpoints
   app.get("/api/webpush/public-key", (req, res) => {
+    if (!vapidPublicKey) {
+      res.status(503).json({ error: "Web Push VAPID public key is not initialized on the server." });
+      return;
+    }
     res.json({ publicKey: vapidPublicKey });
   });
 
@@ -1125,7 +1212,7 @@ async function startServer() {
 
       // De-duplicate tokens and filter out high-fidelity simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
-      const realTokens = uniqueTokens.filter(tk => !tk.startsWith("simulated"));
+      const realTokens = uniqueTokens.filter(isDeliverableFcmToken);
 
       let logMsgText = "";
       let successCount = 0;
@@ -1345,7 +1432,7 @@ async function startServer() {
 
       // De-duplicate tokens and filter out high-fidelity simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
-      const realTokens = uniqueTokens.filter(tk => !tk.startsWith("simulated"));
+      const realTokens = uniqueTokens.filter(isDeliverableFcmToken);
 
       let logMsgText = "";
       let successCount = 0;
@@ -1494,14 +1581,14 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: realTokens.length > 0 ? "FCM broadcast executed." : "FCM simulated successfully (no real devices subscribed yet).",
+        message: (realTokens.length > 0 || webPushSuccessCount > 0) ? "Push broadcast executed." : "Push broadcast simulated successfully (no real devices subscribed yet).",
         totalTokens: realTokens.length,
         simulatedTokens: uniqueTokens.length - realTokens.length,
         successCount,
         failureCount,
         webPushSuccessCount,
         webPushFailureCount,
-        details: logMsgText
+        details: logMsgText + ` | Web Push Delivered: ${webPushSuccessCount}, Failed: ${webPushFailureCount}`
       });
 
     } catch (error: any) {
@@ -1546,7 +1633,7 @@ async function startServer() {
 
       // De-duplicate and filter out simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
-      const realTokens = uniqueTokens.filter(tk => !tk.startsWith("simulated"));
+      const realTokens = uniqueTokens.filter(isDeliverableFcmToken);
 
       // Standard Web Push subscriptions
       const callerWebPushSubs = callerProfile.webPushSubscriptions || [];

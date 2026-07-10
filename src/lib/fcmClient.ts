@@ -33,9 +33,10 @@ export async function preloadVapidKeyFromServer(): Promise<string | null> {
     if (response.ok) {
       const data = await response.json();
       if (data && data.publicKey) {
-        cachedVapidKeyFromServer = data.publicKey;
-        console.log("WebPush: Preloaded VAPID public key from server successfully:", data.publicKey);
-        return data.publicKey;
+        const cleanedKey = cleanVapidKey(data.publicKey);
+        cachedVapidKeyFromServer = cleanedKey;
+        console.log("WebPush: Preloaded VAPID public key from server successfully:", cleanedKey);
+        return cleanedKey;
       }
     }
   } catch (err) {
@@ -56,6 +57,23 @@ export function isStandaloneMode(): boolean {
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
   const isNavStandalone = (navigator as any).standalone === true;
   return !!(isStandalone || isNavStandalone);
+}
+
+export function requiresNativeWebPush(): boolean {
+  return isIOSDevice() || isStandaloneMode();
+}
+
+export async function prepareNativeWebPushPrerequisites(): Promise<void> {
+  await preloadVapidKeyFromServer();
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+
+  let swReg = await navigator.serviceWorker.getRegistration("/");
+  if (!swReg) {
+    swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
+  }
+  if (!swReg.active) {
+    await navigator.serviceWorker.ready;
+  }
 }
 
 /**
@@ -110,9 +128,11 @@ export function isValidVapidPublicKey(key: string): boolean {
  * Completely independent of VITE_FCM_VAPID_KEY and FCM JS SDK.
  * Highly robust, works on all devices (iOS Safari, Android Chrome, Desktop, etc.).
  */
-export async function registerWebPushDirectly(userId: string, requestPermission = false): Promise<boolean> {
+export async function registerWebPushDirectly(userId: string, requestPermission = false, throwOnFailure = false): Promise<boolean> {
   if (typeof window === "undefined" || !("Notification" in window)) {
-    console.warn("WebPush: Notification API not supported in this browser.");
+    const msg = "Notification API is not supported in this browser.";
+    console.warn(`WebPush: ${msg}`);
+    if (throwOnFailure) throw new Error(msg);
     return false;
   }
 
@@ -123,7 +143,9 @@ export async function registerWebPushDirectly(userId: string, requestPermission 
   }
 
   if (permission !== "granted") {
-    console.warn(`WebPush: Notification permission is ${permission}`);
+    const msg = `Notification permission is "${permission}" instead of "granted".`;
+    console.warn(`WebPush: ${msg}`);
+    if (throwOnFailure) throw new Error(msg);
     return false;
   }
 
@@ -136,17 +158,21 @@ export async function registerWebPushDirectly(userId: string, requestPermission 
         swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
       }
       if (!swReg.active) {
-        await navigator.serviceWorker.ready;
+        swReg = await navigator.serviceWorker.ready;
       }
 
-      const success = await registerStandardWebPush(swReg, userId);
+      const success = await registerStandardWebPush(swReg, userId, throwOnFailure);
       return success;
     } catch (err) {
       console.error("WebPush: Failed to register service worker or subscribe:", err);
+      if (throwOnFailure) throw err;
       return false;
     }
   }
 
+  if (throwOnFailure) {
+    throw new Error("Service Worker API is not supported in this browser context.");
+  }
   return false;
 }
 
@@ -155,22 +181,28 @@ export async function registerWebPushDirectly(userId: string, requestPermission 
  */
 export async function registerDeviceToken(userId: string, requestPermission = false): Promise<string | null> {
   try {
-    const supported = await isSupported();
+    const mustHaveNativeWebPush = requiresNativeWebPush();
     
-    // First, always attempt standard native Web Push as the most robust, direct and standard method.
-    // If it succeeds, we have registered native webpush subscriptions on the backend.
-    const isWebPushSuccessful = await registerWebPushDirectly(userId, requestPermission);
+    // iOS/Home Screen PWAs are extremely sensitive to user-activation timing.
+    // Try native Web Push before any Firebase async checks so the subscription stays
+    // as close as possible to the user's tap.
+    const isWebPushSuccessful = await registerWebPushDirectly(userId, requestPermission, mustHaveNativeWebPush);
     if (isWebPushSuccessful) {
       console.log("FCM: Native Web Push subscription registered successfully as primary channel.");
       return `webpush-registered-token-for-user:${userId}`;
     }
 
+    if (mustHaveNativeWebPush) {
+      throw new Error(
+        "Native Web Push registration did not complete. On iPhone/iPad Home Screen apps, lock-screen alerts require a real Web Push subscription; in-app/browser-only notification permission is not enough."
+      );
+    }
+
+    const supported = await isSupported();
+
     // If not supported by Firebase FCM but standard Notification API is available, fall back to simulated mode
     if (!supported) {
       console.warn("FCM: Push notifications via FCM are not fully supported in this browser, device, or iframe environment.");
-      if (isWebPushSuccessful) {
-        return `webpush-registered-token-for-user:${userId}`;
-      }
       if (typeof window !== "undefined" && "Notification" in window) {
         console.info("FCM: Falling back to standard browser Notification API for simulated alerts.");
         let permission = Notification.permission;
@@ -188,9 +220,6 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
     const isVapidValid = isValidVapidPublicKey(VAPID_KEY);
 
     if (!VAPID_KEY || !isVapidValid) {
-      if (isWebPushSuccessful) {
-        return `webpush-registered-token-for-user:${userId}`;
-      }
       if (!VAPID_KEY) {
         console.info("FCM: VAPID Key not found (VITE_FCM_VAPID_KEY is empty). Client will fall back to simulated notifications.");
       } else {
@@ -324,9 +353,11 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
 /**
  * Subscribes the standard browser to standard Web Push and registers with our backend
  */
-export async function registerStandardWebPush(serviceWorkerRegistration: ServiceWorkerRegistration, userId: string): Promise<boolean> {
+export async function registerStandardWebPush(serviceWorkerRegistration: ServiceWorkerRegistration, userId: string, throwOnFailure = false): Promise<boolean> {
   if (!serviceWorkerRegistration || !serviceWorkerRegistration.pushManager) {
-    console.warn("WebPush: PushManager not supported on this browser.");
+    const msg = "PushManager is not available on the active service worker registration.";
+    console.warn(`WebPush: ${msg}`);
+    if (throwOnFailure) throw new Error(msg);
     return false;
   }
 
@@ -340,12 +371,15 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
         throw new Error(`Failed to fetch public VAPID key from server: ${response.statusText}`);
       }
       const data = await response.json();
-      publicKey = data.publicKey;
+      publicKey = cleanVapidKey(data.publicKey);
       cachedVapidKeyFromServer = publicKey;
     }
 
     if (!publicKey) {
       throw new Error("Server returned an empty or missing VAPID public key.");
+    }
+    if (!isValidVapidPublicKey(publicKey)) {
+      throw new Error(`Server returned an invalid Web Push VAPID public key. Length: ${publicKey.length}.`);
     }
 
     // 2. Prepare subscription options
@@ -390,6 +424,7 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
     }
 
     console.log("WebPush: Obtained PushSubscription successfully:", subscription);
+    const subscriptionJson = subscription.toJSON();
 
     // 4. Send subscription to our backend register endpoint
     // We fetch user session token to authenticate
@@ -408,11 +443,22 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
         "Content-Type": "application/json",
         ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
       },
-      body: JSON.stringify({ subscription: subscription.toJSON() })
+      body: JSON.stringify({ subscription: subscriptionJson })
     });
 
     if (!regResponse.ok) {
       const errText = await regResponse.text();
+      const isPermissionDenied = regResponse.status === 403 || /PERMISSION_DENIED|permission/i.test(errText);
+      if (isPermissionDenied) {
+        console.warn("WebPush: Backend registration lacked permission. Falling back to direct Firestore self-update.", errText);
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, {
+          webPushSubscriptions: arrayUnion(subscriptionJson),
+          updatedAt: new Date().toISOString()
+        });
+        console.log("WebPush: Successfully registered PushSubscription directly in Firestore.");
+        return true;
+      }
       throw new Error(`Backend registration failed: ${errText}`);
     }
 
@@ -420,6 +466,7 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
     return true;
   } catch (err: any) {
     console.error("WebPush: Standard Web Push registration failed:", err);
+    if (throwOnFailure) throw err;
     return false;
   }
 }

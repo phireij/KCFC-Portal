@@ -8,6 +8,24 @@ import { Megaphone, Plus, Trash2, Edit3, Send, Save, X, AlertCircle, Clock, Chec
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 
+const formatSafeDate = (val: any, formatStr: string, fallback: string = 'Pending...') => {
+  if (!val) return fallback;
+  try {
+    let dateObj: Date;
+    if (typeof val.toDate === 'function') {
+      dateObj = val.toDate();
+    } else if (val.seconds !== undefined) {
+      dateObj = new Date(val.seconds * 1000);
+    } else {
+      dateObj = new Date(val);
+    }
+    if (isNaN(dateObj.getTime())) return fallback;
+    return format(dateObj, formatStr);
+  } catch (err) {
+    return fallback;
+  }
+};
+
 export default function Announcements() {
   const { profile, user } = useAuth();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -144,6 +162,18 @@ export default function Announcements() {
     setIsEditorOpen(true);
   };
 
+  const openNew = () => {
+    setEditingId(null);
+    setFormData({ title: '', content: '' });
+    setIsEditorOpen(true);
+  };
+
+  const handleClose = () => {
+    setIsEditorOpen(false);
+    setEditingId(null);
+    setFormData({ title: '', content: '' });
+  };
+
   const filteredAnnouncements = announcements.filter(a => {
     if (a.status === 'published') return true;
     // Drafts only visible to authors or admins/presidents
@@ -153,7 +183,7 @@ export default function Announcements() {
   if (loading) return <div className="p-8 text-center font-serif italic text-gray-400">Loading announcements...</div>;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 md:py-12 space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-serif flex items-center gap-3 text-gray-900 dark:text-white">
@@ -164,7 +194,7 @@ export default function Announcements() {
         </div>
         {canCreate && (
           <button
-            onClick={() => setIsEditorOpen(true)}
+            onClick={openNew}
             className="flex items-center gap-2 px-6 py-3 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-full font-bold text-xs uppercase tracking-widest shadow-soft hover:shadow-lg transition-all"
           >
             <Plus size={16} />
@@ -184,7 +214,7 @@ export default function Announcements() {
             <div className="bg-white dark:bg-[#1e1e1a] w-full max-w-2xl rounded-[32px] overflow-hidden shadow-2xl border dark:border-white/5">
               <div className="p-8 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#252520]/50">
                 <h2 className="text-xl font-serif font-medium text-gray-900 dark:text-white">{editingId ? 'Edit Announcement' : 'New Announcement'}</h2>
-                <button onClick={() => setIsEditorOpen(false)} className="p-2 hover:bg-gray-200 dark:hover:bg-[#252520] rounded-full transition-colors text-gray-400">
+                <button onClick={handleClose} className="p-2 hover:bg-gray-200 dark:hover:bg-[#252520] rounded-full transition-colors text-gray-400">
                   <X size={20} />
                 </button>
               </div>
@@ -267,7 +297,7 @@ export default function Announcements() {
                         </span>
                       )}
                       <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
-                        {a.createdAt ? format((a.createdAt as any).toDate(), 'PPP p') : 'Pending...'}
+                        {formatSafeDate(a.createdAt, 'PPP p')}
                       </span>
                     </div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-[#f5f5f0] leading-tight">{a.title}</h2>

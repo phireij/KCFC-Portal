@@ -50,7 +50,7 @@ export default function Polls() {
     endDate: format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm"),
   });
 
-  const canManage = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
+  const canManage = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'kitchen_leader', 'cleaning_leader'].includes(r)) || profile?.email === 'kcfc.jp@gmail.com';
   const canDelete = (profile?.roles || []).some(r => ['admin', 'president'].includes(r));
 
   useEffect(() => {
@@ -74,24 +74,28 @@ export default function Polls() {
         const allResponses: Record<string, PollResponse[]> = {};
 
         for (const poll of fetchedPolls) {
-          const respQ = query(collection(db, `polls/${poll.id}/responses`));
-          const respSnap = await getDocs(respQ);
-          const rawResps = respSnap.docs.map(d => ({ id: d.id, ...d.data() } as PollResponse));
-          
-          const uniqueRespsMap = new Map<string, PollResponse>();
-          for (const r of rawResps) {
-            const existing = uniqueRespsMap.get(r.userId);
-            if (!existing || new Date(r.submittedAt).getTime() > new Date(existing.submittedAt).getTime()) {
-              uniqueRespsMap.set(r.userId, r);
+          try {
+            const respQ = query(collection(db, `polls/${poll.id}/responses`));
+            const respSnap = await getDocs(respQ);
+            const rawResps = respSnap.docs.map(d => ({ id: d.id, ...d.data() } as PollResponse));
+            
+            const uniqueRespsMap = new Map<string, PollResponse>();
+            for (const r of rawResps) {
+              const existing = uniqueRespsMap.get(r.userId);
+              if (!existing || new Date(r.submittedAt).getTime() > new Date(existing.submittedAt).getTime()) {
+                uniqueRespsMap.set(r.userId, r);
+              }
             }
-          }
-          const resps = Array.from(uniqueRespsMap.values());
-          
-          allResponses[poll.id] = resps;
-          
-          const myResp = resps.find(r => r.userId === user.uid);
-          if (myResp) {
-            responses[poll.id] = myResp;
+            const resps = Array.from(uniqueRespsMap.values());
+            
+            allResponses[poll.id] = resps;
+            
+            const myResp = resps.find(r => r.userId === user.uid);
+            if (myResp) {
+              responses[poll.id] = myResp;
+            }
+          } catch (err) {
+            console.warn(`Could not load responses for poll ${poll.id}:`, err);
           }
         }
         setUserResponses(responses);
@@ -311,12 +315,31 @@ export default function Polls() {
       alert("As the primary administrator, you are excluded from public poll participation.");
       return;
     }
+
+    const poll = polls.find(p => p.id === pollId);
+    if (!poll) return;
+
+    // Strict access check for voting
+    const isManager = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
+    if (!isManager) {
+      if (poll.category === 'core_member' && !profile?.isCoreMember) {
+        alert("You are not authorized to vote on Chore polls.");
+        return;
+      }
+      if (poll.category === 'committee') {
+        const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
+        const isCommitteeMember = profile?.ministries?.some(m => committeeMinistries.includes(m));
+        if (!isCommitteeMember) {
+          alert("You are not authorized to vote on Liturgical Committee polls.");
+          return;
+        }
+      }
+    }
     
     setIsSubmitting(prev => ({ ...prev, [pollId]: true }));
     
     try {
-      const poll = polls.find(p => p.id === pollId);
-      if (!poll || poll.status !== 'active') {
+      if (poll.status !== 'active') {
         setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
         return;
       }
@@ -603,23 +626,38 @@ export default function Polls() {
     if (!canManage) return;
     if (notifying) return;
     
-    const clientId = (import.meta as any).env.VITE_CLIENT_ID;
+    const clientId = (import.meta as any).env.VITE_CLIENT_ID || (window as any).VITE_CLIENT_ID;
     if (!clientId) {
       alert("Gmail integration is not configured. Please add VITE_CLIENT_ID to your environment variables (Secrets) to enable notifications.");
       return;
     }
 
-    if (!confirm(`This will send an email notification to all verified community members about the poll: "${poll.title}". Continue?`)) return;
+    const targetAudience = poll.category === 'core_member' 
+      ? 'all Core Group members' 
+      : poll.category === 'committee' 
+        ? 'all Liturgical Committee members' 
+        : 'all verified community members';
+
+    if (!confirm(`This will send an email notification to ${targetAudience} about the poll: "${poll.title}". Continue?`)) return;
 
     setNotifying(poll.id);
     try {
       // 1. Fetch all verified members
       const q = query(collection(db, 'users'), where('isVerified', '==', true));
       const snap = await getDocs(q);
-      const members = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(m => !!m.email);
+      let members = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(m => !!m.email && !m.isDisabled);
+
+      // Filter members based on poll category to match eligible responders
+      if (poll.category === 'core_member') {
+        members = members.filter(m => !!m.isCoreMember);
+      } else if (poll.category === 'committee') {
+        const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
+        members = members.filter(m => m.ministries?.some(role => committeeMinistries.includes(role)));
+      }
 
       if (members.length === 0) {
-        alert("No verified members with email addresses found.");
+        alert("No eligible verified members with email addresses found.");
+        setNotifying(null);
         return;
       }
 
@@ -627,31 +665,6 @@ export default function Polls() {
       const massDateFormatted = safeFormat(poll.massDate, 'EEEE, MMM dd');
       const subject = `[KCFC] Pre-attendance Poll: ${poll.title}`;
       const baseUrl = window.location.origin;
-      
-      const body = `
-        <div style="font-family: serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 20px; overflow: hidden;">
-          <div style="background-color: #5A5A40; color: white; padding: 40px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px; font-weight: normal;">KCFC Attendance Poll</h1>
-            <p style="margin-top: 10px; font-style: italic; opacity: 0.9;">Holy Mass: ${massDateFormatted}</p>
-          </div>
-          <div style="padding: 40px; line-height: 1.6;">
-            <p>Dear Community Member,</p>
-            <p>A new attendance poll has been published for the upcoming Mass.</p>
-            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin: 20px 0;">
-              <h2 style="margin: 0 0 10px 0; color: #5A5A40;">${poll.title}</h2>
-              <p style="margin: 0; color: #666; font-style: italic;">${poll.description || 'Please record your attendance to help us with planning.'}</p>
-            </div>
-            <p style="text-align: center; margin: 40px 0;">
-              <a href="${baseUrl}/polls" style="background-color: #5A5A40; color: white; padding: 15px 30px; text-decoration: none; border-radius: 10px; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
-                Respond to Poll
-              </a>
-            </p>
-            <p style="font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; margin-top: 40px;">
-              This is an automated notification from the KCFC Portal.
-            </p>
-          </div>
-        </div>
-      `;
 
       // 3. Send emails
       let successCount = 0;
@@ -659,7 +672,33 @@ export default function Polls() {
 
       for (const member of members) {
         try {
-          await sendGmail(member.email!, subject, body);
+          const recipientName = member.nickname?.trim() || member.displayName || "Community Member";
+          const personalizedBody = `
+            <div style="font-family: serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 20px; overflow: hidden;">
+              <div style="background-color: #5A5A40; color: white; padding: 40px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px; font-weight: normal;">KCFC Attendance Poll</h1>
+                <p style="margin-top: 10px; font-style: italic; opacity: 0.9;">Holy Mass: ${massDateFormatted}</p>
+              </div>
+              <div style="padding: 40px; line-height: 1.6;">
+                <p>Dear <strong>${recipientName}</strong>,</p>
+                <p>A new attendance poll has been published for the upcoming Mass.</p>
+                <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                  <h2 style="margin: 0 0 10px 0; color: #5A5A40;">${poll.title}</h2>
+                  <p style="margin: 0; color: #666; font-style: italic;">${poll.description || 'Please record your attendance to help us with planning.'}</p>
+                </div>
+                <p style="text-align: center; margin: 40px 0;">
+                  <a href="${baseUrl}/polls" style="background-color: #5A5A40; color: white; padding: 15px 30px; text-decoration: none; border-radius: 10px; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
+                    Respond to Poll
+                  </a>
+                </p>
+                <p style="font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; margin-top: 40px;">
+                  This is an automated notification from the KCFC Portal.
+                  This represents an automated official notification from KCFC Secretariat Office.
+                </p>
+              </div>
+            </div>
+          `;
+          await sendGmail(member.email!, subject, personalizedBody);
           successCount++;
         } catch (err: any) {
           console.error(`Failed to send email to ${member.email}`, err);
@@ -682,25 +721,41 @@ export default function Polls() {
 
   const filteredPolls = polls
     .filter(poll => {
-      // Priority filters
+      const isManager = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'kitchen_leader', 'cleaning_leader'].includes(r)) || profile?.email === 'kcfc.jp@gmail.com';
+      
+      // If it's a draft, only managers can see it
+      if (poll.status === 'draft') return isManager;
+      
+      // Managers can see everything
+      if (isManager) {
+        if (filter === 'core') return poll.category === 'core_member';
+        if (filter === 'committee') return poll.category === 'committee';
+        return true;
+      }
+      
+      // General members:
+      // Check core membership for chore polls
+      if (poll.category === 'core_member') {
+        if (!profile?.isCoreMember) return false;
+      }
+      
+      // Check committee membership for committee polls
+      if (poll.category === 'committee') {
+        const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
+        const isCommitteeMember = profile?.ministries?.some(m => committeeMinistries.includes(m));
+        if (!isCommitteeMember) return false;
+      }
+      
+      // Now apply the active filter
       if (filter === 'core') return poll.category === 'core_member';
       if (filter === 'committee') return poll.category === 'committee';
       
-      const isManager = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
-      if (poll.status === 'draft') return isManager;
-      
-      // Standard visibility
-      if (isManager) return true;
-      if (poll.category === 'core_member') return profile?.isCoreMember;
-      
-      const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
-      const isCommitteeMember = profile?.ministries?.some(m => committeeMinistries.includes(m));
-      return poll.category === 'committee' ? isCommitteeMember : true;
+      return true;
     })
     .slice(0, filter === 'latest' ? 2 : undefined);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-24">
+    <div className="max-w-6xl mx-auto space-y-8 pb-24">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Attendance Polls</h1>
@@ -1054,14 +1109,14 @@ export default function Polls() {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 className={cn(
-                   "bg-white dark:bg-[#1e1e1a] rounded-[40px] shadow-sm border border-gray-100 dark:border-white/5 transition-all overflow-hidden",
+                   "bg-white dark:bg-[#1e1e1a] -mx-2 sm:mx-0 rounded-none sm:rounded-[40px] shadow-sm border-y sm:border border-gray-100 dark:border-white/5 transition-all overflow-hidden",
                    (!isActive && !isDraft) && "opacity-80",
                    isDraft && "border-dashed border-[#5A5A40]/30 dark:border-[#8a8a65]/40"
                 )}
               >
                 <button 
                   onClick={() => setExpandedPolls(prev => ({ ...prev, [poll.id]: !prev[poll.id] }))}
-                  className="w-full p-8 md:p-10 flex flex-col md:flex-row md:items-start justify-between gap-6 hover:bg-gray-50/50 dark:hover:bg-[#252520]/20 transition-all text-left pointer"
+                  className="w-full p-5 sm:p-8 md:p-10 flex flex-col md:flex-row md:items-start justify-between gap-6 hover:bg-gray-50/50 dark:hover:bg-[#252520]/20 transition-all text-left pointer"
                 >
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-3">
@@ -1235,7 +1290,7 @@ export default function Polls() {
                 </button>
 
                 {expandedPolls[poll.id] && (
-                  <div className="px-8 pb-10 space-y-8 animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="px-5 sm:px-8 pb-8 sm:pb-10 space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-top-4 duration-300">
                     <div className="flex flex-wrap gap-6 text-xs text-gray-400 dark:text-gray-500 pb-4 border-b border-gray-50 dark:border-white/5">
                       <span className="flex items-center gap-1.5">
                         <Calendar size={14} />
@@ -1454,6 +1509,27 @@ export default function Polls() {
                       <div className="flex items-center justify-center gap-2 text-xs font-serif italic text-gray-400 pt-6">
                         <Check size={14} className="text-green-500" />
                         You recorded your response on {safeFormat(userResponses[poll.id].submittedAt, 'MMM dd, HH:mm')}
+                      </div>
+                    )}
+
+                    {poll.category === 'core_member' && (poll.status === 'closed' || isFinished) && isAdminOrPresident && (
+                      <div className="mt-6 p-6 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20 border border-orange-200 dark:border-orange-900/30 rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="p-3 bg-orange-600 text-white rounded-full">
+                            <Users size={20} />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-orange-900 dark:text-orange-400">Chore Poll Completed!</h4>
+                            <p className="text-xs text-orange-750 dark:text-orange-500 font-medium">You can now proceed to assign chore roles to responders.</p>
+                          </div>
+                        </div>
+                        <a
+                          href={`/duties?tab=core&pollId=${poll.id}`}
+                          className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center gap-2"
+                        >
+                          Proceed to Assign Chores
+                          <Users size={14} />
+                        </a>
                       </div>
                     )}
                   </div>

@@ -1317,7 +1317,7 @@ export default function Admin() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 pb-32">
+    <div className="max-w-6xl mx-auto space-y-8 pb-32">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-gray-100 dark:border-white/5 pb-6">
         <div>
           <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Administrative Center</h1>

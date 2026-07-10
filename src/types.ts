@@ -72,6 +72,7 @@ export interface UserProfile {
   updatedAt: string;
   preferences?: NotificationPreferences;
   fcmTokens?: string[];
+  webPushSubscriptions?: any[];
 }
 
 export interface MassOption {
@@ -215,4 +216,3 @@ export interface ContactMessage {
   status: 'unread' | 'read' | 'archived';
   createdAt: any;
 }
-

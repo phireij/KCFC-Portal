@@ -65,3 +65,27 @@ html.dark, html.dark body, html.dark #root {
     display: none;
   }
 }
+
+/* Custom dynamic scaling overrides for absolute pixel text sizes */
+.text-\[8px\] {
+  font-size: 0.6rem !important;
+}
+.text-\[9px\] {
+  font-size: 0.7rem !important;
+}
+.text-\[10px\] {
+  font-size: 0.75rem !important;
+}
+.text-\[11px\] {
+  font-size: 0.8rem !important;
+}
+.text-\[12px\] {
+  font-size: 0.875rem !important;
+}
+
+@media (min-width: 640px) {
+  .sm\:text-\[11px\] {
+    font-size: 0.8rem !important;
+  }
+}
+

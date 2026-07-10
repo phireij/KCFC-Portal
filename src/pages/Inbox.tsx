@@ -154,6 +154,63 @@ export default function Inbox() {
     }
   };
 
+  // Multi-select state and handlers
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab]);
+
+  const bulkMarkAsRead = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      selectedIds.forEach(id => {
+        batch.update(doc(db, 'notifications', id), { status: 'read' });
+      });
+      await batch.commit();
+      setSelectedIds([]);
+    } catch (err: any) {
+      console.error("Bulk mark read failed:", err);
+      alert("Failed to mark messages as read: " + err.message);
+    }
+  };
+
+  const bulkMarkAsUnread = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      selectedIds.forEach(id => {
+        batch.update(doc(db, 'notifications', id), { status: 'unread' });
+      });
+      await batch.commit();
+      setSelectedIds([]);
+    } catch (err: any) {
+      console.error("Bulk mark unread failed:", err);
+      alert("Failed to mark messages as unread: " + err.message);
+    }
+  };
+
+  const bulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to permanently delete these ${selectedIds.length} selected messages?`)) return;
+    try {
+      const batch = writeBatch(db);
+      selectedIds.forEach(id => {
+        batch.delete(doc(db, 'notifications', id));
+      });
+      await batch.commit();
+      if (selectedNote && selectedIds.includes(selectedNote.id!)) {
+        setSelectedNote(null);
+        setMobileDetailView(false);
+      }
+      setSelectedIds([]);
+    } catch (err: any) {
+      console.error("Bulk delete failed:", err);
+      alert("Failed to delete messages: " + err.message);
+    }
+  };
+
   const getIcon = (type: NotificationType['type'], size = 18) => {
     switch (type) {
       case 'announcement': return <Megaphone size={size} className="text-blue-500 dark:text-blue-400" />;
@@ -184,7 +241,7 @@ export default function Inbox() {
   const unreadCount = notifications.filter(n => n.status === 'unread').length;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-8">
       {/* Title Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -292,6 +349,56 @@ export default function Inbox() {
               </div>
             </div>
 
+            {/* Bulk Selection Bar */}
+            <div className="px-4 py-2.5 bg-gray-50/70 dark:bg-[#1a1a17] border-b border-gray-100 dark:border-white/5 flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={filteredNotes.length > 0 && selectedIds.length === filteredNotes.length}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedIds(filteredNotes.map(n => n.id!).filter(Boolean));
+                    } else {
+                      setSelectedIds([]);
+                    }
+                  }}
+                  className="rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] h-4 w-4 cursor-pointer"
+                />
+                <span className="font-bold uppercase tracking-wider text-[10px] text-gray-400">
+                  {selectedIds.length > 0 ? `${selectedIds.length} Selected` : 'Select All'}
+                </span>
+              </div>
+
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={bulkMarkAsRead}
+                    title="Mark selected as read"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 text-[#5A5A40] dark:text-[#d4d4bc] rounded flex items-center gap-1 transition-all"
+                  >
+                    <MailOpen size={13} />
+                    <span className="hidden sm:inline font-bold uppercase tracking-widest text-[9px]">Read</span>
+                  </button>
+                  <button
+                    onClick={bulkMarkAsUnread}
+                    title="Mark selected as unread"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 rounded flex items-center gap-1 transition-all"
+                  >
+                    <Mail size={13} />
+                    <span className="hidden sm:inline font-bold uppercase tracking-widest text-[9px]">Unread</span>
+                  </button>
+                  <button
+                    onClick={bulkDelete}
+                    title="Delete selected"
+                    className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-500 hover:text-red-700 rounded flex items-center gap-1 transition-all"
+                  >
+                    <Trash2 size={13} />
+                    <span className="hidden sm:inline font-bold uppercase tracking-widest text-[9px]">Delete</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Message List */}
             <div className="flex-1 overflow-y-auto no-scrollbar divide-y divide-gray-50 dark:divide-white/5 max-h-[500px] lg:max-h-[600px]">
               {filteredNotes.length === 0 ? (
@@ -303,6 +410,7 @@ export default function Inbox() {
                 filteredNotes.map((n) => {
                   const isSelected = selectedNote?.id === n.id;
                   const isUnread = n.status === 'unread';
+                  const isChecked = selectedIds.includes(n.id!);
 
                   return (
                     <div
@@ -320,6 +428,25 @@ export default function Inbox() {
                             : "border-l-4 border-transparent"
                       )}
                     >
+                      {/* Checkbox for Multi-Select */}
+                      <div 
+                        className="mt-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(prev => [...prev, n.id!]);
+                            } else {
+                              setSelectedIds(prev => prev.filter(id => id !== n.id));
+                            }
+                          }}
+                          className="rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] h-4 w-4 cursor-pointer"
+                        />
+                      </div>
+
                       {/* Left Badge/Icon */}
                       <div className="mt-1 p-1.5 bg-gray-50 dark:bg-white/[0.03] rounded-xl flex-shrink-0">
                         {getIcon(n.type, 16)}

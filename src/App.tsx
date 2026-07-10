@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
 import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
+import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites } from './lib/fcmClient';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -30,6 +31,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true });
 
 export const useAuth = () => useContext(AuthContext);
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [pathname]);
+
+  return null;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -315,7 +326,12 @@ export default function App() {
       return;
     }
 
-    import('./lib/fcmClient').then(({ isStandaloneMode }) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    prepareNativeWebPushPrerequisites().catch((err) => {
+      console.warn("PWA: Web Push prerequisite warmup failed:", err);
+    });
+
+    try {
       const isStandalone = isStandaloneMode();
       const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
       const isPermissionDefault = hasNotification && Notification.permission === 'default';
@@ -323,33 +339,41 @@ export default function App() {
 
       if (isStandalone && isPermissionDefault && !hasDismissed) {
         // Trigger a gentle, highly-polished modal prompt after a small delay on launch
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           setShowPwaNotificationPrompt(true);
         }, 2000);
-        return () => clearTimeout(timer);
       }
-    }).catch((err) => {
+    } catch (err) {
       console.warn("FWA: PWA detection failed:", err);
-    });
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [user]);
 
   const handleEnablePwaNotifications = async () => {
     if (!user) return;
-    setEnablingPwaNotifications(true);
     try {
-      const { registerDeviceToken, requestNotificationPermission } = await import('./lib/fcmClient');
-      // Direct call on the user gesture thread ensures permission prompt is never blocked by Safari/Chrome
-      const permission = await requestNotificationPermission();
-      if (permission === 'granted') {
-        await registerDeviceToken(user.uid, true);
-        setShowPwaNotificationPrompt(false);
-      } else {
-        setShowPwaNotificationPrompt(false);
+      const token = await registerDeviceToken(user.uid, true);
+      if (token) {
+        localStorage.setItem('kcfc_registered_fcm_token', token);
         localStorage.setItem('kcfc_pwa_notification_prompt_dismissed', 'true');
+        setShowPwaNotificationPrompt(false);
+      } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted') {
+        localStorage.setItem('kcfc_pwa_notification_prompt_dismissed', 'true');
+        setShowPwaNotificationPrompt(false);
       }
     } catch (err) {
       console.warn("PWA prompt: failed to enable notifications:", err);
+      const errMsg = err instanceof Error ? err.message : String(err);
       setShowPwaNotificationPrompt(false);
+      alert(
+        "Smartphone alerts were not fully activated.\n\n" +
+        "Your iPhone allowed notification permission, but the app could not complete the required background Web Push subscription.\n\n" +
+        `Technical detail: ${errMsg}\n\n` +
+        "Please open the install/alerts panel and tap Enable Smartphone Alerts again."
+      );
     } finally {
       setEnablingPwaNotifications(false);
     }
@@ -365,7 +389,7 @@ export default function App() {
 
     let activeCleanup: (() => void) | null = null;
 
-    import('./lib/fcmClient').then(async ({ registerDeviceToken, observeForegroundMessages, preloadVapidKeyFromServer }) => {
+    import('./lib/fcmClient').then(async ({ observeForegroundMessages }) => {
       // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
       await preloadVapidKeyFromServer();
 
@@ -376,6 +400,9 @@ export default function App() {
           await registerDeviceToken(user.uid, false);
         } catch (e) {
           console.warn("Auto-registering device token failed silently on load:", e);
+          if (isStandaloneMode()) {
+            setShowPwaNotificationPrompt(true);
+          }
         }
       }
 
@@ -784,6 +811,7 @@ export default function App() {
   return (
     <AuthContext.Provider value={authValue}>
       <Router>
+        <ScrollToTop />
         <div className={cn(
           "min-h-screen transition-all duration-300",
           isDarkMode 

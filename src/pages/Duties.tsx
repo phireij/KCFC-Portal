@@ -21,7 +21,8 @@ export default function Duties() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
-  const [activeTab, setActiveTab] = useState<'core' | 'liturgical'>((searchParams.get('tab') as any) === 'core' ? 'core' : 'liturgical');
+  const isChoreAllowed = !!(profile?.isCoreMember || (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r)));
+  const [activeTab, setActiveTab] = useState<'core' | 'liturgical'>('liturgical');
   
   // Committee polls state
   const [committeePolls, setCommitteePolls] = useState<Poll[]>([]);
@@ -30,8 +31,14 @@ export default function Duties() {
   const [expandedPolls, setExpandedPolls] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (searchParams.get('tab') === 'liturgical') {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'core' && isChoreAllowed) {
+      setActiveTab('core');
+    } else {
       setActiveTab('liturgical');
+    }
+
+    if (tabParam === 'liturgical') {
       const pollId = searchParams.get('pollId');
       if (pollId) {
         setExpandedPolls(prev => ({ ...prev, [pollId]: true }));
@@ -44,16 +51,23 @@ export default function Duties() {
           }
         }, 800);
       }
+    } else if (tabParam === 'core' && isChoreAllowed) {
+      const pollId = searchParams.get('pollId');
+      if (pollId) {
+        setExpandedPolls(prev => ({ ...prev, [pollId]: true }));
+        setTimeout(() => {
+          const el = document.getElementById(`assignment-${pollId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.classList.add('ring-2', 'ring-[#5A5A40]', 'ring-offset-8', 'rounded-[32px]');
+            setTimeout(() => el.classList.remove('ring-2', 'ring-[#5A5A40]', 'ring-offset-8'), 3000);
+          }
+        }, 800);
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, isChoreAllowed]);
 
-  const [showManualForm, setShowManualForm] = useState(false);
-  const [manualDuty, setManualDuty] = useState({
-    userId: '',
-    type: 'kitchen' as any,
-    date: new Date().toISOString().split('T')[0],
-    slot: ''
-  });
+
 
   const isAdmin = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
 
@@ -160,80 +174,7 @@ export default function Duties() {
     };
   }, []);
 
-  const handleManualAssign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isAdmin || !user || !profile) return;
-    
-    const targetUser = users.find(u => u.uid === manualDuty.userId);
-    if (!targetUser) return;
 
-    try {
-      const assignment: Omit<DutyAssignment, 'id'> = {
-        userId: manualDuty.userId,
-        userDisplayName: targetUser.displayName,
-        type: manualDuty.type,
-        date: new Date(manualDuty.date).toISOString(),
-        slot: manualDuty.slot,
-        assignedBy: profile.displayName,
-        assignedAt: new Date().toISOString()
-      };
-
-      const docRef = await addDoc(collection(db, 'duties'), {
-        ...assignment,
-        assignedAt: serverTimestamp()
-      });
-
-      setDuties(prev => [{ id: docRef.id, ...assignment }, ...prev]);
-      
-      // Create notification for the assigned user
-      try {
-        await addDoc(collection(db, 'notifications'), {
-          userId: manualDuty.userId,
-          title: 'New Duty Assignment',
-          message: `You have been assigned to ${manualDuty.type} duty on ${format(new Date(manualDuty.date), 'MMM dd')}.`,
-          type: 'duty',
-          status: 'unread',
-          link: '/duties',
-          createdAt: serverTimestamp()
-        });
-      } catch (err) {
-        console.error("Failed to create notification", err);
-      }
-
-      setShowManualForm(false);
-      setManualDuty({ userId: '', type: 'kitchen', date: new Date().toISOString().split('T')[0], slot: '' });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleAutoAssign = async () => {
-    if (!isAdmin) return;
-    setAssigning(true);
-    try {
-      // Find the most recent active poll
-      const pollsQ = query(collection(db, 'polls'), where('status', '==', 'active'), limit(1));
-      const pollsSnap = await getDocs(pollsQ);
-      if (pollsSnap.empty) {
-        alert("No active polls found to assign from.");
-        return;
-      }
-      const poll = pollsSnap.docs[0];
-      const pollData = poll.data();
-      
-      const result = await autoAssignDuties(poll.id, pollData.targetDate || new Date().toISOString());
-      if (result.success) {
-        alert("Duties assigned successfully!");
-        fetchDuties();
-      } else {
-        alert(result.message);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setAssigning(false);
-    }
-  };
 
   const handleDelete = async (id: string) => {
     if (!isAdmin || !confirm("Delete this assignment?")) return;
@@ -247,63 +188,43 @@ export default function Duties() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Ministry Assignments</h1>
           <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Organizing kitchen, cleaning, and liturgical duties.</p>
         </div>
-        {isAdmin && activeTab === 'core' && (
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setShowManualForm(!showManualForm)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
-                showManualForm ? "bg-gray-200 text-gray-700" : "bg-[#5A5A40] text-white hover:bg-[#4a4a35]"
-              )}
-            >
-              <Plus size={18} />
-              {showManualForm ? 'Cancel' : 'Assign Manually'}
-            </button>
-            {!showManualForm && (
-              <button 
-                onClick={handleAutoAssign}
-                disabled={assigning}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-full text-sm font-medium disabled:opacity-50 hover:bg-purple-700 transition-all shadow-sm"
-              >
-                <Sparkles size={18} />
-                {assigning ? 'Assigning...' : 'Auto-Assign Next'}
-              </button>
-            )}
-          </div>
-        )}
+
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 bg-white/50 dark:bg-[#1e1e1a]/50 p-1.5 rounded-[2rem] border border-gray-100 dark:border-white/5 w-fit">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-white/50 dark:bg-[#1e1e1a]/50 p-2 sm:p-1.5 rounded-[2rem] border border-gray-100 dark:border-white/5 w-full sm:w-fit">
         <button
           onClick={() => setActiveTab('liturgical')}
           className={cn(
-            "flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all",
+            "flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all text-center",
             activeTab === 'liturgical' 
               ? "bg-blue-600 dark:bg-blue-500 text-white shadow-lg" 
               : "text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-[#252520]"
           )}
         >
-          <BookOpen size={16} />
-          Liturgical Ministry Assignment & Scheduling
+          <BookOpen size={16} className="shrink-0" />
+          <span className="sm:inline hidden">Liturgical Ministry Assignment & Scheduling</span>
+          <span className="inline sm:hidden">Liturgical Schedule</span>
         </button>
-        <button
-          onClick={() => setActiveTab('core')}
-          className={cn(
-            "flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all",
-            activeTab === 'core' 
-              ? "bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] shadow-lg" 
-              : "text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-[#252520]"
-          )}
-        >
-          <Users size={16} />
-          Chore Assignment
-        </button>
+        {isChoreAllowed && (
+          <button
+            onClick={() => setActiveTab('core')}
+            className={cn(
+              "flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest transition-all text-center",
+              activeTab === 'core' 
+                ? "bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] shadow-lg" 
+                : "text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-[#252520]"
+            )}
+          >
+            <Users size={16} className="shrink-0" />
+            <span>Chore Assignment</span>
+          </button>
+        )}
       </div>
 
       <AnimatePresence mode="wait">
@@ -633,68 +554,7 @@ export default function Duties() {
 
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-400 uppercase tracking-[0.2em] ml-2">Completed Assignments</h2>
-              {showManualForm && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-lg space-y-6"
-                >
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Manual Duty Assignment</h2>
-                  <form onSubmit={handleManualAssign} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 ml-2">Member</label>
-                      <select
-                        required
-                        value={manualDuty.userId}
-                        onChange={e => setManualDuty({...manualDuty, userId: e.target.value})}
-                        className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none"
-                      >
-                        <option value="" className="bg-white dark:bg-[#1e1e1a]">Select Member</option>
-                        {users.map(u => (
-                          <option key={u.uid} value={u.uid} className="bg-white dark:bg-[#1e1e1a]">{u.displayName}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 ml-2">Duty Type</label>
-                      <select
-                        value={manualDuty.type}
-                        onChange={e => setManualDuty({...manualDuty, type: e.target.value as any})}
-                        className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none"
-                      >
-                        <option value="kitchen" className="bg-white dark:bg-[#1e1e1a]">Kitchen</option>
-                        <option value="cleaning" className="bg-white dark:bg-[#1e1e1a]">Cleaning</option>
-                        <option value="ministry" className="bg-white dark:bg-[#1e1e1a]">Ministry</option>
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 ml-2">Date</label>
-                      <input
-                        type="date"
-                        required
-                        value={manualDuty.date}
-                        onChange={e => setManualDuty({...manualDuty, date: e.target.value})}
-                        className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 ml-2">Slot/Role</label>
-                      <input
-                        placeholder="Morning, Main Hall, etc."
-                        value={manualDuty.slot}
-                        onChange={e => setManualDuty({...manualDuty, slot: e.target.value})}
-                        className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none"
-                      />
-                    </div>
-                    <button 
-                      type="submit"
-                      className="lg:col-span-full px-6 py-3 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-[#4a4a35] dark:hover:bg-[#a5a575] transition-all"
-                    >
-                      Confirm Assignment
-                    </button>
-                  </form>
-                </motion.div>
-              )}
+
 
               <div className="bg-white dark:bg-[#1e1e1a] rounded-[32px] overflow-hidden shadow-sm border border-gray-100 dark:border-white/5">
                 <div className="overflow-x-auto">
@@ -717,32 +577,49 @@ export default function Duties() {
                       ) : duties.length === 0 ? (
                         <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400 dark:text-gray-500 italic font-serif">No duties assigned yet.</td></tr>
                       ) : (
-                        duties.map((duty) => (
-                          <tr key={duty.id} className="hover:bg-gray-50/50 dark:hover:bg-[#252520]/20 transition-colors">
-                            <td className="px-6 py-4 font-medium text-sm text-gray-900 dark:text-[#f5f5f0]">
-                              {format(new Date(duty.date), 'MMM dd, yyyy')}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center font-bold text-xs uppercase text-gray-500 dark:text-gray-300">
-                                  {duty.userDisplayName.charAt(0)}
+                        (() => {
+                          const seen = new Set<string>();
+                          const uniqueDuties = duties.filter(d => {
+                            const dateStr = d.date ? new Date(d.date).toISOString().split('T')[0] : '';
+                            const key = `${d.userId}-${dateStr}-${d.slot || ''}-${d.type}`;
+                            if (seen.has(key)) return false;
+                            seen.add(key);
+                            return true;
+                          });
+                          
+                          return uniqueDuties.map((duty) => (
+                            <tr key={duty.id} className="hover:bg-gray-50/50 dark:hover:bg-[#252520]/20 transition-colors">
+                              <td className="px-6 py-4 font-medium text-sm text-gray-900 dark:text-[#f5f5f0]">
+                                {format(new Date(duty.date), 'MMM dd, yyyy')}
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 shrink-0 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center font-bold text-xs uppercase text-gray-500 dark:text-gray-300">
+                                    {duty.userDisplayName.charAt(0)}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-bold text-gray-900 dark:text-[#f5f5f0]">{duty.userDisplayName}</span>
+                                    {duty.slot && (
+                                      <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 block md:hidden">
+                                        📍 {duty.slot}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                                <span className="text-sm font-bold text-gray-900 dark:text-[#f5f5f0]">{duty.userDisplayName}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={cn(
-                                "px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                                duty.type === 'kitchen' ? "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400" :
-                                duty.type === 'cleaning' ? "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400" :
-                                "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400"
-                              )}>
-                                {duty.type}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-gray-500 dark:text-gray-400 font-medium">
-                              {duty.slot || '-'}
-                            </td>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={cn(
+                                  "px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                  duty.type === 'kitchen' ? "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400" :
+                                  duty.type === 'cleaning' ? "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400" :
+                                  "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400"
+                                )}>
+                                  {duty.type}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                {duty.slot || '-'}
+                              </td>
                             <td className="px-6 py-4">
                               {duty.completed ? (
                                 <div className="flex flex-col gap-0.5">
@@ -794,8 +671,9 @@ export default function Duties() {
                               </td>
                             )}
                           </tr>
-                        ))
-                      )}
+                        ));
+                      })()
+                    )}
                     </tbody>
                   </table>
                 </div>

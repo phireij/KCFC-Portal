@@ -107,7 +107,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <header>
         <h1 className="text-4xl font-serif text-[#1a1a1a] dark:text-white">My Profile</h1>
         <p className="text-gray-500 font-serif italic mt-2">Manage your personal information and community presence.</p>
@@ -300,7 +300,7 @@ export default function Profile() {
                 <h3 className="text-sm font-bold text-gray-900 dark:text-[#f5f5f0] uppercase tracking-widest">Notification Preferences</h3>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[
                   { id: 'announcements', label: 'Announcements', desc: 'New community posts' },
                   { id: 'duties', label: 'Duties', desc: 'Assignment reminders' },
@@ -308,10 +308,10 @@ export default function Profile() {
                 ].map((pref) => (
                   <label 
                     key={pref.id}
-                    className="flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d2d25] transition-all border border-transparent has-[:checked]:border-[#5A5A40]/30 has-[:checked]:bg-[#5A5A40]/5 dark:has-[:checked]:bg-[#5A5A40]/10"
+                    className="flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d2d25] transition-all border border-transparent has-[:checked]:border-[#5A5A40]/30 has-[:checked]:bg-[#5A5A40]/5 dark:has-[:checked]:bg-[#5A5A40]/10 min-h-[6.5rem] justify-between"
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0]">{pref.label}</span>
+                    <div className="flex items-start justify-between gap-3 mb-1.5">
+                      <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0] break-words leading-tight">{pref.label}</span>
                       <input 
                         type="checkbox"
                         checked={(formData.preferences as any)[pref.id]}
@@ -322,10 +322,10 @@ export default function Profile() {
                             [pref.id]: e.target.checked
                           }
                         })}
-                        className="w-4 h-4 rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40]"
+                        className="w-4 h-4 rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] shrink-0 mt-0.5"
                       />
                     </div>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-serif italic">{pref.desc}</span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-serif italic leading-tight block">{pref.desc}</span>
                   </label>
                 ))}
               </div>
@@ -338,12 +338,12 @@ export default function Profile() {
                 <h3 className="text-sm font-bold text-gray-900 dark:text-[#f5f5f0] uppercase tracking-widest">Appearance Settings</h3>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <label 
-                  className="flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d2d25] transition-all border border-transparent has-[:checked]:border-[#5A5A40]/30 has-[:checked]:bg-[#5A5A40]/5 dark:has-[:checked]:bg-[#5A5A40]/10 h-full"
+                  className="flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d2d25] transition-all border border-transparent has-[:checked]:border-[#5A5A40]/30 has-[:checked]:bg-[#5A5A40]/5 dark:has-[:checked]:bg-[#5A5A40]/10 h-full min-h-[6.5rem] justify-between"
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0]">Dark Mode</span>
+                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                    <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0] break-words leading-tight">Dark Mode</span>
                     <input 
                       type="checkbox"
                       checked={formData.preferences?.darkMode ?? false}
@@ -354,16 +354,16 @@ export default function Profile() {
                           darkMode: e.target.checked
                         }
                       })}
-                      className="w-4 h-4 rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40]"
+                      className="w-4 h-4 rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] shrink-0 mt-0.5"
                     />
                   </div>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-550 font-serif italic">Use dark canvas and background panels</span>
+                  <span className="text-[10px] text-gray-400 dark:text-gray-550 font-serif italic leading-tight block">Use dark canvas and background panels</span>
                 </label>
 
                 {/* Font Size Setting Card */}
-                <div className="md:col-span-2 flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl border border-transparent">
+                <div className="lg:col-span-2 flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl border border-transparent">
                   <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0] mb-3">Font Size setting</span>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                       { id: 'small', label: 'Small', desc: 'Smaller than normal' },
                       { id: 'normal', label: 'Normal', desc: 'Normal size' },
@@ -383,14 +383,14 @@ export default function Profile() {
                             }
                           })}
                           className={cn(
-                            "flex flex-col items-center justify-center p-3 rounded-xl border transition-all text-center cursor-pointer",
+                            "flex flex-col items-center justify-between p-3 rounded-xl border transition-all text-center cursor-pointer min-h-[5.5rem] h-full",
                             isSelected 
                               ? "bg-[#5A5A40] text-white border-[#5A5A40] shadow-xs"
                               : "bg-white dark:bg-[#1e1e1a] text-gray-700 dark:text-gray-300 border-gray-150 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-[#2d2d25]"
                           )}
                         >
                           <span className={cn(
-                            "text-xs font-bold",
+                            "text-xs font-bold leading-none block",
                             opt.id === 'small' && "text-[11px]",
                             opt.id === 'normal' && "text-[13px]",
                             opt.id === 'medium' && "text-[15px]",
@@ -399,7 +399,7 @@ export default function Profile() {
                             {opt.label}
                           </span>
                           <span className={cn(
-                            "text-[8px] mt-1 font-serif italic block leading-tight",
+                            "text-[8px] mt-1.5 font-serif italic block leading-tight break-words max-w-full",
                             isSelected ? "text-white/85" : "text-gray-400 dark:text-gray-500"
                           )}>
                             {opt.desc}

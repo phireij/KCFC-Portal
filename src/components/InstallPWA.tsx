@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Smartphone, Download, Share, PlusSquare, BellRing, CheckCircle, X, Info, ChevronRight, Bell, RefreshCw } from 'lucide-react';
 import { useAuth } from '../App';
-import { registerDeviceToken, requestNotificationPermission, VAPID_KEY, preloadVapidKeyFromServer } from '../lib/fcmClient';
+import { registerDeviceToken, VAPID_KEY, prepareNativeWebPushPrerequisites } from '../lib/fcmClient';
 
 export default function InstallPWA() {
   const { user } = useAuth();
@@ -83,7 +83,7 @@ export default function InstallPWA() {
     setIsDismissed(dismissed);
 
     // 6. Preload VAPID key and auto-register silently if permission already granted
-    preloadVapidKeyFromServer()
+    prepareNativeWebPushPrerequisites()
       .then(() => {
         if (user && 'Notification' in window && Notification.permission === 'granted') {
           console.log("PWA: Notifications granted. Silently auto-registering standard Web Push on mount...");
@@ -154,22 +154,6 @@ export default function InstallPWA() {
         "3. Launch the KCFC Portal app from your Home Screen, sign in, and click 'Enable Smartphone Alerts' again."
       );
       return;
-    }
-
-    // --- REQUEST PERMISSION IMMEDIATELY & SYNCHRONOUSLY ---
-    // Safari on iOS strictly requires Notification.requestPermission() to be called
-    // synchronously on the direct thread of a user click. Any preceding async calls,
-    // including React state updates or await ticks, will discard the user gesture context.
-    let initialPermission = "default";
-    if (typeof window !== "undefined" && "Notification" in window) {
-      initialPermission = Notification.permission;
-      if (initialPermission === "default") {
-        try {
-          await requestNotificationPermission();
-        } catch (permError) {
-          console.warn("FCM: Failed to request permission synchronously in click handler:", permError);
-        }
-      }
     }
 
     setEnablingNotifications(true);

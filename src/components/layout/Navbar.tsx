@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { auth } from '../../lib/firebase';
 import { useAuth } from '../../App';
@@ -7,9 +7,65 @@ import { cn } from '../../lib/utils';
 import { Logo } from '../ui/Logo';
 import NotificationCenter from '../ui/NotificationCenter';
 
+function useDragToScroll() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    const ele = ref.current;
+    if (!ele) return;
+
+    if (e.button !== 0) return; // Only drag on left click
+
+    const startX = e.pageX - ele.offsetLeft;
+    const scrollLeft = ele.scrollLeft;
+    let hasMoved = false;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const x = moveEvent.pageX - ele.offsetLeft;
+      const walk = (x - startX) * 1.5;
+      ele.scrollLeft = scrollLeft - walk;
+      if (Math.abs(x - startX) > 5) {
+        hasMoved = true;
+        ele.style.cursor = 'grabbing';
+        ele.style.userSelect = 'none';
+      }
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+
+      if (ele) {
+        ele.style.cursor = '';
+        ele.style.userSelect = '';
+      }
+
+      if (hasMoved) {
+        const preventClick = (clickEvent: MouseEvent) => {
+          clickEvent.preventDefault();
+          clickEvent.stopPropagation();
+          document.removeEventListener('click', preventClick, true);
+        };
+        document.addEventListener('click', preventClick, true);
+        setTimeout(() => {
+          document.removeEventListener('click', preventClick, true);
+        }, 50);
+      }
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  return { ref, onMouseDown };
+}
+
 export default function Navbar() {
   const { profile } = useAuth();
   const location = useLocation();
+
+  const desktopDrag = useDragToScroll();
+  const mobileDrag = useDragToScroll();
 
   const userRoles = profile?.roles || [];
   const isAdmin = userRoles.some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
@@ -30,9 +86,9 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 h-16 bg-white/90 dark:bg-[#141411]/90 backdrop-blur-md border-b border-gray-100 dark:border-white/5 z-50 px-4 md:px-6 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-2 lg:gap-8 flex-shrink-0">
-          <Link to="/" className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+      <nav className="fixed top-0 left-0 right-0 h-16 bg-white/90 dark:bg-[#141411]/90 backdrop-blur-md border-b border-gray-100 dark:border-white/5 z-50 px-4 md:px-6 flex items-center justify-between shadow-sm gap-4">
+        <div className="flex-shrink-0">
+          <Link to="/" className="flex items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white dark:bg-[#1e1e1a] rounded-xl flex items-center justify-center shadow-soft border border-gray-50 dark:border-white/5 text-[#5A5A40] dark:text-[#d4d4bc] hover:scale-105 transition-transform flex-shrink-0">
               <Logo className="w-5 h-5 sm:w-7 sm:h-7" />
             </div>
@@ -40,24 +96,31 @@ export default function Navbar() {
               <span className="font-serif text-sm sm:text-lg font-medium text-[#1a1a1a] dark:text-[#f5f5f0] whitespace-nowrap">KCFC Portal</span>
             </div>
           </Link>
-          
-          <div className="hidden xl:flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {navItems.map((item) => (
+        </div>
+        
+        <div 
+          ref={desktopDrag.ref}
+          onMouseDown={desktopDrag.onMouseDown}
+          className="hidden xl:flex flex-1 min-w-0 items-center gap-1 overflow-x-auto no-scrollbar select-none"
+        >
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
               <Link
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
-                  location.pathname === item.path 
-                    ? "bg-[#5A5A40] text-white" 
-                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1e1e1a]"
+                  "px-5 py-2.5 rounded-full text-base font-bold transition-all flex items-center gap-2 whitespace-nowrap shadow-sm",
+                  isActive 
+                    ? "bg-[#5A5A40] text-white font-extrabold" 
+                    : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#1e1e1a]"
                 )}
               >
-                <item.icon className="nav-icon-desktop shrink-0" />
+                <item.icon className="w-5 h-5 shrink-0" strokeWidth={isActive ? 2.5 : 2} />
                 {item.label}
               </Link>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
@@ -81,28 +144,35 @@ export default function Navbar() {
       </nav>
 
       {/* Mobile/Tablet/Narrow Desktop Bottom Navigation */}
-      <nav className="xl:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#141411] border-t border-gray-100 dark:border-white/5 z-50 h-16 sm:h-20 flex items-center overflow-x-auto shadow-[0_-2px_15px_rgba(0,0,0,0.08)] dark:shadow-[0_-2px_15px_rgba(0,0,0,0.4)]">
-        <div className="flex items-center justify-start sm:justify-around min-w-max w-full px-4 gap-1 sm:gap-2">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "flex flex-col items-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl sm:rounded-2xl transition-all flex-none min-w-[60px] sm:min-w-[72px]",
-                location.pathname === item.path 
-                  ? "text-[#5A5A40] bg-[#5A5A40]/5 dark:bg-[#5A5A40]/10" 
-                  : "text-gray-400 dark:text-[10px] dark:text-gray-500 active:bg-gray-50 dark:active:bg-[#1e1e1a]"
-              )}
-            >
-              <item.icon className="nav-icon-mobile shrink-0" strokeWidth={location.pathname === item.path ? 2.5 : 2} />
-              <span className={cn(
-                "text-[8px] sm:text-[9px] font-bold uppercase tracking-wider",
-                location.pathname === item.path ? "opacity-100" : "opacity-70"
-              )}>
-                {item.label}
-              </span>
-            </Link>
-          ))}
+      <nav 
+        ref={mobileDrag.ref}
+        onMouseDown={mobileDrag.onMouseDown}
+        className="xl:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#141411] border-t border-gray-100 dark:border-white/10 z-50 h-20 sm:h-24 flex items-center overflow-x-auto shadow-[0_-2px_15px_rgba(0,0,0,0.08)] dark:shadow-[0_-2px_15px_rgba(0,0,0,0.4)] px-2 py-1 no-scrollbar select-none"
+      >
+        <div className="flex items-center justify-start sm:justify-around min-w-max w-full px-2 gap-2 sm:gap-4">
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  "flex flex-col items-center gap-1 sm:gap-1.5 px-3 py-2 rounded-2xl transition-all flex-none min-w-[72px] sm:min-w-[84px] focus:outline-none focus:ring-2 focus:ring-[#5A5A40]",
+                  isActive 
+                    ? "text-[#5A5A40] bg-[#5A5A40]/10 dark:text-[#f5f5f0] dark:bg-[#5A5A40]/30" 
+                    : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#1e1e1a] active:bg-gray-100 dark:active:bg-[#1e1e1a]"
+                )}
+              >
+                <item.icon className="w-6 h-6 sm:w-7 sm:h-7 shrink-0" strokeWidth={isActive ? 2.5 : 2} />
+                <span className={cn(
+                  "text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-center block mt-0.5",
+                  isActive ? "text-[#5A5A40] dark:text-[#f5f5f0] font-extrabold" : "text-gray-700 dark:text-gray-300"
+                )}>
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
     </>

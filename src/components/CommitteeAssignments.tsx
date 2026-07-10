@@ -83,6 +83,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
   // Broadcast modal states
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'selected' | 'committee'>('all');
+  const [broadcastType, setBroadcastType] = useState<'individual' | 'summary'>('individual');
   const [selectedUserIdsForBroadcast, setSelectedUserIdsForBroadcast] = useState<string[]>([]);
   const [selectedCommitteesForBroadcast, setSelectedCommitteesForBroadcast] = useState<string[]>(['lector', 'altar_server', 'usher', 'ppt']);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -427,7 +428,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
           });
           await batch.commit();
 
-          const clientId = (import.meta as any).env.VITE_CLIENT_ID;
+          const clientId = (import.meta as any).env.VITE_CLIENT_ID || (window as any).VITE_CLIENT_ID;
           if (clientId && usersToEmail.length > 0) {
             const subject = `[KCFC] New Assignments: ${poll.title}`;
             const baseUrl = window.location.origin;
@@ -575,6 +576,58 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
     }
   };
 
+  const getLiturgicalSummaryHtml = () => {
+    const dates = poll.massDates || [];
+    const roles = [
+      'Commentator', 'Lector 1', 'Lector 2',
+      'Altar Server 1', 'Altar Server 2',
+      'Usher 1', 'Usher 2',
+      'PPT Operator'
+    ];
+
+    let html = `
+      <div style="margin-top: 25px; font-family: sans-serif;">
+        <h3 style="color: #008b99; border-bottom: 2px solid #008b99; padding-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 15px;">Finalized Liturgical Schedule Summary:</h3>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px; min-width: 600px;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left; color: #475569;">
+                <th style="padding: 10px; border: 1px solid #cbd5e1; font-weight: 700;">Mass Date</th>
+                ${roles.map(r => `<th style="padding: 10px; border: 1px solid #cbd5e1; font-weight: 700;">${r}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    dates.forEach(mDate => {
+      const dateStr = mDate.date;
+      const dateAssigns = assignments[dateStr] || {};
+      const formatDateSafe = (dStr: string) => {
+        try { return format(new Date(dStr), 'MMM d, yyyy'); } catch (e) { return dStr; }
+      };
+
+      html += `<tr style="border-bottom: 1px solid #e2e8f0;">`;
+      html += `<td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600; background-color: #f8fafc;">${formatDateSafe(dateStr)}${mDate.description ? `<br/><span style="font-size: 10px; color: #64748b; font-weight: normal;">${mDate.description}</span>` : ''}</td>`;
+
+      roles.forEach(roleName => {
+        const assignedUid = Object.keys(dateAssigns).find(uid => dateAssigns[uid] === roleName);
+        const assignedUser = users.find(u => u.uid === assignedUid);
+        const displayName = assignedUser?.nickname?.trim() || assignedUser?.displayName || '-';
+        html += `<td style="padding: 10px; border: 1px solid #e2e8f0; color: ${assignedUid ? '#008b99' : '#94a3b8'}; font-weight: ${assignedUid ? 'bold' : 'normal'};">${displayName}</td>`;
+      });
+
+      html += `</tr>`;
+    });
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    return html;
+  };
+
   const handleBroadcastEmails = async () => {
     // 1. Determine recipients
     let recipientUsers: UserProfile[] = [];
@@ -634,19 +687,24 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
       });
       await batch.commit();
 
-      const clientId = (import.meta as any).env.VITE_CLIENT_ID;
-      if (clientId) {
-        const formatDateSafe = (dateStr: string) => {
-          try {
-            return format(new Date(dateStr), 'EEEE, MMM d, yyyy');
-          } catch (e) {
-            return dateStr;
-          }
-        };
+      const formatDateSafe = (dateStr: string) => {
+        try {
+          return format(new Date(dateStr), 'EEEE, MMM d, yyyy');
+        } catch (e) {
+          return dateStr;
+        }
+      };
 
-        for (const member of recipientUsers) {
-          if (member.email) {
-            try {
+      const summaryHtml = broadcastType === 'summary' ? getLiturgicalSummaryHtml() : '';
+
+      for (const member of recipientUsers) {
+        if (member.email) {
+          try {
+            let assignmentsHtml = '';
+            
+            if (broadcastType === 'summary') {
+              assignmentsHtml = summaryHtml;
+            } else {
               // Construct personalized assignments list for this specific member
               const memberAssignments: { date: string, role: string }[] = [];
               Object.entries(assignments).forEach(([dateStr, dateAssigns]: [string, any]) => {
@@ -657,7 +715,6 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
               });
               memberAssignments.sort((a, b) => a.date.localeCompare(b.date));
 
-              let assignmentsHtml = '';
               if (memberAssignments.length > 0) {
                 assignmentsHtml = `
                   <div style="background-color: #f0fdfe; border: 1px solid #cffafe; border-radius: 12px; padding: 20px; margin: 25px 0; font-family: sans-serif;">
@@ -703,49 +760,47 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                   </div>
                 `;
               }
-
-              const body = `
-                <div style="font-family: serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-                  <div style="background-color: #00e5ff; color: #004d55; padding: 40px; text-align: center;">
-                    <h1 style="margin: 0; font-size: 26px; font-weight: bold; font-family: sans-serif; letter-spacing: -0.5px;">Liturgical Assignments Published</h1>
-                  </div>
-                  <div style="padding: 40px; line-height: 1.6; font-size: 15px;">
-                    <p style="font-size: 16px; font-weight: bold;">Dear ${member.displayName || 'Committee Member'},</p>
-                    <p>${customMessage.replace(/\n/g, '<br/>')}</p>
-                    
-                    ${assignmentsHtml}
-
-                    <p style="font-size: 13px; color: #64748b; margin-top: 30px;">
-                      Please review the full interactive matrix to see the complete scheduling layout and confirm your availability.
-                    </p>
-
-                    <p style="text-align: center; margin: 40px 0;">
-                      <a href="${baseUrl}/duties?tab=liturgical&pollId=${poll.id}" style="background-color: #008b99; color: white; padding: 15px 30px; text-decoration: none; border-radius: 12px; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; display: inline-block; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-family: sans-serif;">
-                        View Full Matrix
-                      </a>
-                    </p>
-
-                    <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 30px 0;" />
-                    <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0; font-family: sans-serif;">
-                      You are receiving this because you are an active member of KCFC Liturgical Ministries.<br/>
-                      This is an important system update.
-                    </p>
-                  </div>
-                </div>
-              `;
-
-              const formattedTo = member.displayName ? `"${member.displayName}" <${member.email}>` : member.email;
-              await sendGmail(formattedTo, customSubject, body);
-              successCount++;
-            } catch (err) {
-              console.error(`Failed to send email to ${member.email}`, err);
             }
+
+            const body = `
+              <div style="font-family: serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                <div style="background-color: #00e5ff; color: #004d55; padding: 40px; text-align: center;">
+                  <h1 style="margin: 0; font-size: 26px; font-weight: bold; font-family: sans-serif; letter-spacing: -0.5px;">Liturgical Assignments Published</h1>
+                </div>
+                <div style="padding: 40px; line-height: 1.6; font-size: 15px;">
+                  <p style="font-size: 16px; font-weight: bold;">Dear ${member.displayName || 'Committee Member'},</p>
+                  <p>${customMessage.replace(/\n/g, '<br/>')}</p>
+                  
+                  ${assignmentsHtml}
+
+                  <p style="font-size: 13px; color: #64748b; margin-top: 30px;">
+                    Please review the full interactive matrix to see the complete scheduling layout and confirm your availability.
+                  </p>
+
+                  <p style="text-align: center; margin: 40px 0;">
+                    <a href="${baseUrl}/duties?tab=liturgical&pollId=${poll.id}" style="background-color: #008b99; color: white; padding: 15px 30px; text-decoration: none; border-radius: 12px; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; display: inline-block; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-family: sans-serif;">
+                      View Full Matrix
+                    </a>
+                  </p>
+
+                  <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 30px 0;" />
+                  <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0; font-family: sans-serif;">
+                    You are receiving this because you are an active member of KCFC Liturgical Ministries.<br/>
+                    This is an important system update.
+                  </p>
+                </div>
+              </div>
+            `;
+
+            const formattedTo = member.displayName ? `"${member.displayName}" <${member.email}>` : member.email;
+            await sendGmail(formattedTo, customSubject, body);
+            successCount++;
+          } catch (err) {
+            console.error(`Failed to send email to ${member.email}`, err);
           }
         }
-        alert(`Broadcast successful! Sent email to ${successCount} member(s).`);
-      } else {
-        alert(`System warning: VITE_CLIENT_ID is not configured, but notifications have been posted in the app. Sent to ${recipientUsers.length} member(s).`);
       }
+      alert(`Broadcast successful! Sent email to ${successCount} member(s).`);
       setIsBroadcastModalOpen(false);
     } catch (err) {
       alert(`Error broadcasting emails: ${err instanceof Error ? err.message : String(err)}`);
@@ -1595,6 +1650,33 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                   placeholder="Custom announcement details..."
                 />
                 <p className="text-[10px] text-gray-400">This text will be followed by a button linking directly to the assignments matrix.</p>
+              </div>
+
+              {/* Email Type Selector (Role vs Summary) */}
+              <div className="space-y-2 border-t border-gray-100 pt-4">
+                <label className="text-xs font-black uppercase tracking-wider text-gray-500 block">Email Type</label>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 font-bold cursor-pointer text-xs">
+                    <input 
+                      type="radio" 
+                      name="broadcastType" 
+                      checked={broadcastType === 'individual'} 
+                      onChange={() => setBroadcastType('individual')}
+                      className="text-[#008b99] focus:ring-[#008b99]"
+                    />
+                    <span>Role of each member (Personalized)</span>
+                  </label>
+                  <label className="flex items-center gap-2 font-bold cursor-pointer text-xs">
+                    <input 
+                      type="radio" 
+                      name="broadcastType" 
+                      checked={broadcastType === 'summary'} 
+                      onChange={() => setBroadcastType('summary')}
+                      className="text-[#008b99] focus:ring-[#008b99]"
+                    />
+                    <span>Summary of the entire assignment</span>
+                  </label>
+                </div>
               </div>
 
               {/* Target Selector */}

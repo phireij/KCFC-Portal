@@ -99,7 +99,7 @@ export default function Members() {
   if (loading) return <div className="p-8 text-center font-serif italic text-gray-400">Loading directory...</div>;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-12 md:py-16">
+    <div className="max-w-6xl mx-auto space-y-8">
       <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-4">

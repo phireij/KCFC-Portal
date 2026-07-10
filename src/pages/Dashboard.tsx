@@ -9,6 +9,24 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { seedDatabase, purgeAllDummyData } from '../lib/seeder';
 
+const formatSafeDate = (val: any, formatStr: string, fallback: string = '') => {
+  if (!val) return fallback;
+  try {
+    let dateObj: Date;
+    if (typeof val.toDate === 'function') {
+      dateObj = val.toDate();
+    } else if (val.seconds !== undefined) {
+      dateObj = new Date(val.seconds * 1000);
+    } else {
+      dateObj = new Date(val);
+    }
+    if (isNaN(dateObj.getTime())) return fallback;
+    return format(dateObj, formatStr);
+  } catch (err) {
+    return fallback;
+  }
+};
+
 export default function Dashboard() {
   const { profile } = useAuth();
   const [stats, setStats] = useState({
@@ -233,7 +251,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 pb-12">
+    <div className="max-w-6xl mx-auto space-y-8 pb-12">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-serif text-[#1a1a1a] dark:text-white">Welcome back, {profile?.nickname?.trim() || profile?.displayName}</h1>
@@ -330,7 +348,7 @@ export default function Dashboard() {
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-sm text-gray-900 dark:text-white">{announcement.title}</h3>
                     <span className="text-[9px] text-gray-400 dark:text-gray-500 uppercase font-bold whitespace-nowrap ml-2">
-                       {announcement.publishedAt ? format((announcement.publishedAt as any).toDate(), 'MMM d') : ''}
+                       {formatSafeDate(announcement.publishedAt, 'MMM d')}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{announcement.content}</p>

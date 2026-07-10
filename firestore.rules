@@ -83,6 +83,18 @@ service cloud.firestore {
       );
     }
 
+    function isCoreMember() {
+      let data = getUserData();
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          data != null &&
+          data.get('isVerified', false) == true && 
+          data.get('isDisabled', false) == false &&
+          data.get('isCoreMember', false) == true
+        )
+      );
+    }
+
     function canCreateAnnouncement() {
       let data = getUserData();
       let roles = data != null ? data.get('roles', []) : [];
@@ -137,7 +149,8 @@ service cloud.firestore {
                (!('isVerified' in data) || data.isVerified is bool) &&
                (!('isDisabled' in data) || data.isDisabled is bool) &&
                (!('isEmailVerified' in data) || data.isEmailVerified is bool) &&
-               (!('fcmTokens' in data) || data.fcmTokens is list);
+               (!('fcmTokens' in data) || data.fcmTokens is list) &&
+               (!('webPushSubscriptions' in data) || data.webPushSubscriptions is list);
       }
 
       allow get: if isSignedIn();
@@ -151,9 +164,9 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         (isOwner(userId) && (
           isBootstrapAdmin() || 
-          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'ministries', 'updatedAt', 'nickname', 'birthdate', 'homeAddress', 'phoneNumber', 'preferences', 'isEmailVerified', 'fcmTokens'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'ministries', 'updatedAt', 'nickname', 'birthdate', 'homeAddress', 'phoneNumber', 'preferences', 'isEmailVerified', 'fcmTokens', 'webPushSubscriptions'])
         )) ||
-        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens']))
+        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens', 'webPushSubscriptions']))
       ) && isValidUser(incoming());
       allow delete: if isAdmin();
     }
@@ -183,8 +196,16 @@ service cloud.firestore {
         }
 
         allow read: if isApproved();
-        allow create: if isApproved() && isValidResponse(incoming());
-        allow update: if (isApproved() && isOwner(existing().userId) && isValidResponse(incoming()) &&
+        allow create: if isApproved() && (
+          get(/databases/$(database)/documents/polls/$(pollId)).data.get('category', '') != 'core_member' || 
+          isCoreMember() || 
+          isAdmin()
+        ) && isValidResponse(incoming());
+        allow update: if (isApproved() && isOwner(existing().userId) && (
+          get(/databases/$(database)/documents/polls/$(pollId)).data.get('category', '') != 'core_member' || 
+          isCoreMember() || 
+          isAdmin()
+        ) && isValidResponse(incoming()) &&
                       incoming().diff(existing()).affectedKeys().hasOnly(['attendance', 'notes', 'selectedOptions', 'submittedAt', 'toiletOk'])) ||
                       (isAdmin() && isValidResponse(incoming()));
         allow delete: if isAdmin();
