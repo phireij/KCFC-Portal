@@ -122,6 +122,14 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   const urlToOpen = event.notification.data?.url || '/announcements';
 
+  // Resolve target URL to a fully qualified absolute URL for reliable comparison
+  let absoluteTargetUrl = urlToOpen;
+  if (urlToOpen && !urlToOpen.startsWith('http://') && !urlToOpen.startsWith('https://')) {
+    try {
+      absoluteTargetUrl = new URL(urlToOpen, self.location.origin).href;
+    } catch (_) {}
+  }
+
   // Clear app badge when notification clicked
   if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
     navigator.clearAppBadge().catch(function(err) {
@@ -133,12 +141,25 @@ self.addEventListener('notificationclick', function(event) {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url === urlToOpen && 'focus' in client) {
+        
+        let clientUrlObj = null;
+        let targetUrlObj = null;
+        try {
+          clientUrlObj = new URL(client.url);
+          targetUrlObj = new URL(absoluteTargetUrl);
+        } catch (_) {}
+
+        if (clientUrlObj && targetUrlObj) {
+          // Robust match by pathname (e.g. /announcements matches regardless of domain origin differences or trailing slashes)
+          if (clientUrlObj.pathname === targetUrlObj.pathname && 'focus' in client) {
+            return client.focus();
+          }
+        } else if (client.url === absoluteTargetUrl && 'focus' in client) {
           return client.focus();
         }
       }
       if (self.clients.openWindow) {
-        return self.clients.openWindow(urlToOpen);
+        return self.clients.openWindow(absoluteTargetUrl);
       }
     })
   );

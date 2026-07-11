@@ -13,7 +13,6 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -25,20 +24,10 @@ export default function Login() {
     }
   });
 
-  const saveRememberMeState = () => {
-    localStorage.setItem('kcfc_remember_me', rememberMe ? 'true' : 'false');
-    if (rememberMe) {
-      localStorage.setItem('kcfc_login_timestamp', Date.now().toString());
-    } else {
-      localStorage.removeItem('kcfc_login_timestamp');
-    }
-  };
-
   const handleGoogleLogin = async () => {
     setError(null);
     setLoading(true);
     try {
-      saveRememberMeState();
       const result = await signInWithPopup(auth, googleProvider);
       
       // Force direct write for Google login/signup to ensure profile document always exists in Firestore
@@ -136,7 +125,6 @@ export default function Login() {
     setLoading(true);
 
     try {
-      saveRememberMeState();
       if (isSignUp) {
         if (!name) {
           setError("Please provide your name for registration.");
@@ -440,18 +428,9 @@ export default function Login() {
                   </div>
                 )}
 
-                {/* Remember me Option Checkbox */}
+                {/* Forgot password option */}
                 {!isSignUp && !isResetting && (
-                  <div className="flex items-center justify-between pt-1">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 dark:text-gray-400 select-none">
-                      <input 
-                        type="checkbox" 
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-gray-250 dark:border-white/10 dark:bg-[#252520] w-4 h-4 cursor-pointer"
-                      />
-                      <span>Stay logged in for 90 days</span>
-                    </label>
+                  <div className="flex justify-end pt-1">
                     <button
                       type="button"
                       onClick={() => { setIsResetting(true); setError(null); setSuccessMsg(null); }}

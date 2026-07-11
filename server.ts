@@ -206,11 +206,19 @@ async function sendWebPushNotification(subscription: any, title: string, body: s
     }
   });
 
+  const headers: Record<string, string> = {
+    "Urgency": "high"
+  };
+
+  // Apple's Push Notification Service (APNs) strictly requires "apns-push-type": "alert"
+  // for standard Web Push alerts to be delivered on iOS devices when locked or backgrounded.
+  if (subscription?.endpoint && (subscription.endpoint.includes("apple.com") || subscription.endpoint.includes("apple"))) {
+    headers["apns-push-type"] = "alert";
+  }
+
   const options = {
     TTL: 86400, // 24 hours
-    headers: {
-      "Urgency": "high"
-    }
+    headers: headers
   };
 
   try {

@@ -239,56 +239,6 @@ export default function App() {
     };
   }, []);
 
-  // 90 days remember me & 1 hour inactivity tracker
-  useEffect(() => {
-    if (!user) return;
-
-    const rememberMe = localStorage.getItem('kcfc_remember_me') === 'true';
-
-    if (rememberMe) {
-      // 90 days maximum persistent logged in duration
-      const loginTimestamp = localStorage.getItem('kcfc_login_timestamp');
-      if (!loginTimestamp) {
-        localStorage.setItem('kcfc_login_timestamp', Date.now().toString());
-      } else {
-        const daysPassed = (Date.now() - parseInt(loginTimestamp, 10)) / (1000 * 60 * 60 * 24);
-        if (daysPassed > 90) {
-          localStorage.removeItem('kcfc_remember_me');
-          localStorage.removeItem('kcfc_login_timestamp');
-          auth.signOut();
-          return;
-        }
-      }
-      return;
-    }
-
-    // Unchecked remember me -> Logout after 1 hour of inactivity
-    let lastActive = Date.now();
-    const updateActivity = () => {
-      lastActive = Date.now();
-    };
-
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
-    events.forEach(event => {
-      window.addEventListener(event, updateActivity);
-    });
-
-    const interval = setInterval(() => {
-      const inactiveMs = Date.now() - lastActive;
-      if (inactiveMs > 60 * 60 * 1000) { // 1 hour
-        console.log("No inactivity for 1 hour. Auto-logout triggered.");
-        auth.signOut();
-      }
-    }, 30000); // Check every 30 seconds
-
-    return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, updateActivity);
-      });
-      clearInterval(interval);
-    };
-  }, [user]);
-
   // Poll Deep-linking and automatic redirection
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
