@@ -2,60 +2,131 @@
 
 @variant dark (&:where(.dark, .dark *));
 
-/* Font Size Settings */
+:root {
+  --kcfc-navy: #123b66;
+  --kcfc-royal: #2563eb;
+  --kcfc-sky: #eaf3ff;
+  --kcfc-gold: #d6a84b;
+  --kcfc-canvas: #f7f9fc;
+  --kcfc-ink: #172033;
+  --kcfc-slate: #64748b;
+  --kcfc-border: #dde5ee;
+  --kcfc-success: #15803d;
+  --kcfc-warning: #b7791f;
+  --kcfc-error: #c62828;
+}
+
+/* Accessible reading-size preferences. The previous scale made normal body text 20px. */
 html.font-size-small {
-  font-size: 16px;
-  --nav-icon-desktop: 16px;
-  --nav-icon-mobile: 18px;
-  --nav-icon-sm: 22px;
+  font-size: 15px;
+  --nav-icon-desktop: 18px;
+  --nav-icon-mobile: 21px;
+  --nav-icon-sm: 23px;
 }
+
 html.font-size-normal {
-  font-size: 20px;
-  --nav-icon-desktop: 21px;
-  --nav-icon-mobile: 28px;
-  --nav-icon-sm: 34px;
+  font-size: 16px;
+  --nav-icon-desktop: 19px;
+  --nav-icon-mobile: 22px;
+  --nav-icon-sm: 24px;
 }
+
 html.font-size-medium {
-  font-size: 24px;
-  --nav-icon-desktop: 25px;
-  --nav-icon-mobile: 32px;
-  --nav-icon-sm: 40px;
+  font-size: 18px;
+  --nav-icon-desktop: 21px;
+  --nav-icon-mobile: 24px;
+  --nav-icon-sm: 26px;
 }
+
 html.font-size-big {
-  font-size: 28px;
-  --nav-icon-desktop: 29px;
-  --nav-icon-mobile: 36px;
-  --nav-icon-sm: 46px;
+  font-size: 20px;
+  --nav-icon-desktop: 23px;
+  --nav-icon-mobile: 26px;
+  --nav-icon-sm: 28px;
 }
 
 .nav-icon-desktop {
-  width: var(--nav-icon-desktop, 16px) !important;
-  height: var(--nav-icon-desktop, 16px) !important;
+  width: var(--nav-icon-desktop, 19px) !important;
+  height: var(--nav-icon-desktop, 19px) !important;
 }
 
 .nav-icon-mobile {
-  width: var(--nav-icon-mobile, 18px) !important;
-  height: var(--nav-icon-mobile, 18px) !important;
+  width: var(--nav-icon-mobile, 22px) !important;
+  height: var(--nav-icon-mobile, 22px) !important;
 }
 
 @media (min-width: 640px) {
   .nav-icon-mobile {
-    width: var(--nav-icon-sm, 22px) !important;
-    height: var(--nav-icon-sm, 22px) !important;
+    width: var(--nav-icon-sm, 24px) !important;
+    height: var(--nav-icon-sm, 24px) !important;
   }
 }
 
-/* Set root and body backgrounds globally so there is never a browser-fallback white background */
-html, body, #root {
-  background-color: #f5f5f0;
-  color: #1a1a1a;
-  transition: background-color 300ms ease, color 300ms ease;
+html,
+body,
+#root {
   min-height: 100vh;
+  background: var(--kcfc-canvas);
+  color: var(--kcfc-ink);
 }
 
-html.dark, html.dark body, html.dark #root {
-  background-color: #141411;
-  color: #f5f5f0;
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.5;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+html.dark,
+html.dark body,
+html.dark #root {
+  background: #081525;
+  color: #f8fafc;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+/* Authenticated application shell. Navbar toggles this class only while signed in. */
+@media (min-width: 1280px) {
+  body.kcfc-auth-shell #root main {
+    padding-left: calc(280px + 2rem) !important;
+    padding-right: 2rem !important;
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+  }
+}
+
+@media (max-width: 1279px) {
+  body.kcfc-auth-shell #root main {
+    padding-top: 4.75rem !important;
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+  }
 }
 
 @utility no-scrollbar {
@@ -66,19 +137,67 @@ html.dark, html.dark body, html.dark #root {
   }
 }
 
-/* Custom dynamic scaling overrides for absolute pixel text sizes */
+/* Shared redevelopment surfaces for new screens and incremental legacy-page migration. */
+.kcfc-page {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+.kcfc-surface {
+  border: 1px solid var(--kcfc-border);
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.dark .kcfc-surface {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #10243a;
+  box-shadow: none;
+}
+
+.kcfc-eyebrow {
+  color: var(--kcfc-royal);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kcfc-page-title {
+  color: var(--kcfc-ink);
+  font-size: clamp(1.5rem, 3vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.dark .kcfc-page-title {
+  color: #ffffff;
+}
+
+.kcfc-muted {
+  color: var(--kcfc-slate);
+}
+
+/* Preserve compatibility for legacy pixel utility classes while keeping them readable. */
 .text-\[8px\] {
-  font-size: 0.6rem !important;
+  font-size: 0.6875rem !important;
 }
+
 .text-\[9px\] {
-  font-size: 0.7rem !important;
+  font-size: 0.72rem !important;
 }
+
 .text-\[10px\] {
   font-size: 0.75rem !important;
 }
+
 .text-\[11px\] {
   font-size: 0.8rem !important;
 }
+
 .text-\[12px\] {
   font-size: 0.875rem !important;
 }
@@ -88,4 +207,3 @@ html.dark, html.dark body, html.dark #root {
     font-size: 0.8rem !important;
   }
 }
-
