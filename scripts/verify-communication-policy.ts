@@ -3,6 +3,9 @@ import { buildCommunicationRoutingPlan } from '../src/lib/communicationRouting';
 import { buildNotificationRecord } from '../src/lib/notificationRecord';
 import { isProfileEligibleForAudience } from '../src/lib/communicationAudience';
 import {
+  buildAssignmentChangeBatchPlan,
+  buildAssignmentChangeNotification,
+  buildAvailabilityCompletionBatchPlan,
   buildAvailabilityCompletionNotification,
   buildAvailabilityRequestBatchPlan,
   buildAvailabilityRequestNotification,
@@ -135,6 +138,7 @@ const availabilityBatch = buildAvailabilityRequestBatchPlan({
 assert.equal(availabilityBatch.notifications.length, 3);
 assert.deepEqual(availabilityBatch.pushRecipientIds.sort(), ['altar-1', 'lector-1']);
 assert.deepEqual(availabilityBatch.pushTokens.sort(), ['token-b', 'token-newer', 'token-shared']);
+assert.deepEqual(availabilityBatch.emailRecipientIds.sort(), ['altar-1', 'lector-1']);
 assert.equal(availabilityBatch.notifications.find((plan) => plan.record.userId === 'usher-muted')?.record.channels?.join(','), 'inbox');
 
 const availabilityComplete = buildAvailabilityCompletionNotification({
@@ -145,6 +149,18 @@ const availabilityComplete = buildAvailabilityCompletionNotification({
 });
 assert.equal(availabilityComplete.record.sourceType, 'availability');
 assert.equal(availabilityComplete.record.link, '/polls?id=poll-availability&leader=1');
+
+const completionBatch = buildAvailabilityCompletionBatchPlan({
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  recipients: [
+    { uid: 'leader-1', preferences: defaults, fcmTokens: ['leader-push'] },
+    { uid: 'leader-muted', preferences: { ...defaults, availability: false }, fcmTokens: ['muted-leader-push'] },
+  ],
+});
+assert.deepEqual(completionBatch.pushRecipientIds, ['leader-1']);
+assert.deepEqual(completionBatch.emailRecipientIds, ['leader-1']);
+assert.equal(completionBatch.notifications.find((plan) => plan.record.userId === 'leader-muted')?.record.channels?.join(','), 'inbox');
 
 const publishedAssignment = buildPublishedAssignmentNotification({
   userId: 'altar-server-1',
@@ -170,6 +186,28 @@ assert.equal(assignmentBatch.notifications.length, 2);
 assert.deepEqual(assignmentBatch.pushRecipientIds, ['lector-1']);
 assert.deepEqual(assignmentBatch.pushTokens, ['assignment-a']);
 assert.equal(assignmentBatch.notifications.find((plan) => plan.record.userId === 'usher-muted')?.record.channels?.join(','), 'inbox');
+
+const assignmentChange = buildAssignmentChangeNotification({
+  userId: 'lector-1',
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  preferences: defaults,
+});
+assert.equal(assignmentChange.record.sourceType, 'assignment');
+assert.equal(assignmentChange.record.urgency, 'important');
+assert.equal((assignmentChange.record as any).eventKind, 'assignment_change');
+
+const changeBatch = buildAssignmentChangeBatchPlan({
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  recipients: [
+    { uid: 'lector-1', preferences: defaults, fcmTokens: ['change-a'] },
+    { uid: 'altar-muted', preferences: { ...defaults, assignments: false }, fcmTokens: ['change-muted'] },
+  ],
+});
+assert.deepEqual(changeBatch.pushRecipientIds, ['lector-1']);
+assert.deepEqual(changeBatch.emailRecipientIds, ['lector-1']);
+assert.equal(changeBatch.notifications.find((plan) => plan.record.userId === 'altar-muted')?.record.channels?.join(','), 'inbox');
 
 const duty = buildDutyAssignmentNotification({
   userId: 'core-1',
