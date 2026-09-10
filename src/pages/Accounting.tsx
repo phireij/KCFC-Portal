@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../App';
 import { BarChart3, ReceiptText, ShieldCheck, Wallet } from 'lucide-react';
+import TreasuryOverview from '../components/accounting/TreasuryOverview';
 import LegacyAccounting from './LegacyAccounting';
 
 const accessRoles = ['admin', 'president', 'treasurer', 'vice_president', 'auditor'];
@@ -40,6 +41,8 @@ export default function Accounting() {
           </div>
         </div>
       </section>
+
+      <TreasuryOverview />
 
       <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-400/15 dark:bg-amber-500/5">
         <div className="flex items-start gap-3">
