@@ -7,6 +7,8 @@ import {
   buildAvailabilityRequestNotification,
   buildPublishedAssignmentNotification,
 } from '../src/lib/liturgicalCommunication';
+import { buildDutyAssignmentNotification } from '../src/lib/dutyCommunication';
+import { buildBroadcastNotification } from '../src/lib/broadcastCommunication';
 
 const defaults = {
   announcements: true,
@@ -136,5 +138,48 @@ assert.equal(publishedAssignment.record.urgency, 'important');
 assert.equal(publishedAssignment.record.link, '/duties?view=mine');
 assert.ok(publishedAssignment.record.channels.includes('inbox'));
 assert.ok(publishedAssignment.record.channels.includes('pwa'));
+
+const duty = buildDutyAssignmentNotification({
+  userId: 'core-1',
+  dutyId: 'duty-1',
+  title: 'Community duty assigned',
+  message: 'Please review your kitchen duty.',
+  link: '/duties?view=mine',
+  preferences: defaults,
+});
+assert.equal(duty.record.sourceType, 'duty');
+assert.equal(duty.record.urgency, 'normal');
+assert.deepEqual(duty.record.channels, ['inbox', 'pwa', 'email']);
+
+const mutedDuty = buildDutyAssignmentNotification({
+  userId: 'core-2',
+  title: 'Community duty assigned',
+  message: 'Please review your cleaning duty.',
+  preferences: { ...defaults, duties: false },
+});
+assert.deepEqual(mutedDuty.record.channels, ['inbox']);
+
+const broadcast = buildBroadcastNotification({
+  userId: 'member-1',
+  broadcastId: 'broadcast-1',
+  title: 'KCFC notice',
+  message: 'Routine community message.',
+  preferences: defaults,
+});
+assert.equal(broadcast.record.sourceType, 'broadcast');
+assert.equal(broadcast.record.urgency, 'normal');
+assert.deepEqual(broadcast.record.channels, ['inbox', 'pwa', 'email']);
+
+const urgentBroadcast = buildBroadcastNotification({
+  userId: 'member-2',
+  broadcastId: 'broadcast-urgent',
+  title: 'Urgent KCFC notice',
+  message: 'Same-day operational change.',
+  preferences: defaults,
+  urgent: true,
+});
+assert.equal(urgentBroadcast.record.urgency, 'urgent');
+assert.ok(urgentBroadcast.record.channels.includes('inbox'));
+assert.ok(urgentBroadcast.record.channels.includes('pwa'));
 
 console.log('Communication policy verification passed.');
