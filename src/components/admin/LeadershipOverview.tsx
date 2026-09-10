@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { CalendarClock, CircleAlert, Inbox, ShieldCheck, UserCheck } from 'lucide-react';
 import { db } from '../../lib/firebase';
+import { buildLeadershipQueueMetrics } from '../../lib/leadershipQueueMetrics';
 import type { Poll, UserProfile } from '../../types';
 
 type ContactQueueRecord = {
@@ -97,21 +98,7 @@ export default function LeadershipOverview() {
     };
   }, []);
 
-  const metrics = useMemo(() => {
-    const pendingMembers = state.users.filter((member) => !member.isVerified && !member.isDisabled).length;
-    const unreadInquiries = state.messages.filter((message) => (message.status || 'unread') === 'unread').length;
-    const activeAvailability = state.polls.filter((poll) => poll.category === 'committee' && poll.status === 'active').length;
-    const unpublishedRosters = state.polls.filter((poll) =>
-      poll.category === 'committee' &&
-      poll.status === 'closed' &&
-      poll.publicationMode === 'explicit' &&
-      poll.rosterPublished !== true,
-    ).length;
-
-    return { pendingMembers, unreadInquiries, activeAvailability, unpublishedRosters };
-  }, [state]);
-
-  const totalAttention = metrics.pendingMembers + metrics.unreadInquiries + metrics.unpublishedRosters;
+  const metrics = useMemo(() => buildLeadershipQueueMetrics(state), [state]);
 
   return (
     <section className="kcfc-surface overflow-hidden" aria-labelledby="leadership-overview-title">
@@ -126,7 +113,7 @@ export default function LeadershipOverview() {
             <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">A quick view of existing Portal records. This panel does not approve members, publish rosters, send messages or mutate data.</p>
           </div>
           <span className="inline-flex min-h-9 w-fit items-center gap-2 rounded-full bg-[#EAF3FF] px-3 text-[11px] font-bold text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
-            {loading ? 'Loading queues…' : `${totalAttention} attention item${totalAttention === 1 ? '' : 's'}`}
+            {loading ? 'Loading queues…' : `${metrics.attentionItems} attention item${metrics.attentionItems === 1 ? '' : 's'}`}
           </span>
         </div>
       </div>
