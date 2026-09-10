@@ -7,23 +7,9 @@ export type PlannedNotificationRecord = {
   type: 'announcement' | 'duty' | 'system' | 'broadcast';
   status: 'unread';
   channels?: CommunicationChannel[];
+  deliveries?: NotificationDelivery[];
   [key: string]: unknown;
 };
-
-/**
- * Adds database-bound metadata to an already planned notification record.
- * The caller supplies Firestore serverTimestamp() (or a synthetic timestamp in tests),
- * keeping the planning layer independent from Firebase.
- */
-export function materializeNotificationRecord<T extends PlannedNotificationRecord>(
-  record: T,
-  createdAt: unknown,
-): T & { createdAt: unknown } {
-  return {
-    ...record,
-    createdAt,
-  };
-}
 
 /**
  * Produces an optional delivery ledger for a channel execution attempt.
@@ -37,4 +23,25 @@ export function buildQueuedDeliveryLedger(channels: CommunicationChannel[] = [])
       channel,
       status: 'queued' as const,
     }));
+}
+
+/**
+ * Adds database-bound metadata to an already planned notification record.
+ * The caller supplies Firestore serverTimestamp() (or a synthetic timestamp in tests),
+ * keeping the planning layer independent from Firebase.
+ *
+ * Any planned secondary channel is persisted as `queued` unless the caller already
+ * supplied an explicit delivery ledger. This makes the Inbox diagnostics honest from
+ * creation time: planned never means sent.
+ */
+export function materializeNotificationRecord<T extends PlannedNotificationRecord>(
+  record: T,
+  createdAt: unknown,
+): T & { createdAt: unknown } {
+  const deliveries = record.deliveries ?? buildQueuedDeliveryLedger(record.channels || []);
+  return {
+    ...record,
+    ...(deliveries.length > 0 ? { deliveries } : {}),
+    createdAt,
+  };
 }
