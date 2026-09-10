@@ -1,4 +1,4 @@
-import type { NotificationDelivery } from '../types';
+import type { CommunicationChannel, NotificationDelivery } from '../types';
 
 export type PlannedNotificationRecord = {
   userId: string;
@@ -6,7 +6,7 @@ export type PlannedNotificationRecord = {
   message: string;
   type: 'announcement' | 'duty' | 'system' | 'broadcast';
   status: 'unread';
-  channels?: string[];
+  channels?: CommunicationChannel[];
   [key: string]: unknown;
 };
 
@@ -30,11 +30,11 @@ export function materializeNotificationRecord<T extends PlannedNotificationRecor
  * It never marks a channel sent/delivered by assumption; callers update the status only
  * after the corresponding transport reports its result.
  */
-export function buildQueuedDeliveryLedger(channels: string[] = []): NotificationDelivery[] {
+export function buildQueuedDeliveryLedger(channels: CommunicationChannel[] = []): NotificationDelivery[] {
   return Array.from(new Set(channels))
     .filter((channel) => channel !== 'inbox')
     .map((channel) => ({
-      channel: channel as NotificationDelivery['channel'],
+      channel,
       status: 'queued' as const,
     }));
 }
