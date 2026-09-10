@@ -75,6 +75,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Guard Core status staging executor default
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=false$' .env.example || {
+            echo 'Core-status staging executor must remain disabled by default.' >&2
+            exit 1
+          }
+
       - name: Guard external connector defaults
         shell: bash
         run: |
