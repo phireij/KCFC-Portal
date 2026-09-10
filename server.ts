@@ -10,6 +10,8 @@ import { getMessaging as getMessagingAdmin } from "firebase-admin/messaging";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import webpush from "web-push";
+import { initializeDeliveryDiagnostics, recordDeliveryOutcome } from "./src/lib/deliveryDiagnostics";
+import { buildPwaDeliveryEvidence, type PwaTransportAttempt } from "./src/lib/pwaDeliveryEvidence";
 
 const hasImportMeta = typeof import.meta !== "undefined" && "url" in import.meta;
 const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== "undefined" ? __filename : "");
@@ -1390,7 +1392,7 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { userIds, title, body, clickAction, recipientTokens } = req.body;
+    const { userIds, title, body, clickAction, recipientTokens, notificationIdsByUser } = req.body;
 
     if (!userIds || !Array.isArray(userIds) || !title || !body) {
       res.status(400).json({ error: "Missing required parameters (userIds, title, body)" });
@@ -1417,6 +1419,21 @@ async function startServer() {
         return;
       }
 
+      // Resolve target profiles once so transport results can be attributed honestly per member.
+      const targetUserIds = Array.from(new Set(userIds.filter((id: unknown): id is string => typeof id === "string" && id.trim() !== "")));
+      const targetUserIdSet = new Set(targetUserIds);
+      const targetUsers = (await fetchAllUsersWithFallback(token)).filter(u => targetUserIdSet.has(u.id));
+      const pwaAttempts: PwaTransportAttempt[] = [];
+      const tokenOwners = new Map<string, string[]>();
+      targetUsers.forEach(u => {
+        const tokens = Array.isArray(u.fcmTokens) ? u.fcmTokens.filter(isDeliverableFcmToken) : [];
+        tokens.forEach((deviceToken: string) => {
+          const owners = tokenOwners.get(deviceToken) || [];
+          if (!owners.includes(u.id)) owners.push(u.id);
+          tokenOwners.set(deviceToken, owners);
+        });
+      });
+
       // 3. Find targeted users who have registered fcmTokens and whose preferences allow broadcasts
       const allTokens: string[] = [];
 
@@ -1425,10 +1442,7 @@ async function startServer() {
         allTokens.push(...recipientTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
       } else {
         logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
-        const allUsers = await fetchAllUsersWithFallback(token);
-        const userIdsSet = new Set(userIds);
-        allUsers.forEach(u => {
-          if (!userIdsSet.has(u.id)) return;
+        targetUsers.forEach(u => {
           if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
 
           const tokens = u.fcmTokens || [];
@@ -1485,7 +1499,16 @@ async function startServer() {
 
           let isCredentialMismatch = false;
           if (fcmResponse.responses) {
-            fcmResponse.responses.forEach((resp) => {
+            fcmResponse.responses.forEach((resp, index) => {
+              const attemptedToken = realTokens[index];
+              const owners = tokenOwners.get(attemptedToken) || [];
+              owners.forEach(userId => pwaAttempts.push({
+                userId,
+                transport: 'fcm',
+                success: resp.success,
+                ...(!resp.success && resp.error?.message ? { detail: resp.error.message } : {}),
+              }));
+
               if (!resp.success && resp.error) {
                 const errCode = resp.error.code || "";
                 const errMsg = resp.error.message || "";
@@ -1509,6 +1532,15 @@ async function startServer() {
             logMessage(logMsgText);
           }
         } catch (fcmErr: any) {
+          realTokens.forEach((attemptedToken) => {
+            const owners = tokenOwners.get(attemptedToken) || [];
+            owners.forEach(userId => pwaAttempts.push({
+              userId,
+              transport: 'fcm',
+              success: false,
+              detail: fcmErr?.message || 'FCM transport exception',
+            }));
+          });
           console.warn("[FCM CUSTOM BROADCAST SENDER] sendEachForMulticast threw exception:", fcmErr);
           const errMsg = fcmErr?.message || "";
           const errCode = fcmErr?.code || "";
@@ -1534,11 +1566,7 @@ async function startServer() {
       let webPushFailureCount = 0;
       try {
         logMessage(`[WEBPUSH BROADCAST] Attempting to deliver standard Web Push notifications...`);
-        const allUsers = await fetchAllUsersWithFallback(token);
-        const userIdsSet = new Set(userIds);
-
-        for (const u of allUsers) {
-          if (!userIdsSet.has(u.id)) continue;
+        for (const u of targetUsers) {
           if (u.preferences?.broadcasts === false) continue;
 
           const subs = u.webPushSubscriptions || [];
@@ -1556,6 +1584,12 @@ async function startServer() {
                 .replace(/\{nickname\}/gi, userNickname);
 
               const result = await sendWebPushNotification(sub, title, personalizedMsg, clickAction || "/inbox");
+              pwaAttempts.push({
+                userId: u.id,
+                transport: 'webpush',
+                success: result.success,
+                ...(!result.success && 'error' in result && result.error ? { detail: result.error } : {}),
+              });
               if (result.success) {
                 webPushSuccessCount++;
               } else {
@@ -1587,9 +1621,46 @@ async function startServer() {
         console.error("[WEBPUSH BROADCAST ERROR] Error sending standard Web Push:", wpErr);
       }
 
+      const deliveryResultsByUser = buildPwaDeliveryEvidence(targetUserIds, pwaAttempts);
+      let persistedDeliveryRecords = 0;
+
+      // Persist only evidence for explicitly supplied Inbox records that still belong to the target user.
+      // This prevents an arbitrary notification ID from being modified through the transport endpoint.
+      if (notificationIdsByUser && typeof notificationIdsByUser === 'object') {
+        for (const evidence of deliveryResultsByUser) {
+          const rawIds: unknown[] = Array.isArray(notificationIdsByUser[evidence.userId])
+            ? notificationIdsByUser[evidence.userId]
+            : [];
+          const ids: string[] = Array.from(new Set<string>(rawIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim() !== '')));
+
+          for (const notificationId of ids) {
+            const notificationRef = dbAdmin.collection('notifications').doc(notificationId);
+            const notificationSnap = await notificationRef.get();
+            if (!notificationSnap.exists) continue;
+            const notificationData = notificationSnap.data() || {};
+            if (notificationData.userId !== evidence.userId) continue;
+
+            const currentDeliveries = Array.isArray(notificationData.deliveries)
+              ? notificationData.deliveries
+              : initializeDeliveryDiagnostics(Array.isArray(notificationData.channels) ? notificationData.channels : []);
+            const deliveries = recordDeliveryOutcome({
+              deliveries: currentDeliveries,
+              channel: 'pwa',
+              status: evidence.status,
+              updatedAt: new Date(),
+              detail: evidence.detail,
+            });
+            await notificationRef.update({ deliveries });
+            persistedDeliveryRecords += 1;
+          }
+        }
+      }
+
       res.json({
         success: true,
         message: (realTokens.length > 0 || webPushSuccessCount > 0) ? "Push broadcast executed." : "Push broadcast simulated successfully (no real devices subscribed yet).",
+        deliveryResultsByUser,
+        persistedDeliveryRecords,
         totalTokens: realTokens.length,
         simulatedTokens: uniqueTokens.length - realTokens.length,
         successCount,

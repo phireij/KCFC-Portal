@@ -159,7 +159,7 @@ export default function BroadcastTool() {
         });
 
         const batch = writeBatch(db);
-        appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
+        const persistedPlan = appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
         await batch.commit();
 
         // Trigger native smartphone alert only for recipients whose routing plan includes PWA.
@@ -182,6 +182,7 @@ export default function BroadcastTool() {
               body: JSON.stringify({
                 userIds: creatorPlan.pushRecipientIds,
                 recipientTokens: creatorPlan.pushTokens,
+                notificationIdsByUser: persistedPlan.notificationIdsByUser,
                 title: `Broadcast: ${title}`,
                 body: fcmBody,
                 clickAction: '/inbox'
@@ -189,6 +190,9 @@ export default function BroadcastTool() {
             });
             const pResult = await pResponse.json();
             console.info('FCM smartphone alerts dispatch completed:', pResult);
+            if (typeof pResult.persistedDeliveryRecords === 'number') {
+              console.info('KCFC Inbox PWA delivery evidence persisted for records:', pResult.persistedDeliveryRecords);
+            }
           }
         } catch (pushErr) {
           console.error('FCM smartphone alerts dispatch failed:', pushErr);
