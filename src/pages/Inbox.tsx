@@ -17,10 +17,10 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../App';
-import { Notification as NotificationType } from '../types';
+import { Notification as NotificationType, NotificationDelivery } from '../types';
 import { cn } from '../lib/utils';
 
-const tabs = ['all', 'unread', 'announcement', 'duty', 'broadcast', 'system'] as const;
+const tabs = ['all', 'unread', 'announcement', 'availability', 'assignment', 'duty', 'broadcast', 'system'] as const;
 type Tab = typeof tabs[number];
 
 const toDate = (value: any): Date | null => {
@@ -37,6 +37,20 @@ const formatDate = (value: any) => {
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
   return new Intl.DateTimeFormat(undefined, sameDay ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric' }).format(date);
+};
+
+const matchesTab = (item: NotificationType, tab: Tab) => {
+  if (tab === 'all') return true;
+  if (tab === 'unread') return item.status === 'unread';
+  if (tab === 'availability' || tab === 'assignment') return item.sourceType === tab;
+  return item.type === tab;
+};
+
+const deliveryTone = (status: NotificationDelivery['status']) => {
+  if (status === 'delivered' || status === 'read') return 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300';
+  if (status === 'failed') return 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300';
+  if (status === 'skipped') return 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300';
+  return 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300';
 };
 
 export default function Inbox() {
@@ -87,11 +101,10 @@ export default function Inbox() {
   const unreadCount = notifications.filter((item) => item.status === 'unread').length;
 
   const visible = useMemo(() => notifications.filter((item) => {
-    if (tab === 'unread' && item.status !== 'unread') return false;
-    if (!['all', 'unread'].includes(tab) && item.type !== tab) return false;
+    if (!matchesTab(item, tab)) return false;
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
-    return `${item.title} ${item.message} ${item.sourceType || ''}`.toLowerCase().includes(needle);
+    return `${item.title} ${item.message} ${item.sourceType || ''} ${(item.channels || []).join(' ')}`.toLowerCase().includes(needle);
   }), [notifications, search, tab]);
 
   const markAllRead = async () => {
@@ -145,13 +158,13 @@ export default function Inbox() {
           <div className="space-y-3 border-b border-slate-100 p-4 dark:border-white/10">
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search messages" className="min-h-11 w-full rounded-xl border border-slate-200 bg-[#F7F9FC] pl-10 pr-3 text-[13px] text-[#172033] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-blue-500/20" />
+              <input aria-label="Search KCFC Inbox" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search messages" className="min-h-11 w-full rounded-xl border border-slate-200 bg-[#F7F9FC] pl-10 pr-3 text-[13px] text-[#172033] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-blue-500/20" />
             </div>
-            <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
+            <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar" aria-label="Inbox filters">
               {tabs.map((item) => {
-                const count = item === 'all' ? notifications.length : item === 'unread' ? unreadCount : notifications.filter((note) => note.type === item).length;
+                const count = item === 'all' ? notifications.length : notifications.filter((note) => matchesTab(note, item)).length;
                 if (count === 0 && !['all', 'unread'].includes(item)) return null;
-                return <button key={item} type="button" onClick={() => setTab(item)} className={cn('min-h-9 shrink-0 rounded-xl px-3 text-[10px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', tab === item ? 'bg-[#123B66] text-white' : 'bg-[#F7F9FC] text-slate-500 dark:bg-white/5 dark:text-slate-300')}>{item}{count > 0 && <span className="ml-1.5 opacity-70">{count}</span>}</button>;
+                return <button key={item} type="button" aria-pressed={tab === item} onClick={() => setTab(item)} className={cn('min-h-9 shrink-0 rounded-xl px-3 text-[10px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', tab === item ? 'bg-[#123B66] text-white' : 'bg-[#F7F9FC] text-slate-500 dark:bg-white/5 dark:text-slate-300')}>{item}{count > 0 && <span className="ml-1.5 opacity-70">{count}</span>}</button>;
               })}
             </div>
           </div>
@@ -177,7 +190,7 @@ export default function Inbox() {
           ) : (
             <article className="flex h-full min-h-[520px] flex-col">
               <div className="flex items-center gap-2 border-b border-slate-100 p-3 dark:border-white/10 lg:hidden">
-                <button type="button" onClick={() => setMobileDetail(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7F9FC] text-slate-600 dark:bg-white/5 dark:text-slate-300"><ArrowLeft className="h-5 w-5" /></button>
+                <button type="button" aria-label="Back to Inbox" onClick={() => setMobileDetail(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7F9FC] text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:bg-white/5 dark:text-slate-300"><ArrowLeft className="h-5 w-5" /></button>
                 <span className="text-[12px] font-bold text-slate-500 dark:text-slate-400">Back to Inbox</span>
               </div>
               <div className="flex-1 p-5 sm:p-7">
@@ -192,8 +205,24 @@ export default function Inbox() {
 
                 {selected.channels && selected.channels.length > 0 && (
                   <div className="mt-6 rounded-2xl bg-[#F7F9FC] p-4 dark:bg-white/5">
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Delivery channels</p>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Planned delivery channels</p>
                     <div className="mt-2 flex flex-wrap gap-2">{selected.channels.map((channel) => <span key={channel} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold capitalize text-slate-500 shadow-sm dark:bg-white/10 dark:text-slate-300">{channel}</span>)}</div>
+                    <p className="mt-2 text-[10px] leading-4 text-slate-400">A channel listed here is part of the routing plan; it does not by itself prove provider delivery.</p>
+                  </div>
+                )}
+
+                {selected.deliveries && selected.deliveries.length > 0 && (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Delivery diagnostics</p>
+                    <div className="mt-3 space-y-2">
+                      {selected.deliveries.map((delivery, index) => (
+                        <div key={`${delivery.channel}-${index}`} className="flex flex-wrap items-center gap-2 rounded-xl bg-[#F7F9FC] px-3 py-2 dark:bg-white/5">
+                          <span className="text-[11px] font-bold capitalize text-[#172033] dark:text-white">{delivery.channel}</span>
+                          <span className={cn('rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide', deliveryTone(delivery.status))}>{delivery.status}</span>
+                          {delivery.detail && <span className="w-full text-[10px] leading-4 text-slate-500 dark:text-slate-400 sm:ml-auto sm:w-auto">{delivery.detail}</span>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -202,8 +231,8 @@ export default function Inbox() {
                 )}
               </div>
               <div className="flex flex-wrap gap-2 border-t border-slate-100 p-4 dark:border-white/10">
-                <button type="button" onClick={() => toggleUnread(selected)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#F7F9FC] px-3 text-[11px] font-bold text-slate-600 dark:bg-white/5 dark:text-slate-300">{selected.status === 'unread' ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}{selected.status === 'unread' ? 'Mark read' : 'Mark unread'}</button>
-                <button type="button" onClick={() => removeMessage(selected)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-red-50 px-3 text-[11px] font-bold text-red-600 dark:bg-red-500/10 dark:text-red-300"><Trash2 className="h-4 w-4" /> Delete</button>
+                <button type="button" onClick={() => toggleUnread(selected)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#F7F9FC] px-3 text-[11px] font-bold text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:bg-white/5 dark:text-slate-300">{selected.status === 'unread' ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}{selected.status === 'unread' ? 'Mark read' : 'Mark unread'}</button>
+                <button type="button" onClick={() => removeMessage(selected)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-red-50 px-3 text-[11px] font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:bg-red-500/10 dark:text-red-300"><Trash2 className="h-4 w-4" /> Delete</button>
               </div>
             </article>
           )}
