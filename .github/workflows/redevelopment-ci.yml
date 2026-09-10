@@ -45,6 +45,9 @@ jobs:
       - name: Verify liturgical publication plan
         run: npx tsx scripts/verify-liturgical-publication-plan.ts
 
+      - name: Verify leadership broadcast creator plan
+        run: npx tsx scripts/verify-broadcast-creator-plan.ts
+
       - name: Build
         run: npm run build
 
