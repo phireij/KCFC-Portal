@@ -26,7 +26,7 @@ import {
 import { UserProfile, MinistryType } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { buildLeadershipBroadcastCreatorPlan } from '../../lib/broadcastCreatorPlan';
+import { buildLeadershipBroadcastCreatorPlan, shouldDispatchPwaForPlan } from '../../lib/broadcastCreatorPlan';
 import { appendCommunicationNotificationsToBatch } from '../../lib/communicationFirestore';
 
 export default function BroadcastTool() {
@@ -165,7 +165,7 @@ export default function BroadcastTool() {
         // Trigger native smartphone alert only for recipients whose routing plan includes PWA.
         try {
           const currentUser = auth.currentUser;
-          if (currentUser && creatorPlan.pushRecipientIds.length > 0 && creatorPlan.pushTokens.length > 0) {
+          if (currentUser && shouldDispatchPwaForPlan(creatorPlan)) {
             const idToken = await currentUser.getIdToken();
             const fcmBody = message
               .replace(/\[name\]/gi, 'Member')
