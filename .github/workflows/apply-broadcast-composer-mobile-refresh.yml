@@ -1,0 +1,45 @@
+name: Apply Broadcast Composer Mobile Refresh
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - '.github/migrations/apply-broadcast-composer-mobile-refresh-v1'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply validated mobile-first composer refresh
+        run: node scripts/stage-broadcast-composer-mobile-refresh.mjs
+      - name: Typecheck migrated source
+        run: npm run lint
+      - name: Build migrated source
+        run: npm run build
+      - name: Commit migrated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/admin/BroadcastTool.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'feat: refresh leadership broadcast composer for mobile'
+          git push origin HEAD:redesign/mobile-first-v2
