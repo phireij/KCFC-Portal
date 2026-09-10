@@ -138,7 +138,7 @@ export default function BroadcastTool() {
 
     const targetLabel = getTargetLabel();
     const channels = [];
-    if (sendInPortal) channels.push("Portal notifications");
+    if (sendInPortal) channels.push("PWA/Portal alerts");
     if (sendByEmail) channels.push("Emails");
 
     if (!confirm(`Send this broadcast to ${filteredRecipients.length} members (${targetLabel}) via ${channels.join(" and ")}?`)) {
@@ -147,26 +147,26 @@ export default function BroadcastTool() {
 
     setSending(true);
     const broadcastId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const creatorPlan = buildLeadershipBroadcastCreatorPlan({
+      recipients: filteredRecipients,
+      broadcastId,
+      title,
+      message,
+      allowPwa: sendInPortal,
+      allowEmail: sendByEmail,
+    });
     let notificationIdsByUser: Record<string, string[]> = {};
     try {
-      // 1. Send via Portal (durable Inbox + preference-aware FCM targets)
-      if (sendInPortal) {
-        const creatorPlan = buildLeadershipBroadcastCreatorPlan({
-          recipients: filteredRecipients,
-          broadcastId,
-          title,
-          message,
-          allowPwa: true,
-          allowEmail: sendByEmail,
-        });
-
+      // 1. Always create the durable KCFC Inbox record; secondary channels remain preference-aware.
+      {
         const batch = writeBatch(db);
         const persistedPlan = appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
         await batch.commit();
         notificationIdsByUser = persistedPlan.notificationIdsByUser;
 
-        // Trigger native smartphone alert only for recipients whose routing plan includes PWA.
-        try {
+        // Trigger native smartphone alert only when the leader selected Portal/PWA delivery.
+        if (sendInPortal) {
+          try {
           const currentUser = auth.currentUser;
           if (currentUser && shouldDispatchPwaForPlan(creatorPlan)) {
             const idToken = await currentUser.getIdToken();
@@ -197,23 +197,16 @@ export default function BroadcastTool() {
               console.info('KCFC Inbox PWA delivery evidence persisted for records:', pResult.persistedDeliveryRecords);
             }
           }
-        } catch (pushErr) {
-          console.error('FCM smartphone alerts dispatch failed:', pushErr);
+          } catch (pushErr) {
+            console.error('FCM smartphone alerts dispatch failed:', pushErr);
+          }
         }
       }
 
       // 2. Send via Email (Direct Gmail API integration)
       let emailStats = "";
       if (sendByEmail) {
-        const emailRoutingPlan = buildLeadershipBroadcastCreatorPlan({
-          recipients: filteredRecipients,
-          broadcastId,
-          title,
-          message,
-          allowPwa: false,
-          allowEmail: true,
-        });
-        const emailRecipientIds = new Set(emailRoutingPlan.emailRecipientIds);
+        const emailRecipientIds = new Set(creatorPlan.emailRecipientIds);
         const recipientList = filteredRecipients
           .filter(u => emailRecipientIds.has(u.uid) && !!u.email && u.email.includes('@'));
 
@@ -357,7 +350,7 @@ export default function BroadcastTool() {
         </div>
         <div>
           <h2 className="text-2xl font-serif text-[#1a1a1a] dark:text-[#f5f5f0]">Broadcast System</h2>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Send notifications inside the portal or via direct emails.</p>
+          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Every broadcast keeps a durable KCFC Inbox copy; PWA and email are secondary alerts.</p>
         </div>
       </div>
 
