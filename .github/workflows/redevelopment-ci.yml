@@ -69,6 +69,9 @@ jobs:
       - name: Verify leadership accessibility contracts
         run: npx tsx scripts/verify-leadership-accessibility.ts
 
+      - name: Verify mobile navigation contract
+        run: npx tsx scripts/verify-mobile-navigation-contract.ts
+
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
