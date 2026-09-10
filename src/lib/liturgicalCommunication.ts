@@ -2,6 +2,10 @@ import type {
   ConnectedCommunicationApp,
   NotificationPreferences,
 } from '../types';
+import {
+  buildCommunicationBatchPlan,
+  type CommunicationBatchRecipient,
+} from './communicationBatch';
 import { buildCommunicationRoutingPlan } from './communicationRouting';
 import { buildNotificationRecord } from './notificationRecord';
 
@@ -19,47 +23,7 @@ type SharedInput = {
   allowEmail?: boolean;
 };
 
-export type LiturgicalCommunicationRecipient = {
-  uid: string;
-  preferences?: NotificationPreferences;
-  connectedCommunicationApps?: ConnectedCommunicationApp[];
-  fcmTokens?: string[];
-};
-
-type LiturgicalPlan = ReturnType<typeof buildAvailabilityRequestNotification>;
-
-export type LiturgicalRecipientBatchPlan = {
-  notifications: LiturgicalPlan[];
-  pushRecipientIds: string[];
-  pushTokens: string[];
-};
-
-const buildRecipientBatch = (
-  recipients: LiturgicalCommunicationRecipient[],
-  build: (recipient: LiturgicalCommunicationRecipient) => LiturgicalPlan,
-): LiturgicalRecipientBatchPlan => {
-  const byUid = new Map<string, LiturgicalCommunicationRecipient>();
-  recipients.forEach((recipient) => {
-    if (recipient.uid) byUid.set(recipient.uid, recipient);
-  });
-
-  const notifications = Array.from(byUid.values()).map(build);
-  const pushRecipientIds: string[] = [];
-  const pushTokenSet = new Set<string>();
-
-  notifications.forEach((plan, index) => {
-    if (!plan.routing.channels.includes('pwa')) return;
-    const recipient = Array.from(byUid.values())[index];
-    pushRecipientIds.push(recipient.uid);
-    (recipient.fcmTokens || []).filter(Boolean).forEach((token) => pushTokenSet.add(token));
-  });
-
-  return {
-    notifications,
-    pushRecipientIds,
-    pushTokens: Array.from(pushTokenSet),
-  };
-};
+export type LiturgicalCommunicationRecipient = CommunicationBatchRecipient;
 
 export function buildAvailabilityRequestNotification(
   input: SharedInput & { pollTitle: string },
@@ -161,7 +125,7 @@ export function buildAvailabilityRequestBatchPlan({
   allowPwa?: boolean;
   allowEmail?: boolean;
 }) {
-  return buildRecipientBatch(recipients, (recipient) => buildAvailabilityRequestNotification({
+  return buildCommunicationBatchPlan(recipients, (recipient) => buildAvailabilityRequestNotification({
     userId: recipient.uid,
     pollId,
     pollTitle,
@@ -185,7 +149,7 @@ export function buildPublishedAssignmentBatchPlan({
   allowPwa?: boolean;
   allowEmail?: boolean;
 }) {
-  return buildRecipientBatch(recipients, (recipient) => buildPublishedAssignmentNotification({
+  return buildCommunicationBatchPlan(recipients, (recipient) => buildPublishedAssignmentNotification({
     userId: recipient.uid,
     pollId,
     pollTitle,
