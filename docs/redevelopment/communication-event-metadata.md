@@ -1,112 +1,177 @@
-# KCFC Communication Event Metadata
+# KCFC Portal — Communication Event Metadata
 
-Status: redevelopment baseline
+## Purpose
 
-This document defines the normalized metadata that new KCFC Portal communication workflows should use while historical notification records remain readable.
+New communication records should become progressively easier to route, diagnose and display without rewriting historical Firestore notifications.
 
-## Durable record first
+The migration is additive and backward-compatible. Existing notification records without these fields remain valid.
 
-Every operational communication creates a KCFC Inbox record first. Optional push, email or connected-app delivery is secondary to the Inbox record and must never be the only durable record.
+## Canonical source types
 
-Recommended notification fields:
+Use these values for new notification records where applicable:
 
-- `userId` — Firebase UID of the recipient.
-- `title` and `message` — human-readable content.
-- `type` — existing compatibility category (`announcement`, `duty`, `system`, `broadcast`).
-- `status` — `unread` or `read`.
-- `link` — Portal deep link to the relevant workflow.
-- `sourceId` — source announcement, poll, duty, roster or broadcast identifier when available.
-- `sourceType` — semantic origin: announcement, availability, assignment, duty, broadcast or system.
-- `urgency` — normal, important or urgent.
-- `channels` — intended delivery channels after recipient preference and feature-gate evaluation.
-- `deliveries` — optional diagnostic states by channel.
-- `createdAt` — Firestore server timestamp.
+- `announcement`
+- `availability`
+- `assignment`
+- `duty`
+- `broadcast`
+- `system`
 
-## Event policy
+Assignment changes continue to use `sourceType: assignment` with important urgency and additional change metadata when needed.
 
-| Event | Default urgency | Durable record | Primary alert | Partner | Optional secondary |
-| --- | --- | --- | --- | --- | --- |
-| Announcement | Normal | Inbox | PWA | Email if allowed | Connected opt-in provider |
-| Availability request | Normal | Inbox | PWA | Email if allowed | Connected opt-in provider |
-| New assignment | Important | Inbox | PWA | Email if allowed | Connected opt-in provider |
-| Assignment change/cancellation | Important | Inbox | PWA | Email if allowed | Connected opt-in provider |
-| Community duty | Normal | Inbox | PWA | Email if allowed | Connected opt-in provider |
-| Broadcast | Normal | Inbox | PWA | Email if allowed | Connected opt-in provider |
-| Urgent same-day notice | Urgent | Inbox | PWA | Email | Connected opt-in provider; SMS only when specifically authorized |
+## Canonical urgency
+
+- `normal` — routine announcements, availability requests, routine duties, broadcasts.
+- `important` — published liturgical assignments and assignment changes.
+- `urgent` — genuinely urgent operational notices only.
+
+Urgency does not override device Focus / Do Not Disturb or guarantee sound/vibration behavior.
+
+## Canonical channel names
+
+Routing metadata uses:
+
+- `inbox`
+- `pwa`
+- `email`
+- `line`
+- `telegram`
+- `whatsapp`
+- `viber`
+- `sms`
+
+KCFC Inbox is always retained as the durable record for operational communication.
+
+## Notification record shape
+
+New records may add:
+
+```ts
+{
+  sourceId?: string,
+  sourceType?: CommunicationSourceType,
+  urgency?: NotificationUrgency,
+  channels?: CommunicationChannel[],
+  deliveries?: NotificationDelivery[],
+}
+```
+
+Delivery diagnostics, when present, may use:
+
+- `queued`
+- `sent`
+- `delivered`
+- `failed`
+- `skipped`
+- `read`
+
+A channel listed in `channels` represents the routing plan for that message. Delivery success must come from `deliveries` or provider-specific evidence rather than from the channel list alone.
 
 ## Shared implementation helpers
 
-### `src/lib/communicationRouting.ts`
+`src/lib/communicationRouting.ts`
+- produces a per-recipient routing plan,
+- retains Inbox,
+- honors event preferences,
+- supports composer-level PWA/email gates,
+- requires explicit caller enablement + opt-in + connected state before external providers enter the plan.
 
-Centralizes recipient-level channel planning without sending anything. The helper guarantees:
+`src/lib/notificationRecord.ts`
+- produces normalized transport-neutral Inbox payloads,
+- de-duplicates channel metadata,
+- does not create Firestore timestamps itself.
 
-1. Inbox is retained.
-2. PWA is the primary routine alert when the recipient has not disabled that event class.
-3. Email is the default partner when enabled by the member preference.
-4. External providers are considered only when the caller explicitly enables connector routing, the member opted in and the provider is connected.
-5. The helper never reads provider credentials and never bypasses feature gates.
+`src/lib/communicationAudience.ts`
+- centralizes current Public / Parishioner / KCFC Member / Leadership eligibility,
+- excludes disabled accounts from new operational delivery.
 
-### `src/lib/notificationRecord.ts`
+`scripts/verify-communication-policy.ts`
+- runs in redevelopment CI,
+- verifies Inbox durability, event preferences, composer gates, provider gates, record normalization and audience rules.
 
-Builds a normalized transport-neutral Inbox payload with:
+## Current creator adoption
 
-- compatibility `type`,
-- unread status,
-- source metadata,
-- urgency,
-- de-duplicated channels with `inbox` automatically retained,
-- optional extra compatibility metadata.
+### Updates / Announcements — normalized
 
-The caller adds Firestore `serverTimestamp()` at the database boundary.
+New announcement publication now:
 
-## Canonical communication types
+1. evaluates recipient eligibility with the shared audience helper;
+2. builds a per-recipient routing plan;
+3. writes a KCFC Inbox record even if the member disabled routine announcement alert channels;
+4. records `sourceId`, `sourceType=announcement`, urgency, routing channels, audience and routing rationale;
+5. collects an FCM token only when the publisher enabled push and the recipient routing plan includes `pwa`;
+6. de-duplicates FCM tokens before dispatch;
+7. leaves all external connectors disabled.
 
-`src/types.ts` now defines shared aliases for:
+Announcement documents still retain their compatibility `portal` / `push` fields. Public website synchronization remains separately gated.
 
-- `CommunicationChannel`,
-- `NotificationUrgency`,
-- `CommunicationSourceType`,
-- `CommunicationConnectorProvider`.
+Validation: normalized Announcements head `295ad9d11767160b731232210156fe3afeea5018` passed all redevelopment CI steps in run #92.
 
-This removes provider/source-type duplication and explicitly includes `duty` as a supported semantic notification source.
+### Liturgical availability — pending normalization
 
-## External connector gates
+Existing request and completion Inbox notifications remain operational. Migration should add:
 
-Server-side enablement variables:
+- `sourceId: poll.id`
+- `sourceType: availability`
+- `urgency: normal`
+- routing channels from the shared planner
+- routing rationale for diagnostics when useful
 
-- `KCFC_CONNECTOR_LINE_ENABLED`
-- `KCFC_CONNECTOR_TELEGRAM_ENABLED`
-- `KCFC_CONNECTOR_WHATSAPP_ENABLED`
-- `KCFC_CONNECTOR_VIBER_ENABLED`
+Do not change poll responses or availability semantics as part of this metadata migration.
 
-Browser-safe UI availability variables:
+### Published assignments — pending normalization
 
-- `VITE_KCFC_LINE_CONNECTOR_ENABLED`
-- `VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED`
-- `VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED`
-- `VITE_KCFC_VIBER_CONNECTOR_ENABLED`
+Published assignment records should use:
 
-All are `false` by default. Browser-safe flags communicate only whether a Connect/Disconnect UI may be exposed; they never contain credentials.
+- `sourceId: poll.id`
+- `sourceType: assignment`
+- `urgency: important`
+- route to `/duties?view=mine`
 
-CI rejects provider secret-style values exposed through `VITE_*` variables and verifies all connector example flags remain disabled by default.
+An edited published roster must still unpublish until deliberate re-publication.
+
+### Community duties — pending normalization
+
+Existing legacy duty behavior is preserved for first cutover. When normalized, new duty messages should use:
+
+- `sourceType: duty`
+- routine urgency unless there is a genuine urgent change
+- durable Inbox first
+
+### Leadership broadcasts — pending normalization
+
+Existing broadcast permissions and recipient selection must remain unchanged during metadata adoption. External providers remain feature-gated OFF.
+
+## Preference behavior
+
+Member event preferences affect alert channels, not the existence of the durable Inbox record.
+
+Examples:
+
+- `announcements=false` → Inbox retained, routine PWA/email suppressed.
+- `availability=false` → Inbox retained, routine availability alert channels suppressed.
+- `assignments=false` → Inbox retained. Product policy may later decide whether assignment-change alerts should receive stronger treatment, but no bypass is introduced silently.
+
+Composer-level controls can independently turn PWA/email off for one message while still preserving Inbox.
+
+## External provider rule
+
+LINE / Telegram / WhatsApp / Viber may enter a routing plan only when all applicable conditions are true:
+
+1. server/browser feature gate is approved and enabled as appropriate,
+2. caller explicitly allows external routing,
+3. member opted in for that provider,
+4. member has a connected provider account.
+
+The pure routing helper does not activate a connector or read credentials.
 
 ## Migration order
 
-1. Preserve current notification creation behavior.
-2. Add semantic metadata to new records without rewriting historical documents.
-3. Move announcement creation to the shared routing + notification-record helpers.
-4. Move liturgical availability notifications to the helpers.
-5. Move final roster/assignment-change notifications to the helpers.
-6. Move duty and leadership broadcasts to the helpers.
-7. Add delivery diagnostics per transport.
-8. Activate an external connector only after staging, security review, user consent UX and explicit production approval.
+1. Announcements — completed.
+2. Liturgical availability request + completion notice.
+3. Published assignments + assignment changes.
+4. Community duties.
+5. Leadership broadcasts.
+6. Delivery diagnostics / email execution alignment.
 
-Each migration should be a small, CI-green increment. Existing message creation remains the fallback until its replacement path is verified.
-
-## Privacy rules
-
-- External provider user IDs are mapped server-side to Firebase UID.
-- Provider credentials and tokens are server-side only.
-- Recipient email, phone number and external IDs are never exposed to other recipients.
-- Disconnect must revoke future routing to that provider while preserving KCFC Inbox history.
-- Audit records should identify the actor, target audience, event source and selected channels without storing unnecessary provider secrets.
+Historical notification records remain untouched throughout this migration.
