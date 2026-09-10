@@ -18,7 +18,7 @@ if (!source.includes('currentDeviceEndpointHealth')) {
 }
 
 const functionAnchor = "  const refreshServiceWorkerHealth = async () => {";
-const functionInsert = `  const refreshCurrentDeviceEndpointHealth = async () => {\n    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {\n      setCurrentDeviceEndpointHealth('unknown');\n      return;\n    }\n    try {\n      const registration = await navigator.serviceWorker.getRegistration();\n      const subscription = registration?.pushManager ? await registration.pushManager.getSubscription() : null;\n      setCurrentDeviceEndpointHealth(evaluateCurrentWebPushEndpoint({\n        currentEndpoint: subscription?.endpoint || null,\n        storedSubscriptions: profile?.webPushSubscriptions || [],\n        inspectionSupported: true,\n      }));\n    } catch (error) {\n      console.warn('Notification health: current-device endpoint inspection failed', error);\n      setCurrentDeviceEndpointHealth('unknown');\n    }\n  };\n\n`;
+const functionInsert = `  const refreshCurrentDeviceEndpointHealth = async () => {\n    if (typeof navigator === 'undefined' || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {\n      setCurrentDeviceEndpointHealth('unknown');\n      return;\n    }\n    try {\n      const registration = await navigator.serviceWorker.getRegistration();\n      const subscription = registration?.pushManager ? await registration.pushManager.getSubscription() : null;\n      setCurrentDeviceEndpointHealth(evaluateCurrentWebPushEndpoint({\n        currentEndpoint: subscription?.endpoint || null,\n        storedSubscriptions: profile?.webPushSubscriptions || [],\n        inspectionSupported: true,\n      }));\n    } catch (error) {\n      console.warn('Notification health: current-device endpoint inspection failed', error);\n      setCurrentDeviceEndpointHealth('unknown');\n    }\n  };\n\n`;
 if (!source.includes('const refreshCurrentDeviceEndpointHealth = async')) {
   if (!source.includes(functionAnchor)) throw new Error('Current-device health migration: function anchor missing.');
   source = source.replace(functionAnchor, functionInsert + functionAnchor);
@@ -28,6 +28,13 @@ const effectAnchor = "    void refreshServiceWorkerHealth();\n";
 if (!source.includes('void refreshCurrentDeviceEndpointHealth();')) {
   if (!source.includes(effectAnchor)) throw new Error('Current-device health migration: effect anchor missing.');
   source = source.replace(effectAnchor, effectAnchor + "    void refreshCurrentDeviceEndpointHealth();\n");
+}
+
+const profileEffectAnchor = "  const health = useMemo(() => {";
+const profileEffect = `  useEffect(() => {\n    void refreshCurrentDeviceEndpointHealth();\n  }, [profile?.webPushSubscriptions]);\n\n`;
+if (!source.includes("}, [profile?.webPushSubscriptions]);")) {
+  if (!source.includes(profileEffectAnchor)) throw new Error('Current-device health migration: profile refresh anchor missing.');
+  source = source.replace(profileEffectAnchor, profileEffect + profileEffectAnchor);
 }
 
 const healthAnchor = "    if (serviceWorkerHealth === 'missing') return { label: 'Push service worker needs repair', tone: 'warning' as const };\n    if (endpointCount === 0) return { label: 'Permission granted — device registration needs repair', tone: 'warning' as const };\n    return { label: 'Notification delivery is ready', tone: 'good' as const };";
@@ -53,4 +60,4 @@ if (!source.includes('await refreshCurrentDeviceEndpointHealth();')) {
 }
 
 fs.writeFileSync(path, source);
-console.log('Staged current-device notification health UI integration.');
+console.log('Staged current-device notification health UI integration with profile-refresh accuracy.');
