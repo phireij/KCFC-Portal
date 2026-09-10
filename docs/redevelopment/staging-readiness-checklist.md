@@ -2,6 +2,8 @@
 
 Status: active redevelopment checklist. Passing this checklist does **not** authorize production deployment.
 
+Executable scenario companion: `staging-test-matrix.md`.
+
 ## Purpose
 
 The KCFC Portal already has registered members and operational records. Redevelopment therefore uses a staged validation path that protects existing Firebase Auth identities and Firestore data before any production merge or deployment is requested.
@@ -12,6 +14,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Draft PR contains only reviewed redevelopment changes.
 - [ ] TypeScript validation passes.
 - [ ] Production build passes.
+- [ ] Connector default/safety guards pass.
 - [ ] No secret, token or production credential is committed.
 - [ ] External communication connector flags default to `false`.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
@@ -33,7 +36,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 
 ## Gate C — Authentication and authorization
 
-Test with representative staging accounts for:
+Test with representative **synthetic staging accounts** for:
 
 - [ ] verified regular member,
 - [ ] core/chore member,
@@ -71,6 +74,7 @@ Validate on representative widths and real devices where possible:
 - [ ] Inbox list → detail flow works without desktop-style squeezing.
 - [ ] Profile preferences remain usable with large text.
 - [ ] Resource Library cards and add-resource sheet work on phone.
+- [ ] Install KCFC panel uses the navy/royal-blue system rather than legacy olive styling.
 
 ## Gate E — Liturgical availability and assignment workflow
 
@@ -93,7 +97,7 @@ Validate on representative widths and real devices where possible:
 
 ### iOS/iPadOS
 
-- [ ] Add to Home Screen guidance is clear.
+- [ ] Safari Share → Add to Home Screen guidance is clear.
 - [ ] Notification enable action is unavailable before required install state.
 - [ ] Permission request occurs from explicit member interaction.
 - [ ] Device registration succeeds.
@@ -104,7 +108,7 @@ Validate on representative widths and real devices where possible:
 ### Android / Chromium
 
 - [ ] Native install prompt works where supported.
-- [ ] Manual install fallback is understandable.
+- [ ] Manual browser-menu install fallback is understandable.
 - [ ] Notification permission can be enabled.
 - [ ] Device registration succeeds.
 - [ ] Test notification can be sent.
@@ -112,6 +116,7 @@ Validate on representative widths and real devices where possible:
 
 ### General
 
+- [ ] Installation and notification-registration responsibilities are separated (install panel does not duplicate push registration logic).
 - [ ] Multiple devices per member are supported.
 - [ ] Expired/invalid endpoints do not break message creation.
 - [ ] Inbox message remains available even when push fails.
@@ -125,8 +130,10 @@ Validate on representative widths and real devices where possible:
 - [ ] Announcement / availability / assignment notification preference is respected.
 - [ ] Urgent-notice policy is documented and not abused for routine posts.
 - [ ] Routing metadata remains backward-compatible with old notification records.
+- [ ] Canonical source/provider types compile and include duty/source semantics.
 - [ ] LINE / Telegram / WhatsApp / Viber are visibly optional.
 - [ ] External provider toggles cannot send unless secure account link exists.
+- [ ] Browser UI feature flags expose no provider credential.
 - [ ] All external connector feature flags remain disabled before approval.
 
 ## Gate H — Resources
