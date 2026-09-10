@@ -60,6 +60,9 @@ jobs:
       - name: Verify Core status mutation safeguards
         run: npx tsx scripts/verify-core-status-mutation-plan.ts
 
+      - name: Verify staging-only Core status executor
+        run: npx tsx scripts/verify-core-status-staging-executor.ts
+
       - name: Verify leadership accessibility contracts
         run: npx tsx scripts/verify-leadership-accessibility.ts
 
