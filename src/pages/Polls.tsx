@@ -47,6 +47,7 @@ import {
   buildPublishedRosterCreatorPlan,
 } from '../lib/liturgicalCreatorPlan';
 import { appendCommunicationNotificationsToBatch } from '../lib/communicationFirestore';
+import { buildLiturgicalPublicationPlan } from '../lib/liturgicalPublicationPlan';
 
 type PageMode = 'availability' | 'leader' | 'legacy';
 type LeaderPanel = 'progress' | 'matrix' | 'assignments';
@@ -56,6 +57,8 @@ type ExtendedPoll = Poll & {
   rosterPublishedBy?: string;
   rosterPublishedByName?: string;
   publicationMode?: 'explicit';
+  lastPublishedAssignments?: Record<string, Record<string, string>>;
+  rosterRevision?: number;
   updatedAt?: unknown;
 };
 
@@ -491,6 +494,9 @@ export default function Polls() {
         rosterPublishedBy: null,
         rosterPublishedByName: null,
         publicationMode: 'explicit',
+        ...(poll.rosterPublished && !poll.lastPublishedAssignments
+          ? { lastPublishedAssignments: poll.assignments || {} }
+          : {}),
         updatedAt: serverTimestamp(),
       });
     } catch (error) {
@@ -521,8 +527,23 @@ export default function Polls() {
       return;
     }
 
-    const count = assignedUserIds(poll).size;
-    if (!window.confirm(`Publish this liturgical roster now? ${count} assigned members will receive a Portal notification.`)) return;
+    const publicationPlan = buildLiturgicalPublicationPlan({
+      members,
+      pollId: poll.id,
+      pollTitle: poll.title,
+      state: {
+        assignments: poll.assignments || {},
+        lastPublishedAssignments: poll.lastPublishedAssignments,
+        rosterRevision: poll.rosterRevision,
+      },
+    });
+    const notifyCount = publicationPlan.communicationPlan.notifications.length;
+    const confirmation = publicationPlan.mode === 'revision'
+      ? `Publish revised liturgical roster now? ${notifyCount} affected members will receive an updated-schedule Portal notification.`
+      : publicationPlan.mode === 'no_change'
+        ? 'Publish this roster again? No member assignments changed, so no new assignment notification will be created.'
+        : `Publish this liturgical roster now? ${notifyCount} assigned members will receive a Portal notification.`;
+    if (!window.confirm(confirmation)) return;
 
     setPublishingPollId(poll.id);
     try {
@@ -533,16 +554,12 @@ export default function Polls() {
         rosterPublishedBy: user.uid,
         rosterPublishedByName: profile.displayName,
         publicationMode: 'explicit',
+        lastPublishedAssignments: poll.assignments || {},
+        rosterRevision: publicationPlan.nextRevision,
         updatedAt: serverTimestamp(),
       });
 
-      const creatorPlan = buildPublishedRosterCreatorPlan({
-        members,
-        assignedUserIds: assignedUserIds(poll),
-        pollId: poll.id,
-        pollTitle: poll.title,
-      });
-      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
+      appendCommunicationNotificationsToBatch(batch, db, publicationPlan.communicationPlan);
       await batch.commit();
     } catch (error) {
       console.error('Assignments: failed to publish roster', error);
