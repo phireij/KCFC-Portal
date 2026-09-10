@@ -9,6 +9,7 @@ import {
 } from '../src/lib/liturgicalCommunication';
 import { buildDutyAssignmentNotification } from '../src/lib/dutyCommunication';
 import { buildBroadcastNotification } from '../src/lib/broadcastCommunication';
+import { buildLeadershipQueueMetrics } from '../src/lib/leadershipQueueMetrics';
 
 const defaults = {
   announcements: true,
@@ -182,4 +183,27 @@ assert.equal(urgentBroadcast.record.urgency, 'urgent');
 assert.ok(urgentBroadcast.record.channels.includes('inbox'));
 assert.ok(urgentBroadcast.record.channels.includes('pwa'));
 
-console.log('Communication policy verification passed.');
+const queueMetrics = buildLeadershipQueueMetrics({
+  users: [
+    { uid: 'pending', isVerified: false, isDisabled: false } as any,
+    { uid: 'disabled', isVerified: false, isDisabled: true } as any,
+    { uid: 'verified', isVerified: true, isDisabled: false } as any,
+  ],
+  messages: [
+    { status: 'unread' },
+    { status: 'read' },
+    {},
+  ],
+  polls: [
+    { id: 'active', category: 'committee', status: 'active' } as any,
+    { id: 'needs-review', category: 'committee', status: 'closed', publicationMode: 'explicit', rosterPublished: false } as any,
+    { id: 'published', category: 'committee', status: 'closed', publicationMode: 'explicit', rosterPublished: true } as any,
+  ],
+});
+assert.equal(queueMetrics.pendingMembers, 1);
+assert.equal(queueMetrics.unreadInquiries, 2);
+assert.equal(queueMetrics.activeAvailability, 1);
+assert.equal(queueMetrics.unpublishedRosters, 1);
+assert.equal(queueMetrics.attentionItems, 4);
+
+console.log('Communication and leadership policy verification passed.');
