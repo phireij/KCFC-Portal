@@ -29,6 +29,21 @@ const muted = buildCommunicationRoutingPlan({
 });
 assert.deepEqual(muted.channels, ['inbox']);
 
+const composerNoPush = buildCommunicationRoutingPlan({
+  kind: 'announcement',
+  preferences: defaults,
+  allowPwa: false,
+});
+assert.deepEqual(composerNoPush.channels, ['inbox', 'email']);
+
+const composerInboxOnly = buildCommunicationRoutingPlan({
+  kind: 'announcement',
+  preferences: defaults,
+  allowPwa: false,
+  allowEmail: false,
+});
+assert.deepEqual(composerInboxOnly.channels, ['inbox']);
+
 const assignment = buildCommunicationRoutingPlan({ kind: 'assignment', preferences: defaults });
 assert.equal(assignment.urgency, 'important');
 assert.ok(assignment.channels.includes('inbox'));
