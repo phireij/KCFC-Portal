@@ -7,6 +7,10 @@ import {
   recipientsForUserIds,
   toCommunicationRecipient,
 } from '../src/lib/communicationRecipient';
+import {
+  buildQueuedDeliveryLedger,
+  materializeNotificationRecord,
+} from '../src/lib/notificationPersistence';
 
 const defaults = {
   announcements: true,
@@ -128,5 +132,23 @@ assert.deepEqual(selected.map((recipient) => recipient.uid), ['creator']);
 
 const leaders = leadershipCommunicationRecipients(syntheticProfiles, ['creator']);
 assert.deepEqual(leaders.map((recipient) => recipient.uid).sort(), ['creator', 'leader-admin']);
+
+const syntheticTimestamp = { seconds: 123456, nanoseconds: 0 };
+const persisted = materializeNotificationRecord({
+  userId: 'member-persist',
+  title: 'Persist me',
+  message: 'Synthetic persistence test',
+  type: 'system',
+  status: 'unread',
+  channels: ['inbox', 'pwa', 'email'],
+}, syntheticTimestamp);
+assert.deepEqual(persisted.createdAt, syntheticTimestamp);
+assert.equal(persisted.userId, 'member-persist');
+
+const queuedDeliveries = buildQueuedDeliveryLedger(['inbox', 'pwa', 'email', 'pwa']);
+assert.deepEqual(queuedDeliveries, [
+  { channel: 'pwa', status: 'queued' },
+  { channel: 'email', status: 'queued' },
+]);
 
 console.log('Communication batch verification passed.');
