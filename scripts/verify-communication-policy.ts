@@ -4,7 +4,9 @@ import { buildNotificationRecord } from '../src/lib/notificationRecord';
 import { isProfileEligibleForAudience } from '../src/lib/communicationAudience';
 import {
   buildAvailabilityCompletionNotification,
+  buildAvailabilityRequestBatchPlan,
   buildAvailabilityRequestNotification,
+  buildPublishedAssignmentBatchPlan,
   buildPublishedAssignmentNotification,
 } from '../src/lib/liturgicalCommunication';
 import { buildDutyAssignmentNotification } from '../src/lib/dutyCommunication';
@@ -120,6 +122,21 @@ const mutedAvailability = buildAvailabilityRequestNotification({
 });
 assert.deepEqual(mutedAvailability.record.channels, ['inbox']);
 
+const availabilityBatch = buildAvailabilityRequestBatchPlan({
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  recipients: [
+    { uid: 'lector-1', preferences: defaults, fcmTokens: ['token-a', 'token-shared'] },
+    { uid: 'usher-muted', preferences: { ...defaults, availability: false }, fcmTokens: ['token-muted'] },
+    { uid: 'altar-1', preferences: defaults, fcmTokens: ['token-shared', 'token-b'] },
+    { uid: 'lector-1', preferences: defaults, fcmTokens: ['token-newer'] },
+  ],
+});
+assert.equal(availabilityBatch.notifications.length, 3);
+assert.deepEqual(availabilityBatch.pushRecipientIds.sort(), ['altar-1', 'lector-1']);
+assert.deepEqual(availabilityBatch.pushTokens.sort(), ['token-b', 'token-newer', 'token-shared']);
+assert.equal(availabilityBatch.notifications.find((plan) => plan.record.userId === 'usher-muted')?.record.channels?.join(','), 'inbox');
+
 const availabilityComplete = buildAvailabilityCompletionNotification({
   userId: 'leader-1',
   pollId: 'poll-availability',
@@ -140,6 +157,19 @@ assert.equal(publishedAssignment.record.urgency, 'important');
 assert.equal(publishedAssignment.record.link, '/duties?view=mine');
 assert.ok(publishedAssignment.record.channels.includes('inbox'));
 assert.ok(publishedAssignment.record.channels.includes('pwa'));
+
+const assignmentBatch = buildPublishedAssignmentBatchPlan({
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  recipients: [
+    { uid: 'lector-1', preferences: defaults, fcmTokens: ['assignment-a'] },
+    { uid: 'usher-muted', preferences: { ...defaults, assignments: false }, fcmTokens: ['assignment-muted'] },
+  ],
+});
+assert.equal(assignmentBatch.notifications.length, 2);
+assert.deepEqual(assignmentBatch.pushRecipientIds, ['lector-1']);
+assert.deepEqual(assignmentBatch.pushTokens, ['assignment-a']);
+assert.equal(assignmentBatch.notifications.find((plan) => plan.record.userId === 'usher-muted')?.record.channels?.join(','), 'inbox');
 
 const duty = buildDutyAssignmentNotification({
   userId: 'core-1',
