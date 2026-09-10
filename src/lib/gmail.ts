@@ -1,3 +1,5 @@
+import { auth } from './firebase';
+
 declare const google: any;
 
 const SCOPES = [
@@ -38,7 +40,7 @@ export const getGmailAccessToken = (): Promise<string> => {
             tokenExpiry = Date.now() + (response.expires_in * 1000) - 60000; // Buffer
             resolve(response.access_token);
           } else {
-            reject(new Error('Failed to get Gmail access token: ' + (response.error || 'Unknown error')));
+            reject(new Error('Failed to get Gmail access token: ' + (response.error || 'Unknown error'));
           }
         },
       });
@@ -96,7 +98,6 @@ export const sendGmail = async (to: string, subject: string, body: string) => {
     console.warn("Client-side sendGmail failed, attempting server-side SMTP fallback:", error.message || error);
     
     try {
-      const { auth } = await import('./firebase');
       const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) {
         throw new Error("Authentication token is not available. User is not signed in.");
