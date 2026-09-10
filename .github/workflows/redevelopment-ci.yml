@@ -57,6 +57,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Stage broadcast composer accessibility polish
+        run: node scripts/stage-broadcast-composer-accessibility-polish.mjs
+
+      - name: Typecheck staged broadcast composer accessibility polish
+        run: npm run lint
+
+      - name: Build staged broadcast composer accessibility polish
+        run: npm run build
+
       - name: Guard external connector defaults
         shell: bash
         run: |
