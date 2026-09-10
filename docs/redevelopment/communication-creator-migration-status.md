@@ -18,21 +18,27 @@ This document tracks progressive adoption of the shared communication-routing an
 - `src/lib/communicationAudience.ts`
   - Centralizes current audience eligibility for Public, Parishioners, KCFC Members and Leadership.
   - Disabled accounts are excluded from new operational delivery.
+- `src/lib/liturgicalCommunication.ts`
+  - Provides pure builders for availability requests, availability-complete notices and published liturgical assignments.
+- `src/lib/dutyCommunication.ts`
+  - Provides a pure community-duty notification builder.
+- `src/lib/broadcastCommunication.ts`
+  - Provides routine/urgent broadcast builders without activating any external provider.
 - `scripts/verify-communication-policy.ts`
-  - CI-verifies durable Inbox behavior, member preferences, composer gates, connector gates, normalized record construction and audience eligibility.
+  - CI-verifies durable Inbox behavior, member preferences, composer gates, connector gates, normalized record construction, audience eligibility and creator-specific builders.
 
 ## Creator migration table
 
 | Creator | Current state | Notes |
 | --- | --- | --- |
 | Updates / Announcements | **Normalized + CI GREEN** | Uses shared audience eligibility, routing policy and notification-record helper. Inbox is retained even when routine announcement alerts are muted. PWA token collection follows the per-recipient routing result. External connectors remain disabled. CI run #92 passed all required steps. |
-| Liturgical availability request | Pending | Existing member Inbox creation remains operational. Next migration will add `sourceType=availability`, routing channels and preference-aware PWA metadata without changing poll/response data. |
-| Availability completion notice | Pending | Leadership completion message remains operational. Next migration will normalize source/urgency metadata. |
-| Published liturgical assignment | Pending | Existing roster publication remains operational. Next migration will add assignment routing metadata while preserving explicit roster publication behavior. |
-| Assignment change / republish | Pending | Important-urgency policy is defined; implementation will remain tied to explicit republish. |
-| Community duty assignment | Pending | Existing legacy duty engine is preserved during first-cutover migration. |
-| Leadership broadcast | Pending | Existing broadcast engine is preserved. Migration will retain least-privilege recipient selection and avoid enabling external providers. |
-| Urgent notice | Policy ready / creator pending | Shared routing defines urgent severity, but no new production urgent-send surface is activated. |
+| Liturgical availability request | **Builder ready; creator integration pending** | Pure builder emits `sourceType=availability`, preference-aware routing and durable Inbox metadata without touching poll/response data. Existing creator remains operational until safely integrated. |
+| Availability completion notice | **Builder ready; creator integration pending** | Leadership completion builder uses the same availability source and leader deep link. |
+| Published liturgical assignment | **Builder ready; creator integration pending** | Builder emits assignment source, important urgency and My Ministry deep link while preserving explicit roster-publication policy. |
+| Assignment change / republish | Policy ready / integration pending | Important-urgency policy is defined; implementation remains tied to deliberate re-publication. |
+| Community duty assignment | **Builder ready; legacy creator preserved** | New pure duty builder is covered by CI. Existing legacy duty engine remains the first-cutover source until integration is regression-tested. |
+| Leadership broadcast | **Builder ready; legacy creator preserved** | Routine and urgent builders are covered by CI; existing broadcast permission/recipient engine remains untouched for first cutover. |
+| Urgent notice | Policy + builder foundation ready | Urgent severity is supported, but no new production urgent-send surface or external escalation is activated. |
 
 ## Announcement migration behavior
 
@@ -48,19 +54,29 @@ For each eligible registered Portal account, a new announcement publication now:
 
 The existing announcement document continues to use its compatibility `portal` / `push` channel fields. Website synchronization stays `not_requested` and remains separately approval-gated.
 
+## Builder safety rules
+
+All creator-specific builders are pure metadata/routing functions. They:
+
+- do not write Firestore,
+- do not send PWA/email/external messages,
+- do not read provider credentials,
+- keep external connector routing disabled,
+- preserve Inbox even when routine alert preferences suppress secondary channels.
+
+Actual creator integration is deliberately separate so current operational workflows are not replaced until their regression path is verified.
+
 ## Validation evidence
 
 Normalized Announcements head:
 `295ad9d11767160b731232210156fe3afeea5018`
 
-GitHub Actions:
-- workflow: `KCFC Redevelopment CI`
-- run: #92 / id `34443219237`
-- TypeScript: PASS
-- synthetic communication policy: PASS
-- production build: PASS
-- connector default-OFF guard: PASS
-- provider-secret browser guard: PASS
+GitHub Actions run #92 / id `34443219237`: TypeScript, communication policy, production build and connector guards all PASS.
+
+Liturgical builder verification head:
+`cc7fc0a6c027a256867a39a71c5b345863048815`
+
+GitHub Actions run #106 / id `34443618265`: all required CI steps PASS.
 
 ## Safety invariants
 
@@ -74,8 +90,8 @@ GitHub Actions:
 
 ## Next migration order
 
-1. Liturgical availability request + completion notice.
-2. Published assignment + assignment-change notifications.
-3. Community duty notifications.
-4. Leadership broadcasts.
-5. Delivery diagnostics / email execution alignment once staging evidence is available.
+1. Integrate liturgical availability request + completion builders into the current Polls creator with no poll/response behavior change.
+2. Integrate published assignment metadata while preserving explicit roster publication/unpublish.
+3. Integrate duty metadata only after legacy duty regression tests are green.
+4. Integrate leadership broadcast metadata only after permission/recipient regression tests are green.
+5. Add real delivery diagnostics / email execution alignment once isolated staging evidence is available.
