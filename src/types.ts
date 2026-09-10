@@ -35,6 +35,8 @@ export type DutyType = 'kitchen' | 'cleaning' | 'ministry';
 
 export type CommunicationChannel = 'inbox' | 'pwa' | 'email' | 'line' | 'telegram' | 'whatsapp' | 'viber' | 'sms';
 export type NotificationUrgency = 'normal' | 'important' | 'urgent';
+export type CommunicationSourceType = 'announcement' | 'availability' | 'assignment' | 'duty' | 'broadcast' | 'system';
+export type CommunicationConnectorProvider = 'line' | 'telegram' | 'whatsapp' | 'viber';
 
 export interface NotificationDelivery {
   channel: CommunicationChannel;
@@ -54,13 +56,13 @@ export interface Notification {
   createdAt: any;
   urgency?: NotificationUrgency;
   sourceId?: string;
-  sourceType?: 'announcement' | 'availability' | 'assignment' | 'broadcast' | 'system';
+  sourceType?: CommunicationSourceType;
   channels?: CommunicationChannel[];
   deliveries?: NotificationDelivery[];
 }
 
 export interface ConnectedCommunicationApp {
-  provider: 'line' | 'telegram' | 'whatsapp' | 'viber';
+  provider: CommunicationConnectorProvider;
   status: 'connected' | 'pending' | 'disconnected';
   connectedAt?: any;
   displayName?: string;
@@ -74,7 +76,7 @@ export interface NotificationPreferences {
   assignments?: boolean;
   urgentNotices?: boolean;
   emailPartner?: boolean;
-  optionalChannels?: Partial<Record<'line' | 'telegram' | 'whatsapp' | 'viber', boolean>>;
+  optionalChannels?: Partial<Record<CommunicationConnectorProvider, boolean>>;
   darkMode?: boolean;
   fontSize?: 'small' | 'normal' | 'medium' | 'big';
 }
