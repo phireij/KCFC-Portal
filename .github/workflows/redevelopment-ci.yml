@@ -32,3 +32,31 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Guard external connector defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flag in \
+            KCFC_CONNECTOR_LINE_ENABLED \
+            KCFC_CONNECTOR_TELEGRAM_ENABLED \
+            KCFC_CONNECTOR_WHATSAPP_ENABLED \
+            KCFC_CONNECTOR_VIBER_ENABLED \
+            VITE_KCFC_LINE_CONNECTOR_ENABLED \
+            VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED \
+            VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED \
+            VITE_KCFC_VIBER_CONNECTOR_ENABLED; do
+            grep -q "^${flag}=false$" .env.example || {
+              echo "Connector feature gate ${flag} must remain false in .env.example" >&2
+              exit 1
+            }
+          done
+
+      - name: Guard provider secrets from browser bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -En '^VITE_.*(SECRET|ACCESS_TOKEN|BOT_TOKEN|VERIFY_TOKEN|CHANNEL_SECRET)=' .env.example; then
+            echo 'Provider credentials must never use VITE_* browser-exposed variables.' >&2
+            exit 1
+          fi
