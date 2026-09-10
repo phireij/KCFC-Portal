@@ -27,6 +27,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Record production dependency audit snapshot
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > /tmp/kcfc-npm-audit.json
+          audit_status=$?
+          set -e
+          node scripts/report-npm-audit.mjs /tmp/kcfc-npm-audit.json "$GITHUB_STEP_SUMMARY" "$audit_status"
+
       - name: Typecheck
         run: npm run lint
 
