@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import BroadcastTool from '../components/admin/BroadcastTool';
 import LeadershipOverview from '../components/admin/LeadershipOverview';
+import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
 import LegacyAdmin from './LegacyAdmin';
 import { cn } from '../lib/utils';
 
@@ -39,7 +40,7 @@ const workspaceItems: Array<{
   {
     id: 'members',
     label: 'Member administration',
-    description: 'Approvals, roles, ministries and member records.',
+    description: 'Focused approvals now; roles and ministries migrate next.',
     icon: UsersRound,
   },
   {
@@ -81,8 +82,8 @@ export default function Admin() {
             <p className="mt-2 max-w-xl text-[14px] leading-6 text-blue-50/90">Leadership work is progressively separated into focused workspaces so routine tasks stay easy to reach and destructive controls stay deliberately out of the normal path.</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:min-w-[300px]">
-            <HeaderMetric icon={UserCheck} label="Approvals" value="Queue" />
-            <HeaderMetric icon={UsersRound} label="Members" value="Roles" />
+            <HeaderMetric icon={UserCheck} label="Approvals" value="Focused" />
+            <HeaderMetric icon={UsersRound} label="Members" value="Migrating" />
             <HeaderMetric icon={BellRing} label="Broadcasts" value="Controlled" />
             <HeaderMetric icon={SlidersHorizontal} label="Settings" value="Role-gated" />
           </div>
@@ -150,15 +151,18 @@ export default function Admin() {
         )}
 
         {activeView === 'members' && (
-          <section className="kcfc-surface overflow-hidden">
-            <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
-              <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Member administration</h2>
-              <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">The proven member-management engine remains intact while its individual approval, profile and role workflows are progressively migrated.</p>
-            </div>
-            <div className="p-2 sm:p-4">
-              <LegacyAdmin />
-            </div>
-          </section>
+          <div className="space-y-3">
+            <MemberApprovalQueue />
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2563EB]" />
+                <div>
+                  <h2 className="text-[13px] font-extrabold text-[#172033] dark:text-white">Roles, ministries and account controls</h2>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">These workflows still use the preserved legacy administration engine and are intentionally kept in Advanced tools until their focused replacements are migrated and regression-tested. Destructive controls are no longer placed in the routine member-approval path.</p>
+                </div>
+              </div>
+            </section>
+          </div>
         )}
 
         {activeView === 'advanced' && (
@@ -168,7 +172,7 @@ export default function Admin() {
                 <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <h2 className="text-[15px] font-extrabold">Advanced legacy administration</h2>
-                  <p className="mt-1 text-[11px] leading-5">This preserved workspace contains low-frequency and potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p>
+                  <p className="mt-1 text-[11px] leading-5">This preserved workspace contains role/ministry management plus low-frequency and potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p>
                 </div>
               </div>
             </div>
