@@ -111,14 +111,26 @@ export default function MemberRoleEditor() {
     });
   }, [selected, members, draftRoles, draftMinistries]);
 
-  const hasChanges = useMemo(() => {
-    if (!selected) return false;
-    const currentRoles = normalizeMemberRoles((selected.roles || []).filter((role) => role !== 'admin')).sort().join('|');
-    const nextRoles = normalizeMemberRoles(draftRoles).sort().join('|');
-    const currentMinistries = (selected.ministries || []).filter((ministry) => MINISTRY_OPTIONS.includes(ministry)).sort().join('|');
-    const nextMinistries = [...draftMinistries].sort().join('|');
-    return currentRoles !== nextRoles || currentMinistries !== nextMinistries;
+  const changeSummary = useMemo(() => {
+    if (!selected) return { addedRoles: [] as UserRole[], removedRoles: [] as UserRole[], addedMinistries: [] as MinistryType[], removedMinistries: [] as MinistryType[] };
+    const currentRoles = normalizeMemberRoles((selected.roles || []).filter((role) => role !== 'admin'));
+    const nextRoles = normalizeMemberRoles(draftRoles);
+    const currentMinistries = (selected.ministries || []).filter((ministry) => MINISTRY_OPTIONS.includes(ministry));
+    const nextMinistries = draftMinistries;
+    return {
+      addedRoles: nextRoles.filter((role) => !currentRoles.includes(role)),
+      removedRoles: currentRoles.filter((role) => !nextRoles.includes(role)),
+      addedMinistries: nextMinistries.filter((ministry) => !currentMinistries.includes(ministry)),
+      removedMinistries: currentMinistries.filter((ministry) => !nextMinistries.includes(ministry)),
+    };
   }, [selected, draftRoles, draftMinistries]);
+
+  const hasChanges = useMemo(() => {
+    return changeSummary.addedRoles.length > 0
+      || changeSummary.removedRoles.length > 0
+      || changeSummary.addedMinistries.length > 0
+      || changeSummary.removedMinistries.length > 0;
+  }, [changeSummary]);
 
   const toggleRole = (role: UserRole) => {
     setDraftRoles((current) => current.includes(role) ? current.filter((item) => item !== role) : [...current, role]);
@@ -287,6 +299,28 @@ export default function MemberRoleEditor() {
                 </div>
               </fieldset>
 
+              {hasChanges && (
+                <section className="rounded-2xl border border-blue-200 bg-[#F7FAFF] p-4 dark:border-blue-400/20 dark:bg-blue-500/[0.06]" aria-labelledby="member-change-preview-title">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-[#2563EB]">Before you save</p>
+                      <h3 id="member-change-preview-title" className="mt-1 text-[13px] font-extrabold text-[#172033] dark:text-white">Change summary</h3>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-[#123B66] shadow-sm dark:bg-white/10 dark:text-blue-100">UID unchanged</span>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <ChangeGroup title="Adding" tone="add" items={[
+                      ...changeSummary.addedRoles.map((role) => ROLE_LABELS[role] || role),
+                      ...changeSummary.addedMinistries.map((ministry) => MINISTRY_LABELS[ministry] || ministry),
+                    ]} />
+                    <ChangeGroup title="Removing" tone="remove" items={[
+                      ...changeSummary.removedRoles.map((role) => ROLE_LABELS[role] || role),
+                      ...changeSummary.removedMinistries.map((ministry) => MINISTRY_LABELS[ministry] || ministry),
+                    ]} />
+                  </div>
+                </section>
+              )}
+
               {issues.length > 0 && (
                 <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-400/30 dark:bg-amber-500/10" role="alert">
                   <p className="text-[11px] font-extrabold text-amber-900 dark:text-amber-100">Resolve before saving</p>
@@ -314,5 +348,25 @@ export default function MemberRoleEditor() {
         </div>
       </div>
     </section>
+  );
+}
+
+function ChangeGroup({ title, items, tone }: { title: string; items: string[]; tone: 'add' | 'remove' }) {
+  const adding = tone === 'add';
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]">
+      <p className={cn('text-[10px] font-extrabold uppercase tracking-[0.08em]', adding ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300')}>{title}</p>
+      {items.length === 0 ? (
+        <p className="mt-2 text-[10px] text-slate-400">Nothing</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {items.map((item) => (
+            <span key={`${tone}-${item}`} className={cn('rounded-lg px-2 py-1 text-[10px] font-bold', adding ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300')}>
+              {adding ? '+' : '−'} {item}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
