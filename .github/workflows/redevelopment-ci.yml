@@ -54,6 +54,9 @@ jobs:
       - name: Verify member governance rules
         run: npx tsx scripts/verify-member-governance.ts
 
+      - name: Verify Core status transition planning
+        run: npx tsx scripts/verify-core-status-transition.ts
+
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
