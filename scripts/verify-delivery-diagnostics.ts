@@ -6,6 +6,7 @@ import {
   summarizeDeliveryDiagnostics,
 } from '../src/lib/deliveryDiagnostics';
 import { materializeNotificationRecord } from '../src/lib/notificationPersistence';
+import { buildPwaDeliveryEvidence } from '../src/lib/pwaDeliveryEvidence';
 
 const initialized = initializeDeliveryDiagnostics(['inbox', 'pwa', 'email', 'pwa']);
 assert.deepEqual(initialized, [
@@ -72,5 +73,21 @@ const retriedEmail = recordDeliveryOutcome({
 assert.equal(retriedEmail.filter((item) => item.channel === 'email').length, 1);
 assert.equal(retriedEmail.find((item) => item.channel === 'email')?.status, 'delivered');
 assert.equal(summarizeDeliveryDiagnostics(retriedEmail).hasFailure, false);
+
+const pwaEvidence = buildPwaDeliveryEvidence(
+  ['member-success', 'member-failed', 'member-skipped', 'member-success'],
+  [
+    { userId: 'member-success', transport: 'fcm', success: false },
+    { userId: 'member-success', transport: 'webpush', success: true },
+    { userId: 'member-failed', transport: 'fcm', success: false },
+    { userId: 'other-member', transport: 'webpush', success: true },
+  ],
+);
+assert.equal(pwaEvidence.length, 3);
+assert.equal(pwaEvidence.find((item) => item.userId === 'member-success')?.status, 'sent');
+assert.equal(pwaEvidence.find((item) => item.userId === 'member-success')?.successes, 1);
+assert.equal(pwaEvidence.find((item) => item.userId === 'member-failed')?.status, 'failed');
+assert.equal(pwaEvidence.find((item) => item.userId === 'member-skipped')?.status, 'skipped');
+assert.match(pwaEvidence.find((item) => item.userId === 'member-success')?.detail || '', /Web Push 1\/1/);
 
 console.log('Communication delivery diagnostics verification passed.');
