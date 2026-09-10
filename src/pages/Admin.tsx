@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useAuth } from '../App';
 import {
   BellRing,
@@ -65,7 +65,30 @@ const workspaceItems: Array<{
 export default function Admin() {
   const { profile } = useAuth();
   const [activeView, setActiveView] = useState<WorkspaceView>('overview');
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const canAccess = (profile?.roles || []).some((role) => adminRoles.includes(role));
+
+  const activateTab = (index: number, moveFocus = false) => {
+    const normalizedIndex = (index + workspaceItems.length) % workspaceItems.length;
+    setActiveView(workspaceItems[normalizedIndex].id);
+    if (moveFocus) tabRefs.current[normalizedIndex]?.focus();
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      activateTab(index + 1, true);
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      activateTab(index - 1, true);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      activateTab(0, true);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      activateTab(workspaceItems.length - 1, true);
+    }
+  };
 
   if (!canAccess) {
     return (
@@ -78,6 +101,8 @@ export default function Admin() {
       </div>
     );
   }
+
+  const activeTabId = `leadership-tab-${activeView}`;
 
   return (
     <div className="kcfc-page space-y-5 pb-4">
@@ -106,19 +131,23 @@ export default function Admin() {
           <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">Choose the task you need. Routine operational work is separated from advanced legacy administration.</p>
         </div>
 
-        <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-5" role="tablist" aria-label="Leadership workspace sections">
-          {workspaceItems.map((item) => {
+        <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-5" role="tablist" aria-label="Leadership workspace sections" aria-orientation="horizontal">
+          {workspaceItems.map((item, index) => {
             const Icon = item.icon;
             const selected = activeView === item.id;
             const warning = item.tone === 'warning';
             return (
               <button
                 key={item.id}
+                ref={(node) => { tabRefs.current[index] = node; }}
+                id={`leadership-tab-${item.id}`}
                 type="button"
                 role="tab"
+                tabIndex={selected ? 0 : -1}
                 aria-selected={selected}
-                aria-controls={`leadership-panel-${item.id}`}
-                onClick={() => setActiveView(item.id)}
+                aria-controls="leadership-workspace-panel"
+                onClick={() => activateTab(index)}
+                onKeyDown={(event) => handleTabKeyDown(event, index)}
                 className={cn(
                   'min-h-[92px] rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
                   selected && !warning && 'border-[#2563EB] bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-100',
@@ -141,7 +170,7 @@ export default function Admin() {
         </div>
       </section>
 
-      <div id={`leadership-panel-${activeView}`} role="tabpanel">
+      <div id="leadership-workspace-panel" role="tabpanel" aria-labelledby={activeTabId} tabIndex={0}>
         {activeView === 'overview' && (
           <div className="space-y-4">
             <LeadershipOverview />
