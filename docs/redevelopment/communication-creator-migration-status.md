@@ -10,9 +10,10 @@ This document tracks progressive adoption of the shared communication-routing an
 - `src/lib/communicationRouting.ts`
   - Inbox always remains the durable record.
   - PWA/Web Push is the primary alert when the member preference and composer allow it.
-  - Email is the default partner when member preference and composer allow it.
+  - Email is the default partner when the member preference and composer allow it.
   - External providers require explicit feature-gate permission, member opt-in and connected state.
   - Composer-level PWA/email suppression is supported without suppressing Inbox.
+  - Routing rationale now explains event-class mute, composer suppression, email-partner opt-out, connector feature-gate blocking, connector opt-in and connector connection state separately.
 - `src/lib/notificationRecord.ts`
   - Normalizes source, urgency and channel metadata for new Inbox records.
 - `src/lib/communicationAudience.ts`
@@ -20,11 +21,13 @@ This document tracks progressive adoption of the shared communication-routing an
   - Disabled accounts are excluded from new operational delivery.
 - `src/lib/communicationBatch.ts`
   - De-duplicates recipient UIDs and FCM tokens.
-  - Produces the PWA dispatch recipient/token set only from recipients whose routing plan includes PWA.
+  - Produces PWA recipient/token sets only for recipients whose routing plan includes PWA.
+  - Produces email recipient IDs independently from PWA routing.
+  - Produces per-provider LINE / Telegram / WhatsApp / Viber recipient IDs only when a plan explicitly contains that provider.
   - Remains pure and non-sending.
 - `src/lib/liturgicalCommunication.ts`
-  - Provides pure builders for availability requests, availability-complete notices and published liturgical assignments.
-  - Provides batch planners for availability-request and assignment publication recipient sets.
+  - Provides pure builders for availability requests, availability-complete notices, published liturgical assignments and assignment-change notices.
+  - Provides batch planners for availability requests, completion notices, publication and assignment changes.
 - `src/lib/dutyCommunication.ts`
   - Provides a pure community-duty notification builder and batch planner.
 - `src/lib/broadcastCommunication.ts`
@@ -32,7 +35,7 @@ This document tracks progressive adoption of the shared communication-routing an
 - `scripts/verify-communication-policy.ts`
   - CI-verifies durable Inbox behavior, member preferences, composer gates, connector gates, normalized record construction, audience eligibility and creator-specific builders.
 - `scripts/verify-communication-batches.ts`
-  - CI-verifies UID/token de-duplication and preference-aware PWA suppression for duty/broadcast batches.
+  - CI-verifies UID/token de-duplication, preference-aware PWA/email suppression and channel-specific recipient planning.
 
 ## Creator migration table
 
@@ -40,9 +43,9 @@ This document tracks progressive adoption of the shared communication-routing an
 | --- | --- | --- |
 | Updates / Announcements | **Normalized + CI GREEN** | Uses shared audience eligibility, routing policy and notification-record helper. Inbox is retained even when routine announcement alerts are muted. PWA token collection follows the per-recipient routing result. External connectors remain disabled. |
 | Liturgical availability request | **Builder + batch planner ready; creator integration pending** | Pure planning emits `sourceType=availability`, preference-aware routing, durable Inbox metadata, deduplicated recipient/token sets and no poll/response mutation. |
-| Availability completion notice | **Builder ready; creator integration pending** | Leadership completion builder uses the same availability source and leader deep link. |
+| Availability completion notice | **Builder + batch planner ready; creator integration pending** | Leadership completion builder uses the same availability source and leader deep link. |
 | Published liturgical assignment | **Builder + batch planner ready; creator integration pending** | Builder emits assignment source, important urgency and My Ministry deep link; batch planning respects assignment preferences and de-duplicates push targets. |
-| Assignment change / republish | Policy ready / integration pending | Important-urgency policy is defined; implementation remains tied to deliberate re-publication. |
+| Assignment change / republish | **Builder + batch planner ready; creator integration pending** | Uses important urgency and a distinct `eventKind=assignment_change` marker while retaining `sourceType=assignment` for Inbox grouping. Implementation remains tied to deliberate re-publication. |
 | Community duty assignment | **Builder + batch planner ready; legacy creator preserved** | Existing legacy duty engine remains the first-cutover source until integration is regression-tested. |
 | Leadership broadcast | **Builder + batch planner ready; legacy creator preserved** | Routine and urgent builders are covered by CI; existing broadcast permission/recipient engine remains untouched for first cutover. |
 | Urgent notice | Policy + builder foundation ready | Urgent severity is supported, but no new production urgent-send surface or external escalation is activated. |
@@ -68,11 +71,12 @@ All creator-specific builders and batch planners are pure metadata/routing funct
 - do not write Firestore;
 - do not send PWA/email/external messages;
 - do not read provider credentials;
-- keep external connector routing disabled;
+- keep external connector routing disabled unless a higher-level caller explicitly supplies a plan that already contains the provider;
 - preserve Inbox even when routine alert preferences suppress secondary channels;
 - de-duplicate recipient UIDs before planning;
 - de-duplicate FCM tokens before push execution;
-- omit muted recipients from the PWA dispatch set while retaining their Inbox record.
+- produce PWA, email and provider recipient sets independently;
+- omit muted recipients from secondary dispatch sets while retaining their Inbox record.
 
 Actual creator integration remains deliberately separate so current operational workflows are not replaced until their regression path is verified.
 
@@ -106,7 +110,7 @@ GitHub Actions run #154 / id `34453312081`: TypeScript, communication policy, co
 ## Next migration order
 
 1. Integrate liturgical availability request + completion builders into the current Polls creator with no poll/response behavior change.
-2. Integrate published assignment metadata while preserving explicit roster publication/unpublish.
+2. Integrate published assignment and assignment-change metadata while preserving explicit roster publication/unpublish.
 3. Integrate duty metadata only after legacy duty regression tests are green.
 4. Integrate leadership broadcast metadata only after permission/recipient regression tests are green.
 5. Add real delivery diagnostics / email execution alignment once isolated staging evidence is available.
