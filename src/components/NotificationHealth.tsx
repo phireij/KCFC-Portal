@@ -16,6 +16,7 @@ import { useAuth } from '../App';
 import { registerDeviceToken, isStandaloneMode } from '../lib/fcmClient';
 import { communicationConnectorFlags, type CommunicationConnector } from '../lib/communicationConnectorFlags';
 import { cn } from '../lib/utils';
+import { currentDeviceHealthLabel, evaluateCurrentWebPushEndpoint, type CurrentDeviceEndpointHealth } from '../lib/currentDeviceNotificationHealth';
 
 const channelCards: Array<{
   id: 'email' | CommunicationConnector;
@@ -39,6 +40,7 @@ export default function NotificationHealth() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [serviceWorkerHealth, setServiceWorkerHealth] = useState<ServiceWorkerHealth>('checking');
+  const [currentDeviceEndpointHealth, setCurrentDeviceEndpointHealth] = useState<CurrentDeviceEndpointHealth>('unknown');
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
 
   const permission = typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
@@ -47,6 +49,25 @@ export default function NotificationHealth() {
   const tokenCount = profile?.fcmTokens?.filter(Boolean).length || 0;
   const subscriptionCount = profile?.webPushSubscriptions?.length || 0;
   const endpointCount = tokenCount + subscriptionCount;
+
+  const refreshCurrentDeviceEndpointHealth = async () => {
+    if (typeof navigator === 'undefined' || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setCurrentDeviceEndpointHealth('unknown');
+      return;
+    }
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = registration?.pushManager ? await registration.pushManager.getSubscription() : null;
+      setCurrentDeviceEndpointHealth(evaluateCurrentWebPushEndpoint({
+        currentEndpoint: subscription?.endpoint || null,
+        storedSubscriptions: profile?.webPushSubscriptions || [],
+        inspectionSupported: true,
+      }));
+    } catch (error) {
+      console.warn('Notification health: current-device endpoint inspection failed', error);
+      setCurrentDeviceEndpointHealth('unknown');
+    }
+  };
 
   const refreshServiceWorkerHealth = async () => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
@@ -65,6 +86,7 @@ export default function NotificationHealth() {
 
   useEffect(() => {
     void refreshServiceWorkerHealth();
+    void refreshCurrentDeviceEndpointHealth();
 
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
@@ -76,6 +98,10 @@ export default function NotificationHealth() {
     };
   }, []);
 
+  useEffect(() => {
+    void refreshCurrentDeviceEndpointHealth();
+  }, [profile?.webPushSubscriptions]);
+
   const health = useMemo(() => {
     if (!online) return { label: 'Device is offline — Inbox will sync when connection returns', tone: 'warning' as const };
     if (permission === 'unsupported') return { label: 'Not supported in this browser', tone: 'warning' as const };
@@ -83,9 +109,11 @@ export default function NotificationHealth() {
     if (permission === 'denied') return { label: 'Notifications are blocked', tone: 'error' as const };
     if (permission !== 'granted') return { label: 'Notifications are not enabled yet', tone: 'warning' as const };
     if (serviceWorkerHealth === 'missing') return { label: 'Push service worker needs repair', tone: 'warning' as const };
+    if (currentDeviceEndpointHealth === 'unregistered') return { label: 'This device subscription needs registration repair', tone: 'warning' as const };
+    if (currentDeviceEndpointHealth === 'no_subscription' && subscriptionCount > 0 && tokenCount === 0) return { label: 'Other device registrations exist — this device needs setup', tone: 'warning' as const };
     if (endpointCount === 0) return { label: 'Permission granted — device registration needs repair', tone: 'warning' as const };
-    return { label: 'Notification delivery is ready', tone: 'good' as const };
-  }, [permission, standalone, ios, endpointCount, online, serviceWorkerHealth]);
+    return { label: currentDeviceEndpointHealth === 'registered' ? 'This device is ready for notifications' : 'Notification registration exists — send a test to confirm this device', tone: currentDeviceEndpointHealth === 'registered' ? 'good' as const : 'warning' as const };
+  }, [permission, standalone, ios, endpointCount, online, serviceWorkerHealth, currentDeviceEndpointHealth, subscriptionCount, tokenCount]);
 
   const onboardingStep = useMemo(() => {
     if (ios && !standalone) return 1;
@@ -110,10 +138,12 @@ export default function NotificationHealth() {
       const token = await registerDeviceToken(user.uid, true);
       setRegistrationState(token ? 'ok' : 'error');
       await refreshServiceWorkerHealth();
+      await refreshCurrentDeviceEndpointHealth();
     } catch (error) {
       console.error('Notification health: registration failed', error);
       setRegistrationState('error');
       await refreshServiceWorkerHealth();
+      await refreshCurrentDeviceEndpointHealth();
     } finally {
       setEnabling(false);
     }
@@ -183,7 +213,7 @@ export default function NotificationHealth() {
                 : <CircleAlert className={cn('mt-0.5 h-5 w-5', health.tone === 'error' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300')} />}
               <div className="min-w-0">
                 <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">{health.label}</p>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Permission: {permission} • Registered endpoints: {endpointCount} • App mode: {standalone ? 'installed' : 'browser'}</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Permission: {permission} • Registered endpoints: {endpointCount} • Current device: {currentDeviceHealthLabel(currentDeviceEndpointHealth)} • App mode: {standalone ? 'installed' : 'browser'}</p>
               </div>
             </div>
           </div>
