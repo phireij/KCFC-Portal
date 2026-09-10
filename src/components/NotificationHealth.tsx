@@ -1,5 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { BellRing, CheckCircle2, CircleAlert, Mail, MessageCircle, RefreshCcw, Smartphone, Send, ShieldCheck } from 'lucide-react';
+import {
+  BellRing,
+  CheckCircle2,
+  CircleAlert,
+  Mail,
+  MessageCircle,
+  RefreshCcw,
+  Send,
+  ShieldCheck,
+  Smartphone,
+} from 'lucide-react';
 import { useAuth } from '../App';
 import { registerDeviceToken, isStandaloneMode } from '../lib/fcmClient';
 import { cn } from '../lib/utils';
@@ -14,34 +24,82 @@ const channelCards = [
 export default function NotificationHealth() {
   const { user, profile } = useAuth();
   const [enabling, setEnabling] = useState(false);
-  const [testState, setTestState] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [registrationState, setRegistrationState] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   const permission = typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   const standalone = typeof window !== 'undefined' ? isStandaloneMode() : false;
+  const ios = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
   const tokenCount = profile?.fcmTokens?.filter(Boolean).length || 0;
   const subscriptionCount = profile?.webPushSubscriptions?.length || 0;
+  const endpointCount = tokenCount + subscriptionCount;
 
   const health = useMemo(() => {
     if (permission === 'unsupported') return { label: 'Not supported in this browser', tone: 'warning' as const };
-    if (!standalone && /iPad|iPhone|iPod/.test(navigator.userAgent)) return { label: 'Install the app first on iPhone/iPad', tone: 'warning' as const };
+    if (!standalone && ios) return { label: 'Install the app first on iPhone/iPad', tone: 'warning' as const };
     if (permission === 'denied') return { label: 'Notifications are blocked', tone: 'error' as const };
     if (permission !== 'granted') return { label: 'Notifications are not enabled yet', tone: 'warning' as const };
-    if (tokenCount + subscriptionCount === 0) return { label: 'Permission granted — device registration needs repair', tone: 'warning' as const };
+    if (endpointCount === 0) return { label: 'Permission granted — device registration needs repair', tone: 'warning' as const };
     return { label: 'Notification delivery is ready', tone: 'good' as const };
-  }, [permission, standalone, subscriptionCount, tokenCount]);
+  }, [permission, standalone, ios, endpointCount]);
+
+  const onboardingStep = useMemo(() => {
+    if (ios && !standalone) return 1;
+    if (permission !== 'granted') return 2;
+    if (endpointCount === 0) return 2;
+    return 3;
+  }, [ios, standalone, permission, endpointCount]);
 
   const enableNotifications = async () => {
     if (!user) return;
     setEnabling(true);
-    setTestState('idle');
+    setRegistrationState('idle');
+    setTestResult(null);
     try {
       const token = await registerDeviceToken(user.uid, true);
-      setTestState(token ? 'ok' : 'error');
+      setRegistrationState(token ? 'ok' : 'error');
     } catch (error) {
       console.error('Notification health: registration failed', error);
-      setTestState('error');
+      setRegistrationState('error');
     } finally {
       setEnabling(false);
+    }
+  };
+
+  const sendTestNotification = async () => {
+    if (!user || permission !== 'granted') return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/users/send-test-push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (response.ok && result.success) {
+        setTestResult({
+          tone: 'ok',
+          text: result.isSandboxSimulated
+            ? 'Test alert was accepted by the current browser environment.'
+            : 'Test notification sent. Check your device notification tray or lock screen.',
+        });
+      } else {
+        setTestResult({
+          tone: 'error',
+          text: result.error || result.message || 'The test notification could not be dispatched.',
+        });
+      }
+    } catch (error) {
+      console.error('Notification health: test push failed', error);
+      setTestResult({ tone: 'error', text: 'The test request failed. Try repairing device registration first.' });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -60,7 +118,7 @@ export default function NotificationHealth() {
       </div>
 
       <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[1.15fr_.85fr]">
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className={cn(
             'rounded-2xl border p-4',
             health.tone === 'good' && 'border-green-200 bg-green-50/70 dark:border-green-400/20 dark:bg-green-500/10',
@@ -68,10 +126,12 @@ export default function NotificationHealth() {
             health.tone === 'error' && 'border-red-200 bg-red-50/70 dark:border-red-400/20 dark:bg-red-500/10',
           )}>
             <div className="flex items-start gap-3">
-              {health.tone === 'good' ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-700 dark:text-green-300" /> : <CircleAlert className={cn('mt-0.5 h-5 w-5', health.tone === 'error' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300')} />}
+              {health.tone === 'good'
+                ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-700 dark:text-green-300" />
+                : <CircleAlert className={cn('mt-0.5 h-5 w-5', health.tone === 'error' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300')} />}
               <div className="min-w-0">
                 <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">{health.label}</p>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Permission: {permission} • Registered endpoints: {tokenCount + subscriptionCount} • App mode: {standalone ? 'installed' : 'browser'}</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Permission: {permission} • Registered endpoints: {endpointCount} • App mode: {standalone ? 'installed' : 'browser'}</p>
               </div>
             </div>
           </div>
@@ -79,22 +139,57 @@ export default function NotificationHealth() {
           <div className="grid gap-2 sm:grid-cols-3">
             <HealthMetric icon={Smartphone} label="App" value={standalone ? 'Installed' : 'Browser'} />
             <HealthMetric icon={BellRing} label="Push permission" value={permission === 'granted' ? 'Allowed' : permission === 'denied' ? 'Blocked' : permission === 'unsupported' ? 'Unsupported' : 'Not enabled'} />
-            <HealthMetric icon={ShieldCheck} label="Device endpoints" value={String(tokenCount + subscriptionCount)} />
+            <HealthMetric icon={ShieldCheck} label="Device endpoints" value={String(endpointCount)} />
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Recommended setup</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <SetupStep number={1} label="Install KCFC" detail={standalone ? 'Installed' : ios ? 'Add to Home Screen first' : 'Install when browser offers it'} done={standalone} active={onboardingStep === 1} />
+              <SetupStep number={2} label="Enable alerts" detail={permission === 'granted' && endpointCount > 0 ? 'Device registered' : 'Allow notifications and register device'} done={permission === 'granted' && endpointCount > 0} active={onboardingStep === 2} />
+              <SetupStep number={3} label="Send a test" detail="Confirm alerts reach this device" done={Boolean(testResult?.tone === 'ok')} active={onboardingStep === 3} />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={enableNotifications}
-              disabled={!user || enabling || permission === 'denied' || permission === 'unsupported'}
+              disabled={!user || enabling || permission === 'denied' || permission === 'unsupported' || (ios && !standalone)}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               {enabling ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
               {permission === 'granted' ? 'Repair / refresh alerts' : 'Enable notifications'}
             </button>
-            {testState === 'ok' && <span className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-green-50 px-3 text-[11px] font-bold text-green-700 dark:bg-green-500/10 dark:text-green-300"><CheckCircle2 className="h-4 w-4" /> Device registered</span>}
-            {testState === 'error' && <span className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-red-50 px-3 text-[11px] font-bold text-red-700 dark:bg-red-500/10 dark:text-red-300"><CircleAlert className="h-4 w-4" /> Registration needs attention</span>}
+
+            <button
+              type="button"
+              onClick={sendTestNotification}
+              disabled={!user || testing || permission !== 'granted' || endpointCount === 0}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-[12px] font-bold text-[#123B66] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-400/20 dark:bg-white/5 dark:text-blue-200"
+            >
+              {testing ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {testing ? 'Sending test…' : 'Send test notification'}
+            </button>
+
+            {registrationState === 'ok' && <span className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-green-50 px-3 text-[11px] font-bold text-green-700 dark:bg-green-500/10 dark:text-green-300"><CheckCircle2 className="h-4 w-4" /> Device registered</span>}
+            {registrationState === 'error' && <span className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-red-50 px-3 text-[11px] font-bold text-red-700 dark:bg-red-500/10 dark:text-red-300"><CircleAlert className="h-4 w-4" /> Registration needs attention</span>}
           </div>
+
+          {testResult && (
+            <div className={cn(
+              'rounded-xl border px-3 py-3 text-[11px] font-semibold leading-5',
+              testResult.tone === 'ok'
+                ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-400/20 dark:bg-green-500/10 dark:text-green-300'
+                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300',
+            )}>
+              {testResult.text}
+            </div>
+          )}
+
+          {ios && !standalone && (
+            <p className="rounded-xl bg-blue-50 p-3 text-[11px] leading-5 text-slate-600 dark:bg-blue-500/5 dark:text-slate-300"><strong>iPhone/iPad:</strong> open the browser Share menu, choose <strong>Add to Home Screen</strong>, launch KCFC from the Home Screen, then return here to enable alerts.</p>
+          )}
 
           {permission === 'denied' && (
             <p className="rounded-xl bg-slate-50 p-3 text-[11px] leading-5 text-slate-500 dark:bg-white/5 dark:text-slate-400">Notifications are blocked by the browser or operating system. Re-enable notifications for the KCFC Portal in your device/browser settings, then return here and refresh registration.</p>
@@ -105,7 +200,7 @@ export default function NotificationHealth() {
           <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Communication channels</p>
           <div className="mt-3 space-y-2">
             <ChannelRow label="KCFC Inbox" detail="Durable source of truth" status="Primary record" strong />
-            <ChannelRow label="PWA Push" detail="Primary alert channel" status={permission === 'granted' ? 'Enabled' : 'Setup needed'} strong />
+            <ChannelRow label="PWA Push" detail="Primary alert channel" status={permission === 'granted' && endpointCount > 0 ? 'Enabled' : 'Setup needed'} strong />
             {channelCards.map((channel) => (
               <ChannelRow key={channel.id} label={channel.label} detail={channel.detail} status={channel.status === 'included' ? 'Included' : channel.status === 'planned' ? 'Coming next' : 'Future'} />
             ))}
@@ -123,6 +218,18 @@ function HealthMetric({ icon: Icon, label, value }: { icon: React.ComponentType<
       <Icon className="h-4 w-4 text-[#2563EB]" />
       <p className="mt-2 text-[10px] font-extrabold uppercase tracking-[0.07em] text-slate-400">{label}</p>
       <p className="mt-1 text-[12px] font-bold text-[#172033] dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function SetupStep({ number, label, detail, done, active }: { number: number; label: string; detail: string; done: boolean; active: boolean }) {
+  return (
+    <div className={cn('rounded-xl border p-3', active ? 'border-blue-200 bg-blue-50/70 dark:border-blue-400/20 dark:bg-blue-500/10' : 'border-slate-200 bg-[#F7F9FC] dark:border-white/10 dark:bg-white/5')}>
+      <div className="flex items-center gap-2">
+        <span className={cn('flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-extrabold', done ? 'bg-green-600 text-white' : active ? 'bg-[#2563EB] text-white' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-300')}>{done ? '✓' : number}</span>
+        <p className="text-[11px] font-extrabold text-[#172033] dark:text-white">{label}</p>
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-slate-500 dark:text-slate-400">{detail}</p>
     </div>
   );
 }
