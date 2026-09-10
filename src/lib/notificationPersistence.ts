@@ -37,7 +37,7 @@ export function buildQueuedDeliveryLedger(channels: CommunicationChannel[] = [])
 export function materializeNotificationRecord<T extends PlannedNotificationRecord>(
   record: T,
   createdAt: unknown,
-): T & { createdAt: unknown } {
+): T & { createdAt: unknown; deliveries?: NotificationDelivery[] } {
   const deliveries = record.deliveries ?? buildQueuedDeliveryLedger(record.channels || []);
   return {
     ...record,
