@@ -1,5 +1,6 @@
 import type {
   CommunicationChannel,
+  CommunicationConnectorProvider,
   ConnectedCommunicationApp,
   NotificationPreferences,
 } from '../types';
@@ -26,7 +27,11 @@ export type CommunicationBatchPlan<TPlan extends CommunicationPlanLike> = {
   notifications: TPlan[];
   pushRecipientIds: string[];
   pushTokens: string[];
+  emailRecipientIds: string[];
+  connectorRecipientIds: Partial<Record<CommunicationConnectorProvider, string[]>>;
 };
+
+const connectorChannels: CommunicationConnectorProvider[] = ['line', 'telegram', 'whatsapp', 'viber'];
 
 export function buildCommunicationBatchPlan<TPlan extends CommunicationPlanLike>(
   recipients: CommunicationBatchRecipient[],
@@ -41,17 +46,33 @@ export function buildCommunicationBatchPlan<TPlan extends CommunicationPlanLike>
   const notifications = uniqueRecipients.map(build);
   const pushRecipientIds: string[] = [];
   const pushTokenSet = new Set<string>();
+  const emailRecipientIds: string[] = [];
+  const connectorRecipientIds: Partial<Record<CommunicationConnectorProvider, string[]>> = {};
 
   notifications.forEach((plan, index) => {
-    if (!plan.routing.channels.includes('pwa')) return;
     const recipient = uniqueRecipients[index];
-    pushRecipientIds.push(recipient.uid);
-    (recipient.fcmTokens || []).filter(Boolean).forEach((token) => pushTokenSet.add(token));
+    const channels = plan.routing.channels;
+
+    if (channels.includes('pwa')) {
+      pushRecipientIds.push(recipient.uid);
+      (recipient.fcmTokens || []).filter(Boolean).forEach((token) => pushTokenSet.add(token));
+    }
+
+    if (channels.includes('email')) emailRecipientIds.push(recipient.uid);
+
+    connectorChannels.forEach((provider) => {
+      if (!channels.includes(provider)) return;
+      const current = connectorRecipientIds[provider] || [];
+      current.push(recipient.uid);
+      connectorRecipientIds[provider] = current;
+    });
   });
 
   return {
     notifications,
     pushRecipientIds,
     pushTokens: Array.from(pushTokenSet),
+    emailRecipientIds,
+    connectorRecipientIds,
   };
 }
