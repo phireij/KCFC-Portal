@@ -1,4 +1,5 @@
 import type { ConnectedCommunicationApp, NotificationPreferences, NotificationUrgency } from '../types';
+import { buildCommunicationBatchPlan, type CommunicationBatchRecipient } from './communicationBatch';
 import { buildCommunicationRoutingPlan } from './communicationRouting';
 import { buildNotificationRecord } from './notificationRecord';
 
@@ -46,4 +47,37 @@ export function buildBroadcastNotification(input: {
       extra: { routingRationale: routing.rationale },
     }),
   };
+}
+
+export function buildBroadcastBatchPlan({
+  recipients,
+  broadcastId,
+  title,
+  message,
+  link,
+  allowPwa = true,
+  allowEmail = true,
+  urgent = false,
+}: {
+  recipients: CommunicationBatchRecipient[];
+  broadcastId?: string;
+  title: string;
+  message: string;
+  link?: string;
+  allowPwa?: boolean;
+  allowEmail?: boolean;
+  urgent?: boolean;
+}) {
+  return buildCommunicationBatchPlan(recipients, (recipient) => buildBroadcastNotification({
+    userId: recipient.uid,
+    broadcastId,
+    title,
+    message,
+    link,
+    preferences: recipient.preferences,
+    connectedCommunicationApps: recipient.connectedCommunicationApps,
+    allowPwa,
+    allowEmail,
+    urgent,
+  }));
 }
