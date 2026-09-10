@@ -39,6 +39,25 @@ The current legacy policy requires cleanup before/with downgrade:
 
 The planner exposes this impact before any future write-capable workflow is introduced.
 
+## Staging-only executor foundation
+
+The redevelopment branch now contains an **inert, server-side staging executor contract** in `server/coreStatusStagingExecutor.ts` plus a Firestore transaction adapter in `server/firestoreCoreStatusTransactionAdapter.ts`.
+
+Important boundaries:
+
+- no Express/API route invokes the executor;
+- no member-facing or leadership UI invokes the executor;
+- `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED` is present in `.env.example` and defaults to `false`;
+- the executor hard-blocks any environment other than `staging`;
+- the reviewed actor UID must match the execution actor;
+- execution requires the `admin` or `president` role;
+- no-op mutation plans are rejected;
+- stale member snapshots are rejected before any mutation;
+- the member update and append-only `leadership_audit` record share one transaction adapter boundary;
+- the Firestore adapter preserves Firestore Timestamp semantics for `updatedAt` and audit commit time.
+
+This foundation exists so atomicity and rollback behavior can be tested before any route or production-capable switch is considered. It is **not activated**.
+
 ## Safety decision
 
 The redevelopment does **not** yet promote Core-status mutation into the routine Member Administration workspace. Actual status changes remain isolated inside Advanced legacy administration until all of the following are complete:
@@ -54,4 +73,10 @@ The read-only planner is therefore safe to use during redevelopment and staging 
 
 ## Verification
 
-`scripts/verify-core-status-transition.ts` verifies no-op transitions, Regular → Core preservation, Core → Regular role cleanup, Core → Regular chore cleanup, liturgical-ministry preservation, and no automatic role/ministry grants on upgrade. The script runs as part of KCFC Redevelopment CI.
+`scripts/verify-core-status-transition.ts` verifies no-op transitions, Regular → Core preservation, Core → Regular role cleanup, Core → Regular chore cleanup, liturgical-ministry preservation, and no automatic role/ministry grants on upgrade.
+
+`scripts/verify-core-status-mutation-plan.ts` verifies the auditable plan and stale-profile precondition contract.
+
+`scripts/verify-core-status-staging-executor.ts` verifies production/disabled/unauthorized/actor-mismatch rejection, stale-plan rejection, and successful staging-only atomic adapter behavior with exactly one audit event.
+
+All three run as part of KCFC Redevelopment CI. CI also guards `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=false` in `.env.example`.
