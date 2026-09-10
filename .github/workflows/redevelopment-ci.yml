@@ -99,7 +99,7 @@ jobs:
           set -euo pipefail
           for flag in \
             KCFC_CONNECTOR_LINE_ENABLED \
-            KCFC_CONNECTOR_TELEGRAM_CONNECTOR_ENABLED \
+            KCFC_CONNECTOR_TELEGRAM_ENABLED \
             KCFC_CONNECTOR_WHATSAPP_ENABLED \
             KCFC_CONNECTOR_VIBER_ENABLED \
             VITE_KCFC_LINE_CONNECTOR_ENABLED \
