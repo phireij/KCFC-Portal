@@ -27,7 +27,7 @@ import { UserProfile, MinistryType } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { buildLeadershipBroadcastCreatorPlan, shouldDispatchPwaForPlan } from '../../lib/broadcastCreatorPlan';
-import { appendCommunicationNotificationsToBatch } from '../../lib/communicationFirestore';
+import { appendCommunicationNotificationsToBatch, persistCommunicationDeliveryOutcome } from '../../lib/communicationFirestore';
 
 export default function BroadcastTool() {
   const [selectedTargets, setSelectedTargets] = useState<string[]>(['all']);
@@ -146,21 +146,24 @@ export default function BroadcastTool() {
     }
 
     setSending(true);
+    const broadcastId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let notificationIdsByUser: Record<string, string[]> = {};
     try {
       // 1. Send via Portal (durable Inbox + preference-aware FCM targets)
       if (sendInPortal) {
-        const broadcastId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const creatorPlan = buildLeadershipBroadcastCreatorPlan({
           recipients: filteredRecipients,
           broadcastId,
           title,
           message,
           allowPwa: true,
+          allowEmail: sendByEmail,
         });
 
         const batch = writeBatch(db);
         const persistedPlan = appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
         await batch.commit();
+        notificationIdsByUser = persistedPlan.notificationIdsByUser;
 
         // Trigger native smartphone alert only for recipients whose routing plan includes PWA.
         try {
@@ -204,6 +207,7 @@ export default function BroadcastTool() {
       if (sendByEmail) {
         const emailRoutingPlan = buildLeadershipBroadcastCreatorPlan({
           recipients: filteredRecipients,
+          broadcastId,
           title,
           message,
           allowPwa: false,
@@ -251,9 +255,35 @@ export default function BroadcastTool() {
             `;
 
             await sendGmail(recipientEmail, title, personalizedHtml);
+            const notificationIds = notificationIdsByUser[u.uid] || [];
+            if (notificationIds.length > 0) {
+              await persistCommunicationDeliveryOutcome({
+                firestore: db,
+                notificationIds,
+                userId: u.uid,
+                channel: 'email',
+                status: 'sent',
+                detail: 'Accepted by the authorized Gmail send path.',
+              });
+            }
             successCount++;
           } catch (mailErr: any) {
             console.error(`Failed to send email to ${u.email}:`, mailErr);
+            const notificationIds = notificationIdsByUser[u.uid] || [];
+            if (notificationIds.length > 0) {
+              try {
+                await persistCommunicationDeliveryOutcome({
+                  firestore: db,
+                  notificationIds,
+                  userId: u.uid,
+                  channel: 'email',
+                  status: 'failed',
+                  detail: mailErr?.message || 'Gmail send failed.',
+                });
+              } catch (evidenceErr) {
+                console.error('Failed to persist Gmail delivery evidence:', evidenceErr);
+              }
+            }
             failCount++;
             failedRecipients.push(u.email || 'Unknown Email');
           }
