@@ -33,6 +33,16 @@ export type PollStatus = 'active' | 'closed' | 'draft';
 export type AttendanceType = 'yes' | 'no' | 'maybe';
 export type DutyType = 'kitchen' | 'cleaning' | 'ministry';
 
+export type CommunicationChannel = 'inbox' | 'pwa' | 'email' | 'line' | 'telegram' | 'whatsapp' | 'viber' | 'sms';
+export type NotificationUrgency = 'normal' | 'important' | 'urgent';
+
+export interface NotificationDelivery {
+  channel: CommunicationChannel;
+  status: 'queued' | 'sent' | 'delivered' | 'failed' | 'skipped' | 'read';
+  updatedAt?: any;
+  detail?: string;
+}
+
 export interface Notification {
   id?: string;
   userId: string;
@@ -42,12 +52,29 @@ export interface Notification {
   status: 'unread' | 'read';
   link?: string;
   createdAt: any;
+  urgency?: NotificationUrgency;
+  sourceId?: string;
+  sourceType?: 'announcement' | 'availability' | 'assignment' | 'broadcast' | 'system';
+  channels?: CommunicationChannel[];
+  deliveries?: NotificationDelivery[];
+}
+
+export interface ConnectedCommunicationApp {
+  provider: 'line' | 'telegram' | 'whatsapp' | 'viber';
+  status: 'connected' | 'pending' | 'disconnected';
+  connectedAt?: any;
+  displayName?: string;
 }
 
 export interface NotificationPreferences {
   announcements: boolean;
   duties: boolean;
   broadcasts: boolean;
+  availability?: boolean;
+  assignments?: boolean;
+  urgentNotices?: boolean;
+  emailPartner?: boolean;
+  optionalChannels?: Partial<Record<'line' | 'telegram' | 'whatsapp' | 'viber', boolean>>;
   darkMode?: boolean;
   fontSize?: 'small' | 'normal' | 'medium' | 'big';
 }
@@ -73,6 +100,7 @@ export interface UserProfile {
   preferences?: NotificationPreferences;
   fcmTokens?: string[];
   webPushSubscriptions?: any[];
+  connectedCommunicationApps?: ConnectedCommunicationApp[];
 }
 
 export interface MassOption {
@@ -98,10 +126,12 @@ export interface Poll {
   creatorName?: string;
   assignments?: {
     [massDate: string]: {
-      [userId: string]: string; // role name
+      [userId: string]: string;
     };
   };
-  completedAssignments?: string[]; // 'lector', 'altar_server', 'usher', 'ppt'
+  completedAssignments?: string[];
+  rosterPublishedAt?: any;
+  rosterPublishedBy?: string;
   createdAt: string;
 }
 
@@ -149,7 +179,6 @@ export interface DutyAssignment {
   slot?: string;
   assignedBy: string;
   assignedAt: string;
-  // Execution tracking fields
   completed?: 'done' | 'not_done';
   reason?: string;
   approvedByLeader?: boolean;
@@ -179,6 +208,13 @@ export interface Announcement {
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;
+  audience?: 'public' | 'parishioners' | 'kcfc_members' | 'leadership' | string;
+  channels?: CommunicationChannel[];
+  summary?: string;
+  publishAt?: string;
+  expireAt?: string;
+  websiteSlug?: string;
+  websiteSyncStatus?: 'not_requested' | 'queued' | 'synced' | 'failed';
 }
 
 export interface Transaction {
