@@ -1,4 +1,6 @@
-export type CommunicationConnector = 'line' | 'telegram' | 'whatsapp' | 'viber';
+import type { CommunicationConnectorProvider } from '../types';
+
+export type CommunicationConnector = CommunicationConnectorProvider;
 
 const enabled = (value: unknown) => String(value || '').trim().toLowerCase() === 'true';
 
