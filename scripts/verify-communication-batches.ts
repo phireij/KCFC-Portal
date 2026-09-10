@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildBroadcastBatchPlan } from '../src/lib/broadcastCommunication';
 import { buildDutyAssignmentBatchPlan } from '../src/lib/dutyCommunication';
+import { buildCommunicationBatchPlan } from '../src/lib/communicationBatch';
 
 const defaults = {
   announcements: true,
@@ -32,6 +33,7 @@ const dutyBatch = buildDutyAssignmentBatchPlan({
 assert.equal(dutyBatch.notifications.length, 3);
 assert.deepEqual(dutyBatch.pushRecipientIds.sort(), ['core-1', 'core-2']);
 assert.deepEqual(dutyBatch.pushTokens.sort(), ['duty-a', 'duty-b', 'shared']);
+assert.deepEqual(dutyBatch.emailRecipientIds.sort(), ['core-1', 'core-2']);
 assert.equal(dutyBatch.notifications.find((plan) => plan.record.userId === 'core-muted')?.record.channels?.join(','), 'inbox');
 
 const broadcastBatch = buildBroadcastBatchPlan({
@@ -47,6 +49,7 @@ const broadcastBatch = buildBroadcastBatchPlan({
 assert.equal(broadcastBatch.notifications.length, 2);
 assert.deepEqual(broadcastBatch.pushRecipientIds, ['member-1']);
 assert.deepEqual(broadcastBatch.pushTokens, ['broadcast-newer']);
+assert.deepEqual(broadcastBatch.emailRecipientIds, ['member-1']);
 assert.equal(broadcastBatch.notifications.find((plan) => plan.record.userId === 'member-muted')?.record.channels?.join(','), 'inbox');
 
 const urgentBatch = buildBroadcastBatchPlan({
@@ -61,5 +64,30 @@ const urgentBatch = buildBroadcastBatchPlan({
 assert.equal(urgentBatch.notifications[0].record.urgency, 'urgent');
 assert.ok(urgentBatch.notifications[0].record.channels?.includes('inbox'));
 assert.ok(urgentBatch.notifications[0].record.channels?.includes('pwa'));
+
+const connectorBatch = buildCommunicationBatchPlan(
+  [
+    { uid: 'line-user', fcmTokens: ['line-push'] },
+    { uid: 'telegram-user' },
+    { uid: 'inbox-only' },
+  ],
+  (recipient) => {
+    const channels = recipient.uid === 'line-user'
+      ? ['inbox', 'pwa', 'email', 'line'] as const
+      : recipient.uid === 'telegram-user'
+        ? ['inbox', 'telegram'] as const
+        : ['inbox'] as const;
+    return {
+      routing: { channels: [...channels] },
+      record: { userId: recipient.uid, channels: [...channels] },
+    };
+  },
+);
+assert.deepEqual(connectorBatch.pushRecipientIds, ['line-user']);
+assert.deepEqual(connectorBatch.emailRecipientIds, ['line-user']);
+assert.deepEqual(connectorBatch.connectorRecipientIds.line, ['line-user']);
+assert.deepEqual(connectorBatch.connectorRecipientIds.telegram, ['telegram-user']);
+assert.equal(connectorBatch.connectorRecipientIds.whatsapp, undefined);
+assert.equal(connectorBatch.connectorRecipientIds.viber, undefined);
 
 console.log('Communication batch verification passed.');
