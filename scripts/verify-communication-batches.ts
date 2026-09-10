@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { buildBroadcastBatchPlan } from '../src/lib/broadcastCommunication';
 import { buildDutyAssignmentBatchPlan } from '../src/lib/dutyCommunication';
 import { buildCommunicationBatchPlan } from '../src/lib/communicationBatch';
+import {
+  leadershipCommunicationRecipients,
+  recipientsForUserIds,
+  toCommunicationRecipient,
+} from '../src/lib/communicationRecipient';
 
 const defaults = {
   announcements: true,
@@ -89,5 +94,39 @@ assert.deepEqual(connectorBatch.connectorRecipientIds.line, ['line-user']);
 assert.deepEqual(connectorBatch.connectorRecipientIds.telegram, ['telegram-user']);
 assert.equal(connectorBatch.connectorRecipientIds.whatsapp, undefined);
 assert.equal(connectorBatch.connectorRecipientIds.viber, undefined);
+
+const syntheticProfiles = [
+  {
+    uid: 'leader-admin',
+    roles: ['admin'],
+    preferences: defaults,
+    connectedCommunicationApps: [{ provider: 'line', status: 'connected' }],
+    fcmTokens: ['admin-token'],
+  },
+  {
+    uid: 'creator',
+    roles: ['member'],
+    preferences: { ...defaults, availability: false },
+    fcmTokens: ['creator-token'],
+  },
+  {
+    uid: 'disabled-president',
+    roles: ['president'],
+    isDisabled: true,
+    preferences: defaults,
+    fcmTokens: ['disabled-token'],
+  },
+] as any[];
+
+const mapped = toCommunicationRecipient(syntheticProfiles[0]);
+assert.equal(mapped.uid, 'leader-admin');
+assert.deepEqual(mapped.fcmTokens, ['admin-token']);
+assert.equal(mapped.connectedCommunicationApps?.[0]?.provider, 'line');
+
+const selected = recipientsForUserIds(syntheticProfiles, ['creator', 'disabled-president']);
+assert.deepEqual(selected.map((recipient) => recipient.uid), ['creator']);
+
+const leaders = leadershipCommunicationRecipients(syntheticProfiles, ['creator']);
+assert.deepEqual(leaders.map((recipient) => recipient.uid).sort(), ['creator', 'leader-admin']);
 
 console.log('Communication batch verification passed.');
