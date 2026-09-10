@@ -198,8 +198,16 @@ export default function BroadcastTool() {
       // 2. Send via Email (Direct Gmail API integration)
       let emailStats = "";
       if (sendByEmail) {
+        const emailRoutingPlan = buildLeadershipBroadcastCreatorPlan({
+          recipients: filteredRecipients,
+          title,
+          message,
+          allowPwa: false,
+          allowEmail: true,
+        });
+        const emailRecipientIds = new Set(emailRoutingPlan.emailRecipientIds);
         const recipientList = filteredRecipients
-          .filter(u => !!u.email && u.email.includes('@'));
+          .filter(u => emailRecipientIds.has(u.uid) && !!u.email && u.email.includes('@'));
 
         if (recipientList.length === 0) {
           throw new Error("No recipients with valid email addresses found for this target group.");
