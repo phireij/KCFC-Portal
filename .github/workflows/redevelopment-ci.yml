@@ -57,6 +57,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Stage broadcast email delivery evidence
+        run: node scripts/stage-broadcast-email-delivery-evidence.mjs
+
+      - name: Typecheck staged email delivery evidence
+        run: npm run lint
+
+      - name: Build staged email delivery evidence
+        run: npm run build
+
       - name: Guard external connector defaults
         shell: bash
         run: |
