@@ -35,6 +35,29 @@ if (parsed?.metadata?.vulnerabilities) {
   }
   lines.push(`| **total** | **${counts.total}** |`, '');
 
+  const important = Object.values(parsed.vulnerabilities || {})
+    .filter((item) => item && (item.severity === 'critical' || item.severity === 'high'))
+    .sort((a, b) => {
+      const rank = { critical: 0, high: 1 };
+      return (rank[a.severity] ?? 2) - (rank[b.severity] ?? 2) || String(a.name).localeCompare(String(b.name));
+    });
+
+  if (important.length > 0) {
+    lines.push('### Critical/high runtime package chains', '', '| Package | Severity | Direct | Affected range | Fix available |', '| --- | --- | --- | --- | --- |');
+    for (const item of important) {
+      let fix = 'no';
+      if (item.fixAvailable === true) fix = 'yes';
+      else if (item.fixAvailable && typeof item.fixAvailable === 'object') {
+        const target = item.fixAvailable.name && item.fixAvailable.version
+          ? `${item.fixAvailable.name}@${item.fixAvailable.version}`
+          : 'version change';
+        fix = item.fixAvailable.isSemVerMajor ? `${target} (major)` : target;
+      }
+      lines.push(`| ${item.name || 'unknown'} | ${item.severity} | ${item.isDirect ? 'yes' : 'no'} | ${String(item.range || '').replaceAll('|', '\\|')} | ${fix} |`);
+    }
+    lines.push('');
+  }
+
   if (counts.critical > 0 || counts.high > 0) {
     process.stdout.write(`::warning title=Production dependency audit::${counts.critical} critical and ${counts.high} high runtime dependency vulnerabilities remain to be triaged before production readiness.\n`);
   }
