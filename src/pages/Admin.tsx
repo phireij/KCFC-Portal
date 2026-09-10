@@ -14,6 +14,7 @@ import BroadcastTool from '../components/admin/BroadcastTool';
 import LeadershipInquiries from '../components/admin/LeadershipInquiries';
 import LeadershipOverview from '../components/admin/LeadershipOverview';
 import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
+import MemberRoleEditor from '../components/admin/MemberRoleEditor';
 import LegacyAdmin from './LegacyAdmin';
 import { cn } from '../lib/utils';
 
@@ -48,7 +49,7 @@ const workspaceItems: Array<{
   {
     id: 'members',
     label: 'Member administration',
-    description: 'Focused approvals now; roles and ministries migrate next.',
+    description: 'Approvals, roles and ministries in focused flows.',
     icon: UsersRound,
   },
   {
@@ -161,14 +162,15 @@ export default function Admin() {
         )}
 
         {activeView === 'members' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <MemberApprovalQueue />
+            <MemberRoleEditor />
             <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2563EB]" />
                 <div>
-                  <h2 className="text-[13px] font-extrabold text-[#172033] dark:text-white">Roles, ministries and account controls</h2>
-                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">These workflows still use the preserved legacy administration engine and are intentionally kept in Advanced tools until their focused replacements are migrated and regression-tested. Destructive controls are no longer placed in the routine member-approval path.</p>
+                  <h2 className="text-[13px] font-extrabold text-[#172033] dark:text-white">Core status & account controls</h2>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Core-member status changes, account disabling, profile removal and credential cleanup remain in Advanced tools. Those actions can remove or alter privileges and therefore stay outside the routine approval and role-assignment path until their dedicated governed workflows are ready.</p>
                 </div>
               </div>
             </section>
@@ -182,7 +184,7 @@ export default function Admin() {
                 <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <h2 className="text-[15px] font-extrabold">Advanced legacy administration</h2>
-                  <p className="mt-1 text-[11px] leading-5">This preserved workspace contains role/ministry management, Gmail inquiry replies and low-frequency potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p>
+                  <p className="mt-1 text-[11px] leading-5">This preserved workspace contains Core-status management, account controls, Gmail inquiry replies and low-frequency potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p>
                 </div>
               </div>
             </div>
