@@ -57,15 +57,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Stage durable Inbox broadcast refinement
-        run: node scripts/stage-broadcast-durable-inbox.mjs
-
-      - name: Typecheck staged durable Inbox refinement
-        run: npm run lint
-
-      - name: Build staged durable Inbox refinement
-        run: npm run build
-
       - name: Guard external connector defaults
         shell: bash
         run: |
