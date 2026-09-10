@@ -1,23 +1,58 @@
 import React, { useState } from 'react';
 import { useAuth } from '../App';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import {
   AtSign,
   BellRing,
   Calendar,
   Camera,
+  CheckCircle2,
+  CircleDashed,
   Home,
+  Link2,
   Mail,
+  MessageCircle,
   Palette,
   Phone,
   Save,
   ShieldCheck,
+  Smartphone,
   User,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import InstallPWA from '../components/InstallPWA';
 import NotificationHealth from '../components/NotificationHealth';
+import { ConnectedCommunicationApp } from '../types';
+
+type Provider = ConnectedCommunicationApp['provider'];
+
+const providerMeta: Record<Provider, { label: string; detail: string; priority: string; available: boolean }> = {
+  line: {
+    label: 'LINE',
+    detail: 'First optional secondary channel for members in Japan.',
+    priority: 'Priority 1',
+    available: false,
+  },
+  telegram: {
+    label: 'Telegram',
+    detail: 'Optional no-cost secondary messaging connector.',
+    priority: 'Priority 2',
+    available: false,
+  },
+  whatsapp: {
+    label: 'WhatsApp',
+    detail: 'Future connector after current onboarding and pricing are verified.',
+    priority: 'Future',
+    available: false,
+  },
+  viber: {
+    label: 'Viber',
+    detail: 'Low-priority optional connector because new bots are commercial.',
+    priority: 'Later',
+    available: false,
+  },
+};
 
 export default function Profile() {
   const { profile, user } = useAuth();
@@ -40,6 +75,12 @@ export default function Profile() {
       assignments: true,
       urgentNotices: true,
       emailPartner: true,
+      optionalChannels: {
+        line: false,
+        telegram: false,
+        whatsapp: false,
+        viber: false,
+      },
       darkMode: false,
       fontSize: 'normal' as 'small' | 'normal' | 'medium' | 'big',
     },
@@ -61,16 +102,38 @@ export default function Profile() {
         assignments: profile.preferences?.assignments ?? true,
         urgentNotices: profile.preferences?.urgentNotices ?? true,
         emailPartner: profile.preferences?.emailPartner ?? true,
+        optionalChannels: {
+          line: profile.preferences?.optionalChannels?.line ?? false,
+          telegram: profile.preferences?.optionalChannels?.telegram ?? false,
+          whatsapp: profile.preferences?.optionalChannels?.whatsapp ?? false,
+          viber: profile.preferences?.optionalChannels?.viber ?? false,
+        },
         darkMode: profile.preferences?.darkMode ?? false,
         fontSize: profile.preferences?.fontSize ?? 'normal',
       },
     });
   }, [profile]);
 
-  const updatePreference = (key: keyof typeof formData.preferences, value: boolean | string) => {
+  const updatePreference = (
+    key: 'announcements' | 'duties' | 'broadcasts' | 'availability' | 'assignments' | 'urgentNotices' | 'emailPartner' | 'darkMode' | 'fontSize',
+    value: boolean | string,
+  ) => {
     setFormData((current) => ({
       ...current,
       preferences: { ...current.preferences, [key]: value },
+    }));
+  };
+
+  const updateOptionalChannel = (provider: Provider, value: boolean) => {
+    setFormData((current) => ({
+      ...current,
+      preferences: {
+        ...current.preferences,
+        optionalChannels: {
+          ...current.preferences.optionalChannels,
+          [provider]: value,
+        },
+      },
     }));
   };
 
@@ -81,7 +144,12 @@ export default function Profile() {
     setMessage(null);
     try {
       await updateDoc(doc(db, 'users', user.uid), {
-        ...formData,
+        displayName: formData.displayName,
+        nickname: formData.nickname,
+        phoneNumber: formData.phoneNumber,
+        homeAddress: formData.homeAddress,
+        birthdate: formData.birthdate,
+        preferences: formData.preferences,
         updatedAt: serverTimestamp(),
       });
       setMessage({ type: 'success', text: 'Your profile and communication preferences were saved.' });
@@ -121,6 +189,7 @@ export default function Profile() {
     reader.readAsDataURL(file);
   };
 
+  const connectedApps = profile?.connectedCommunicationApps || [];
   const roleLabel = (profile?.roles || []).map((role) => role.replaceAll('_', ' ')).join(' • ') || 'KCFC member';
 
   return (
@@ -160,13 +229,18 @@ export default function Profile() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {message && (
-          <div className={cn('rounded-2xl border px-4 py-3 text-[13px] font-semibold', message.type === 'success' ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-400/20 dark:bg-green-500/10 dark:text-green-300' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300')}>
+          <div className={cn(
+            'rounded-2xl border px-4 py-3 text-[13px] font-semibold',
+            message.type === 'success'
+              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-400/20 dark:bg-green-500/10 dark:text-green-300'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300',
+          )}>
             {message.text}
           </div>
         )}
 
         <section className="kcfc-surface overflow-hidden">
-          <SectionHeader icon={User} title="Personal information" body="Your private profile details are not shown in the general member directory unless the Portal explicitly provides a future sharing control." />
+          <SectionHeader icon={User} title="Personal information" body="Your private profile details are not displayed in the general Community Directory." />
           <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
             <Field label="Full name" icon={User}><input required value={formData.displayName} onChange={(event) => setFormData({ ...formData, displayName: event.target.value })} className="kcfc-input" /></Field>
             <Field label="Nickname" icon={AtSign}><input value={formData.nickname} onChange={(event) => setFormData({ ...formData, nickname: event.target.value })} className="kcfc-input" /></Field>
@@ -177,14 +251,14 @@ export default function Profile() {
         </section>
 
         <section className="kcfc-surface overflow-hidden">
-          <SectionHeader icon={BellRing} title="What should KCFC alert me about?" body="Inbox keeps the record. These preferences control which routine alerts should also reach your notification channels." />
+          <SectionHeader icon={BellRing} title="What should KCFC alert me about?" body="Inbox keeps the durable record. These preferences control which routine alerts should also reach your notification channels." />
           <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 sm:p-5">
             <PreferenceCard label="Announcements" detail="Community news and published notices" checked={formData.preferences.announcements} onChange={(value) => updatePreference('announcements', value)} />
             <PreferenceCard label="Availability requests" detail="When leaders ask when you can serve" checked={formData.preferences.availability} onChange={(value) => updatePreference('availability', value)} />
             <PreferenceCard label="Assignments" detail="Published ministry assignments and changes" checked={formData.preferences.assignments} onChange={(value) => updatePreference('assignments', value)} />
             <PreferenceCard label="Community duties" detail="Kitchen, cleaning and other service duties" checked={formData.preferences.duties} onChange={(value) => updatePreference('duties', value)} />
             <PreferenceCard label="Broadcasts" detail="Messages sent to groups you belong to" checked={formData.preferences.broadcasts} onChange={(value) => updatePreference('broadcasts', value)} />
-            <PreferenceCard label="Urgent notices" detail="Important operational or schedule changes" checked={formData.preferences.urgentNotices} onChange={(value) => updatePreference('urgentNotices', value)} locked />
+            <PreferenceCard label="Urgent notices" detail="Important operational or schedule changes" checked={formData.preferences.urgentNotices} onChange={(value) => updatePreference('urgentNotices', value)} recommended />
           </div>
 
           <div className="border-t border-slate-100 p-4 sm:p-5 dark:border-white/10">
@@ -193,10 +267,62 @@ export default function Profile() {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#123B66] shadow-sm dark:bg-white/10 dark:text-blue-200"><Mail className="h-5 w-5" /></div>
                 <div>
                   <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">Email partner channel</p>
-                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Keep email paired with important KCFC alerts. PWA remains the primary alert channel.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Keep email paired with important KCFC alerts. PWA push remains the primary alert channel.</p>
                 </div>
               </div>
               <Toggle checked={formData.preferences.emailPartner} onChange={(value) => updatePreference('emailPartner', value)} label="Email partner" />
+            </div>
+          </div>
+        </section>
+
+        <section className="kcfc-surface overflow-hidden" id="communication-apps">
+          <SectionHeader icon={Link2} title="Connected Communication Apps" body="Optional secondary channels can reinforce important KCFC alerts. None of these apps will ever be required for membership." />
+          <div className="grid gap-3 p-4 sm:p-5 lg:grid-cols-2">
+            {(Object.keys(providerMeta) as Provider[]).map((provider) => {
+              const meta = providerMeta[provider];
+              const connection = connectedApps.find((item) => item.provider === provider);
+              const enabled = formData.preferences.optionalChannels[provider];
+              const connected = connection?.status === 'connected';
+              return (
+                <div key={provider} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><MessageCircle className="h-5 w-5" /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[14px] font-extrabold text-[#172033] dark:text-white">{meta.label}</p>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-300">{meta.priority}</span>
+                        {connected && <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-green-700 dark:bg-green-500/15 dark:text-green-300"><CheckCircle2 className="h-3 w-3" /> Connected</span>}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">{meta.detail}</p>
+                      {connection?.displayName && <p className="mt-1 truncate text-[10px] font-bold text-slate-400">Linked as {connection.displayName}</p>}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2 rounded-xl bg-[#F7F9FC] p-3 sm:flex-row sm:items-center sm:justify-between dark:bg-white/5">
+                    <div>
+                      <p className="text-[11px] font-bold text-[#172033] dark:text-white">Use for KCFC alerts</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Only after your account is securely linked.</p>
+                    </div>
+                    <Toggle checked={enabled} onChange={(value) => updateOptionalChannel(provider, value)} label={`${meta.label} alerts`} disabled={!connected} />
+                  </div>
+
+                  {!connected && (
+                    <button
+                      type="button"
+                      disabled
+                      className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-400 disabled:cursor-not-allowed dark:border-white/10 dark:bg-white/5"
+                    >
+                      <CircleDashed className="h-4 w-4" /> Secure connection coming after server setup
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="border-t border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+            <div className="flex items-start gap-3 rounded-2xl bg-blue-50/60 p-4 dark:bg-blue-500/5">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#123B66] dark:text-blue-200" />
+              <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">External account IDs and connector credentials will be mapped server-side to your Firebase UID. Tokens and secrets will never be stored in browser-visible profile fields.</p>
             </div>
           </div>
         </section>
@@ -214,7 +340,19 @@ export default function Profile() {
               <p className="text-[13px] font-bold text-[#172033] dark:text-white">Reading size</p>
               <div className="mt-3 grid grid-cols-4 gap-2">
                 {(['small', 'normal', 'medium', 'big'] as const).map((size) => (
-                  <button key={size} type="button" onClick={() => updatePreference('fontSize', size)} className={cn('min-h-11 rounded-xl px-2 text-[11px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', formData.preferences.fontSize === size ? 'bg-[#123B66] text-white' : 'bg-white text-slate-500 dark:bg-white/5 dark:text-slate-300')}>{size}</button>
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => updatePreference('fontSize', size)}
+                    className={cn(
+                      'min-h-11 rounded-xl px-2 text-[11px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                      formData.preferences.fontSize === size
+                        ? 'bg-[#123B66] text-white'
+                        : 'bg-white text-slate-500 dark:bg-white/5 dark:text-slate-300',
+                    )}
+                  >
+                    {size}
+                  </button>
                 ))}
               </div>
             </div>
@@ -228,23 +366,61 @@ export default function Profile() {
         </div>
       </form>
 
+      <section className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-400/10 dark:bg-blue-500/5">
+        <div className="flex items-start gap-3">
+          <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-[#123B66] dark:text-blue-200" />
+          <div>
+            <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">Recommended member setup</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Install KCFC Portal → enable notifications → send a test notification. This remains separate from optional LINE or Telegram connections.</p>
+          </div>
+        </div>
+      </section>
+
       <InstallPWA />
     </div>
   );
 }
 
 function SectionHeader({ icon: Icon, title, body }: { icon: React.ComponentType<{ className?: string }>; title: string; body: string }) {
-  return <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Icon className="h-5 w-5" /></div><div><h2 className="text-[17px] font-extrabold tracking-tight text-[#172033] dark:text-white">{title}</h2><p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">{body}</p></div></div>;
+  return (
+    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Icon className="h-5 w-5" /></div>
+      <div>
+        <h2 className="text-[17px] font-extrabold tracking-tight text-[#172033] dark:text-white">{title}</h2>
+        <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">{body}</p>
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, icon: Icon, wide = false, children }: { label: string; icon: React.ComponentType<{ className?: string }>; wide?: boolean; children: React.ReactNode }) {
-  return <label className={cn('space-y-1.5', wide && 'sm:col-span-2')}><span className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400"><Icon className="h-3.5 w-3.5" />{label}</span>{children}</label>;
+  return (
+    <label className={cn('space-y-1.5', wide && 'sm:col-span-2')}>
+      <span className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400"><Icon className="h-3.5 w-3.5" />{label}</span>
+      {children}
+    </label>
+  );
 }
 
-function PreferenceCard({ label, detail, checked, onChange, locked = false }: { label: string; detail: string; checked: boolean; onChange: (value: boolean) => void; locked?: boolean }) {
-  return <div className="flex min-h-[92px] items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="min-w-0 flex-1"><p className="text-[13px] font-bold text-[#172033] dark:text-white">{label}</p><p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{detail}</p>{locked && <p className="mt-1 text-[9px] font-bold text-amber-600 dark:text-amber-300">Recommended on</p>}</div><Toggle checked={checked} onChange={onChange} label={label} /></div>;
+function PreferenceCard({ label, detail, checked, onChange, recommended = false }: { label: string; detail: string; checked: boolean; onChange: (value: boolean) => void; recommended?: boolean }) {
+  return (
+    <div className="flex min-h-[92px] items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-bold text-[#172033] dark:text-white">{label}</p>
+        <p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{detail}</p>
+        {recommended && <p className="mt-1 text-[9px] font-bold text-amber-600 dark:text-amber-300">Recommended on</p>}
+      </div>
+      <Toggle checked={checked} onChange={onChange} label={label} />
+    </div>
+  );
 }
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className={cn('relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', checked ? 'bg-[#2563EB]' : 'bg-slate-300 dark:bg-slate-600')}><span className={cn('absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform', checked ? 'translate-x-6' : 'translate-x-1')} /></button>;
+function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (value: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <label className={cn('relative inline-flex h-7 w-12 shrink-0 items-center', disabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer')}>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="peer sr-only" aria-label={label} disabled={disabled} />
+      <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-[#2563EB] peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2 dark:bg-white/15" />
+      <span className="relative ml-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+    </label>
+  );
 }
