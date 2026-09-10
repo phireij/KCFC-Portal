@@ -3,18 +3,19 @@
 Date: 2026-09-10
 Branch: `redesign/mobile-first-v2`
 
-This document tracks progressive adoption of the shared communication-routing and Inbox metadata helpers. Historical Firestore notification records are not rewritten.
+This document tracks progressive adoption of shared communication routing, durable KCFC Inbox records, and transport evidence. Historical Firestore notification records are not rewritten.
 
 ## Shared foundations
 
-- `communicationRouting.ts` keeps KCFC Inbox as the durable source of truth, applies event-class preferences, supports independent PWA/email composer gates, and keeps external connectors approval-gated.
-- `notificationRecord.ts`, `notificationPersistence.ts` and `communicationFirestore.ts` normalize new Inbox records and preserve database-bound timestamps/atomic batch ownership.
+- `communicationRouting.ts` keeps KCFC Inbox as the durable source of truth, applies event-class preferences, supports independent PWA/email gates, and keeps external connectors approval-gated.
+- `notificationRecord.ts`, `notificationPersistence.ts` and `communicationFirestore.ts` normalize new Inbox records, initialize planned secondary transports as `queued`, preserve existing ledgers, and retain exact notification IDs by recipient for later delivery evidence.
 - `communicationBatch.ts` de-duplicates recipient UIDs and FCM tokens and exposes independent PWA, email and optional-provider recipient sets.
-- `communicationRecipient.ts` maps current user profiles into communication recipients while excluding disabled accounts from targeted delivery.
 - `liturgicalCommunication.ts`, `liturgicalCreatorPlan.ts`, `liturgicalAssignmentDiff.ts` and `liturgicalPublicationPlan.ts` cover availability, completion, initial publication, revision publication and no-change republish behavior.
 - `dutyCommunication.ts` provides normalized community-duty planning.
-- `broadcastCommunication.ts` and `broadcastCreatorPlan.ts` provide normalized leadership broadcast planning, personalization and preference-aware PWA/email recipient sets.
-- `deliveryDiagnostics.ts` defines queued/sent/delivered/failed/skipped/read state handling and deliberately does not equate a planned channel with successful delivery.
+- `broadcastCommunication.ts` and `broadcastCreatorPlan.ts` provide normalized leadership broadcast planning, personalization, preference-aware recipient sets, and Web Push-only dispatch eligibility.
+- `deliveryDiagnostics.ts` defines queued/sent/delivered/failed/skipped/read state handling.
+- `pwaDeliveryEvidence.ts` reduces FCM + native Web Push transport attempts to an honest per-member `sent`, `failed` or `skipped` result without claiming device delivery.
+- `currentDeviceNotificationHealth.ts` provides the next-stage current-browser endpoint evaluation so another device's saved subscription is not treated as proof that this device is healthy.
 
 ## Creator migration table
 
@@ -22,54 +23,49 @@ This document tracks progressive adoption of the shared communication-routing an
 | --- | --- | --- |
 | Updates / Announcements | **Integrated + CI GREEN** | Shared audience/routing/notification schema; Inbox survives muted routine alerts; PWA recipients are preference-aware. |
 | Liturgical availability request | **Integrated + CI GREEN** | Poll creation remains compatible while normalized availability Inbox records are appended. |
-| Availability completion notice | **Integrated + CI GREEN** | Completion uses the shared leadership plan and one-time completion marker. |
+| Availability completion notice | **Integrated + CI GREEN** | Completion uses shared planning and a one-time completion marker. |
 | Published liturgical assignment | **Integrated + CI GREEN** | Publication metadata and normalized assignment Inbox records are committed atomically. |
-| Assignment change / republish | **Integrated + CI GREEN** | Last published assignment snapshot is retained; revised publication targets only affected members; no-change republish emits no duplicate alert. |
-| Community duty auto-assignment | **Integrated + CI GREEN** | Existing assignment algorithm is unchanged; durable duty Inbox records now use normalized source metadata. Legacy auto-duty does not claim PWA/email because it never executed those transports. |
-| Leadership broadcast Portal/PWA | **Integrated + CI GREEN** | Disabled profiles excluded; personalized Inbox records retained; PWA recipient IDs/tokens follow each member's broadcast preference and are de-duplicated. |
-| Leadership broadcast Email | **Integrated + CI GREEN** | Existing Gmail execution remains intact but the recipient set now follows the shared broadcast + `emailPartner` preferences before sending. No email is sent during CI. |
-| Urgent notice | **Policy + builder foundation ready** | Urgent severity exists; no new live urgent-send surface or external escalation is activated. |
+| Assignment change / republish | **Integrated + CI GREEN** | Revised publication targets only affected members; unchanged republish emits no duplicate alert. |
+| Community duty auto-assignment | **Integrated + CI GREEN** | Existing assignment algorithm is unchanged; durable duty Inbox records use normalized source metadata. |
+| Leadership broadcast Portal/PWA | **Integrated + transport evidence added** | Disabled profiles are excluded; recipient IDs/tokens are de-duplicated; exact Inbox records are correlated with per-member FCM/Web Push transport results. |
+| Leadership broadcast Email | **Integrated + CI GREEN** | Existing Gmail execution remains; recipients follow broadcast + `emailPartner` preferences. |
+| Urgent notice | **Policy + builder foundation ready** | No new live urgent-send surface or external escalation is active. |
 
-## Liturgical publication behavior
+## PWA delivery-result persistence
 
-For initial explicit publication, the current roster is saved as `lastPublishedAssignments`, `rosterRevision` begins at 1, and assigned members receive normalized assignment records. After a published assignment is edited, the roster returns to unpublished review state while the last published snapshot remains available. Re-publication computes added, removed, date-changed and role-changed members, notifies only those affected, and increments the revision. An unchanged re-publication creates no redundant assignment notification.
+New secondary channels start as `queued`; this means planned for execution, not sent. The leadership broadcast PWA endpoint now resolves target profiles once, records FCM and native Web Push attempts per member, and aggregates the result using these semantics:
 
-Historical records remain readable through compatibility fallbacks and are not rewritten.
+- `sent`: at least one transport accepted the message;
+- `failed`: one or more transports were attempted and none succeeded;
+- `skipped`: the member was targeted but no deliverable endpoint was attempted;
+- `delivered`: never inferred from FCM/Web Push acceptance;
+- `read`: remains separate user evidence.
 
-## Community-duty behavior
+The broadcast creator supplies an exact `notificationIdsByUser` map generated when Inbox records are written. Before persisting a PWA result, the server fetches each supplied notification and verifies that its stored `userId` matches the member whose transport evidence is being recorded. Arbitrary or mismatched notification IDs are ignored.
 
-`autoAssignDuties` preserves the current duty-generation logic and Firestore `duties` records. The notification path now captures the created duty ID as `sourceId`, uses `sourceType=duty`, deep-links to My Ministry, and reads the member's communication preferences when available. PWA/email are deliberately suppressed in this legacy path until a transport-aware duty delivery cutover is separately validated.
+This gives the existing Inbox delivery-diagnostics UI real backend transport evidence without rewriting historical notifications or making optimistic delivery claims.
 
-## Leadership broadcast behavior
+## Web Push-only reliability correction
 
-The existing leadership target filters, confirmation flow, personalized Gmail content and backend PWA endpoint remain available. The migrated routing layer now:
+Leadership PWA dispatch now triggers whenever the routing plan has at least one PWA recipient, even when the FCM-token list is empty. This is important for iPhone/iPad Home-Screen users and other browsers reachable only through a stored native Web Push subscription. The server resolves those subscriptions from the targeted user IDs.
 
-- excludes disabled accounts before delivery planning;
-- collapses duplicate UIDs and FCM tokens;
-- keeps a durable Inbox record for Portal broadcasts even when a member mutes broadcast alerts;
-- sends PWA only to members whose routing plan includes PWA;
-- keeps `[name]`, `{name}`, `[nickname]` and `{nickname}` personalization for Inbox/email;
-- filters Gmail recipients through both the broadcast event preference and `emailPartner` preference;
-- keeps LINE, Telegram, WhatsApp and Viber disabled;
-- performs no real mass-send during CI or migration validation.
+CI includes a synthetic Web Push-only member to guard against reintroducing the old `pushTokens.length > 0` requirement.
 
-## Delivery diagnostics foundation
+## Current-device notification health foundation
 
-`deliveryDiagnostics.ts` adds pure state helpers for transport evidence. A planned or queued channel does not count as sent. A channel becomes successful only after a transport explicitly reports `sent`, `delivered`, or `read`; failures/skips remain distinguishable. The existing Inbox already renders delivery diagnostics when `deliveries` metadata is present.
+The existing Notification Health screen can count endpoints stored for the profile, but a profile may contain subscriptions from several devices. `currentDeviceNotificationHealth.ts` now provides a pure comparison between the browser's active Web Push endpoint and the stored profile subscriptions, returning `registered`, `unregistered`, `no_subscription`, or `unknown`.
 
-Persisting real transport outcomes is the next step and must only use actual provider/backend responses rather than assumptions.
+The next UI increment will use this result so the health screen can distinguish “some device is registered” from “this device is registered,” without changing registration data destructively.
 
 ## Validation evidence
 
-- Announcements normalization: run #92 / `34443219237` — PASS.
-- Liturgical builder verification: run #106 / `34443618265` — PASS.
-- Communication batch verification: run #154 / `34453312081` — PASS.
-- Cleaned redevelopment head `be119c6354fda4a1c9d237bd3a74bcb2d158a66a`: run #246 / `34456375948` — PASS.
-- Community-duty normalization commit `f38da2472f8499d60bbbf07d5527458510fc6b63`: run `34456736739` — PASS.
-- Broadcast creator + delivery diagnostics + staged Portal/PWA migration validation on `029a09e28917f9c5dc044036069367fd13e64787`: run `34457152546` — PASS.
-- One-time leadership broadcast Portal/PWA migration run `34457278564` — PASS; migrated source typechecked and built before commit.
-- Broadcast email-routing staged validation on `f76269c63ea76497aab431e5018f3df4bc3767c8`: run `34457749385` — PASS.
-- One-time broadcast email-routing migration run `34457885367` — PASS; migrated source typechecked and built before commit.
+- Community-duty normalization: run `34456736739` — PASS.
+- Leadership broadcast Portal/PWA migration: run `34457278564` — PASS.
+- Broadcast email-routing migration: run `34457885367` — PASS.
+- PWA delivery-evidence staged validation: run `34460436185` — PASS including staged TypeScript/build and connector guards.
+- PWA delivery-evidence application: run `34460739624` — PASS; server + BroadcastTool changes typechecked and built before commit.
+- Web Push-only dispatch staged validation: run `34461110197` — PASS including synthetic Web Push-only routing and staged TypeScript/build.
+- Web Push-only dispatch application: run `34461269377` — PASS; migrated BroadcastTool source typechecked and built before commit.
 
 ## Safety invariants
 
@@ -78,14 +74,15 @@ Persisting real transport outcomes is the next step and must only use actual pro
 - No live connector activation.
 - No public website publishing cutover.
 - No production mass-message test is executed by CI.
-- Migration workflows are temporary and removed after application.
+- Temporary migration runners are removed after application.
 - A failed secondary transport never removes the durable Inbox record.
-- A queued/planned channel is never presented as successfully delivered without transport evidence.
+- A queued/planned transport is never presented as delivered without evidence.
+- FCM/Web Push transport acceptance is recorded as `sent`, never `delivered`.
 
 ## Next work
 
-1. Persist delivery-attempt/result metadata from actual PWA/email execution without overstating delivery.
-2. Continue isolated staging and role-regression scenarios for leadership broadcast, liturgical publication and duty flows.
-3. Continue mobile accessibility/device QA, including PWA install/notification health behavior.
-4. Review dependency-security findings separately and plan non-breaking remediation rather than using forced upgrades.
-5. Keep external connectors and public website synchronization disabled until their explicit approval gates.
+1. Integrate current-browser Web Push endpoint inspection into the Notification Health UI and repair guidance.
+2. Add email execution-result persistence with the same exact-record/evidence rules rather than optimistic success flags.
+3. Continue isolated staging and role-regression scenarios for broadcast, liturgical publication and duty flows.
+4. Continue mobile accessibility/device QA.
+5. Keep external connectors and public website synchronization disabled until explicit approval.
