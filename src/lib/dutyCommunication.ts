@@ -1,4 +1,5 @@
 import type { ConnectedCommunicationApp, NotificationPreferences } from '../types';
+import { buildCommunicationBatchPlan, type CommunicationBatchRecipient } from './communicationBatch';
 import { buildCommunicationRoutingPlan } from './communicationRouting';
 import { buildNotificationRecord } from './notificationRecord';
 
@@ -42,4 +43,34 @@ export function buildDutyAssignmentNotification(input: {
       extra: { routingRationale: routing.rationale },
     }),
   };
+}
+
+export function buildDutyAssignmentBatchPlan({
+  recipients,
+  dutyId,
+  title,
+  message,
+  link,
+  allowPwa = true,
+  allowEmail = true,
+}: {
+  recipients: CommunicationBatchRecipient[];
+  dutyId?: string;
+  title: string;
+  message: string;
+  link?: string;
+  allowPwa?: boolean;
+  allowEmail?: boolean;
+}) {
+  return buildCommunicationBatchPlan(recipients, (recipient) => buildDutyAssignmentNotification({
+    userId: recipient.uid,
+    dutyId,
+    title,
+    message,
+    link,
+    preferences: recipient.preferences,
+    connectedCommunicationApps: recipient.connectedCommunicationApps,
+    allowPwa,
+    allowEmail,
+  }));
 }
