@@ -6,7 +6,7 @@ Core Member status is a governance boundary, not a cosmetic profile flag. The cu
 
 ## Current implementation
 
-The focused Member Administration workspace now includes a **read-only Core Member status planner**.
+The focused Member Administration workspace includes a **read-only Core Member status planner**.
 
 The planner:
 
@@ -25,14 +25,7 @@ The planner:
 
 ### Regular Member → Core Member
 
-The upgrade expands eligibility only. It does **not** automatically grant:
-
-- an executive role;
-- a committee leadership role;
-- Kitchen or Cleaning membership;
-- any other ministry assignment.
-
-Any subsequent role/ministry assignment must go through the governed Roles & Ministries editor and pass `memberGovernance.ts` validation.
+The upgrade expands eligibility only. It does **not** automatically grant an executive role, committee leadership role, Kitchen/Cleaning membership, or any other ministry assignment. Any subsequent role/ministry assignment must go through the governed Roles & Ministries editor and pass `memberGovernance.ts` validation.
 
 ### Core Member → Regular Member
 
@@ -57,15 +50,8 @@ The redevelopment does **not** yet promote Core-status mutation into the routine
 5. rollback behavior is documented and tested;
 6. production use receives the applicable approval gate.
 
+The read-only planner is therefore safe to use during redevelopment and staging analysis, but it is intentionally **not** a production Core-status change control.
+
 ## Verification
 
-`scripts/verify-core-status-transition.ts` verifies:
-
-- no-op transitions;
-- Regular → Core upgrade preservation;
-- Core → Regular role cleanup;
-- Core → Regular chore cleanup;
-- liturgical-ministry preservation;
-- no automatic role/ministry grants on upgrade.
-
-The script runs as part of KCFC Redevelopment CI.
+`scripts/verify-core-status-transition.ts` verifies no-op transitions, Regular → Core preservation, Core → Regular role cleanup, Core → Regular chore cleanup, liturgical-ministry preservation, and no automatic role/ministry grants on upgrade. The script runs as part of KCFC Redevelopment CI.
