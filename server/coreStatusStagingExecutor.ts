@@ -11,7 +11,7 @@ export type CoreStatusExecutionContext = {
   environment: CoreStatusExecutionEnvironment;
   executorEnabled: boolean;
   actorUid: string;
-  actorRoles: UserRole[];
+  actorRoles: readonly UserRole[];
   now: () => string;
 };
 
