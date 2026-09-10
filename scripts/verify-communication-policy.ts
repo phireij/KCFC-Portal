@@ -10,6 +10,7 @@ import {
 import { buildDutyAssignmentNotification } from '../src/lib/dutyCommunication';
 import { buildBroadcastNotification } from '../src/lib/broadcastCommunication';
 import { buildLeadershipQueueMetrics } from '../src/lib/leadershipQueueMetrics';
+import { buildTreasuryMetrics } from '../src/lib/treasuryMetrics';
 
 const defaults = {
   announcements: true,
@@ -206,4 +207,18 @@ assert.equal(queueMetrics.activeAvailability, 1);
 assert.equal(queueMetrics.unpublishedRosters, 1);
 assert.equal(queueMetrics.attentionItems, 4);
 
-console.log('Communication and leadership policy verification passed.');
+const treasury = buildTreasuryMetrics([
+  { id: 'income-old', type: 'income', amount: 10000, category: 'Dues', description: '', date: '2026-08-01', status: 'approved' } as any,
+  { id: 'income-now', type: 'income', amount: 5000, category: 'Donation', description: '', date: '2026-09-05', status: 'approved' } as any,
+  { id: 'expense-now', type: 'expense', amount: 3000, category: 'Supplies', description: '', date: '2026-09-06', status: 'approved' } as any,
+  { id: 'pending', type: 'expense', amount: 2000, category: 'Event', description: '', date: '2026-09-07', status: 'pending' } as any,
+], new Date('2026-09-10T12:00:00+09:00'));
+assert.equal(treasury.approvedIncome, 15000);
+assert.equal(treasury.approvedExpenses, 3000);
+assert.equal(treasury.approvedBalance, 12000);
+assert.equal(treasury.pendingCount, 1);
+assert.equal(treasury.pendingAmount, 2000);
+assert.equal(treasury.currentMonthIncome, 5000);
+assert.equal(treasury.currentMonthExpenses, 3000);
+
+console.log('Communication, leadership, and treasury policy verification passed.');
