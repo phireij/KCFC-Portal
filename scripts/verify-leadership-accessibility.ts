@@ -12,7 +12,17 @@ const inquiries = read('src/components/admin/LeadershipInquiries.tsx');
 assert.match(admin, /role="tablist"/);
 assert.match(admin, /role="tab"/);
 assert.match(admin, /aria-selected=/);
+assert.match(admin, /aria-orientation="horizontal"/);
+assert.match(admin, /tabIndex=\{selected \? 0 : -1\}/, 'Leadership tabs must use roving tabIndex');
+assert.match(admin, /ArrowRight/);
+assert.match(admin, /ArrowLeft/);
+assert.match(admin, /ArrowDown/);
+assert.match(admin, /ArrowUp/);
+assert.match(admin, /event\.key === 'Home'/);
+assert.match(admin, /event\.key === 'End'/);
+assert.match(admin, /aria-controls="leadership-workspace-panel"/);
 assert.match(admin, /role="tabpanel"/);
+assert.match(admin, /aria-labelledby=\{activeTabId\}/);
 assert.match(admin, /focus-visible:ring-2/);
 
 for (const [name, source] of [
@@ -32,4 +42,4 @@ assert.match(approvals, /without recreating the Firebase account, changing the U
 
 assert.doesNotMatch(admin, /onClick=.*delete/i, 'Routine Leadership shell must not expose inline deletion actions');
 
-console.log('Leadership keyboard, touch-target and safety accessibility guards verified.');
+console.log('Leadership roving tabs, keyboard navigation, touch targets and safety accessibility guards verified.');
