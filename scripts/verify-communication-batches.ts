@@ -11,6 +11,7 @@ import {
   buildQueuedDeliveryLedger,
   materializeNotificationRecord,
 } from '../src/lib/notificationPersistence';
+import { materializeCommunicationBatch } from '../src/lib/communicationPersistencePlan';
 
 const defaults = {
   announcements: true,
@@ -88,7 +89,14 @@ const connectorBatch = buildCommunicationBatchPlan(
         : ['inbox'] as const;
     return {
       routing: { channels: [...channels] },
-      record: { userId: recipient.uid, channels: [...channels] },
+      record: {
+        userId: recipient.uid,
+        title: 'Synthetic',
+        message: 'Synthetic batch',
+        type: 'system' as const,
+        status: 'unread' as const,
+        channels: [...channels],
+      },
     };
   },
 );
@@ -150,5 +158,13 @@ assert.deepEqual(queuedDeliveries, [
   { channel: 'pwa', status: 'queued' },
   { channel: 'email', status: 'queued' },
 ]);
+
+const materialized = materializeCommunicationBatch(connectorBatch, syntheticTimestamp);
+assert.equal(materialized.notificationRecords.length, 3);
+assert.deepEqual(materialized.notificationRecords[0].createdAt, syntheticTimestamp);
+assert.deepEqual(materialized.pushRecipientIds, ['line-user']);
+assert.deepEqual(materialized.emailRecipientIds, ['line-user']);
+assert.deepEqual(materialized.connectorRecipientIds.line, ['line-user']);
+assert.deepEqual(materialized.connectorRecipientIds.telegram, ['telegram-user']);
 
 console.log('Communication batch verification passed.');
