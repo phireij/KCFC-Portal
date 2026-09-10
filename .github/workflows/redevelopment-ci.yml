@@ -51,6 +51,9 @@ jobs:
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
+      - name: Verify current-device notification health
+        run: npx tsx scripts/verify-current-device-notification-health.ts
+
       - name: Build
         run: npm run build
 
