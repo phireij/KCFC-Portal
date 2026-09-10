@@ -13,6 +13,8 @@ export type CommunicationRoutingInput = {
   kind: CommunicationEventKind;
   preferences?: NotificationPreferences;
   connectedProviders?: Array<'line' | 'telegram' | 'whatsapp' | 'viber'>;
+  allowPwa?: boolean;
+  allowEmail?: boolean;
   allowExternalConnectors?: boolean;
 };
 
@@ -45,28 +47,40 @@ const urgencyFor = (kind: CommunicationEventKind): NotificationUrgency => {
  *
  * Safety rules:
  * - KCFC Inbox is always retained as the durable record for operational communication.
- * - PWA push is the primary alert when the member has not disabled that event class.
- * - Email is the default partner when enabled by preference.
+ * - PWA push is the primary alert when the member has not disabled that event class and
+ *   the composer/caller has not explicitly disabled PWA for this message.
+ * - Email is the default partner when enabled by member preference and the caller allows it.
  * - Optional provider channels are considered only when the caller explicitly allows
  *   external connectors and the member has both opted in and connected that provider.
  * - This helper never sends, reads credentials, or bypasses provider feature flags.
  */
 export function buildCommunicationRoutingPlan(input: CommunicationRoutingInput): CommunicationRoutingPlan {
-  const { kind, preferences, connectedProviders = [], allowExternalConnectors = false } = input;
+  const {
+    kind,
+    preferences,
+    connectedProviders = [],
+    allowPwa = true,
+    allowEmail = true,
+    allowExternalConnectors = false,
+  } = input;
   const channels: CommunicationChannel[] = ['inbox'];
   const rationale = ['KCFC Inbox retained as durable source of truth.'];
   const routineAllowed = preferenceAllows(kind, preferences);
 
-  if (routineAllowed) {
+  if (routineAllowed && allowPwa) {
     channels.push('pwa');
     rationale.push('PWA push selected as the primary alert channel.');
+  } else if (!routineAllowed) {
+    rationale.push('Routine alert channels suppressed by the member preference; Inbox remains available.');
   } else {
-    rationale.push('Routine alert channel suppressed by the member preference; Inbox remains available.');
+    rationale.push('PWA push disabled for this message by the composer/caller; Inbox remains available.');
   }
 
-  if (routineAllowed && preferences?.emailPartner !== false) {
+  if (routineAllowed && allowEmail && preferences?.emailPartner !== false) {
     channels.push('email');
     rationale.push('Email included as the default partner channel.');
+  } else if (routineAllowed && !allowEmail) {
+    rationale.push('Email disabled for this message by the composer/caller.');
   }
 
   if (allowExternalConnectors && routineAllowed) {
