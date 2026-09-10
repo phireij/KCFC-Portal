@@ -1,0 +1,107 @@
+import type {
+  ConnectedCommunicationApp,
+  NotificationPreferences,
+} from '../types';
+import { buildCommunicationRoutingPlan } from './communicationRouting';
+import { buildNotificationRecord } from './notificationRecord';
+
+const connectedProvidersFor = (apps?: ConnectedCommunicationApp[]) =>
+  (apps || [])
+    .filter((app) => app.status === 'connected')
+    .map((app) => app.provider);
+
+type SharedInput = {
+  userId: string;
+  pollId: string;
+  preferences?: NotificationPreferences;
+  connectedCommunicationApps?: ConnectedCommunicationApp[];
+  allowPwa?: boolean;
+  allowEmail?: boolean;
+};
+
+export function buildAvailabilityRequestNotification(
+  input: SharedInput & { pollTitle: string },
+) {
+  const routing = buildCommunicationRoutingPlan({
+    kind: 'availability',
+    preferences: input.preferences,
+    connectedProviders: connectedProvidersFor(input.connectedCommunicationApps),
+    allowPwa: input.allowPwa ?? true,
+    allowEmail: input.allowEmail ?? true,
+    allowExternalConnectors: false,
+  });
+
+  return {
+    routing,
+    record: buildNotificationRecord({
+      userId: input.userId,
+      title: 'New liturgical availability request',
+      message: `${input.pollTitle}: please select every Mass where you are available to serve.`,
+      type: 'system',
+      link: `/polls?id=${input.pollId}`,
+      sourceId: input.pollId,
+      sourceType: 'availability',
+      urgency: routing.urgency,
+      channels: routing.channels,
+      extra: { routingRationale: routing.rationale },
+    }),
+  };
+}
+
+export function buildAvailabilityCompletionNotification(
+  input: SharedInput & { pollTitle: string },
+) {
+  const routing = buildCommunicationRoutingPlan({
+    kind: 'availability',
+    preferences: input.preferences,
+    connectedProviders: connectedProvidersFor(input.connectedCommunicationApps),
+    allowPwa: input.allowPwa ?? true,
+    allowEmail: input.allowEmail ?? true,
+    allowExternalConnectors: false,
+  });
+
+  return {
+    routing,
+    record: buildNotificationRecord({
+      userId: input.userId,
+      title: 'Liturgical availability complete',
+      message: `All eligible ministry members have responded to “${input.pollTitle}”. You can close the request and begin assignment planning.`,
+      type: 'system',
+      link: `/polls?id=${input.pollId}&leader=1`,
+      sourceId: input.pollId,
+      sourceType: 'availability',
+      urgency: routing.urgency,
+      channels: routing.channels,
+      extra: { routingRationale: routing.rationale },
+    }),
+  };
+}
+
+export function buildPublishedAssignmentNotification(
+  input: SharedInput & { pollTitle: string },
+) {
+  const routing = buildCommunicationRoutingPlan({
+    kind: 'assignment',
+    preferences: input.preferences,
+    connectedProviders: connectedProvidersFor(input.connectedCommunicationApps),
+    allowPwa: input.allowPwa ?? true,
+    allowEmail: input.allowEmail ?? true,
+    allowExternalConnectors: false,
+  });
+
+  return {
+    routing,
+    record: buildNotificationRecord({
+      userId: input.userId,
+      title: 'Your liturgical schedule is ready',
+      message: `The final roster for “${input.pollTitle}” has been published. Please review your assignments.`,
+      type: 'system',
+      link: '/duties?view=mine',
+      sourceId: input.pollId,
+      sourceType: 'assignment',
+      urgency: routing.urgency,
+      channels: routing.channels,
+      extra: { routingRationale: routing.rationale },
+    }),
+  };
+}
