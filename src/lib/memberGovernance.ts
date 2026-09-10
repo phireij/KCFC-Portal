@@ -84,6 +84,17 @@ export type MemberGovernanceIssue = {
   message: string;
 };
 
+export type CoreStatusTransitionPlan = {
+  fromCore: boolean;
+  toCore: boolean;
+  requiresCleanup: boolean;
+  rolesToRemove: UserRole[];
+  ministriesToRemove: MinistryType[];
+  preservedRoles: UserRole[];
+  preservedMinistries: MinistryType[];
+  warnings: string[];
+};
+
 export function normalizeMemberRoles(roles: UserRole[]): UserRole[] {
   return Array.from(new Set<UserRole>([...roles, 'member']));
 }
@@ -168,4 +179,61 @@ export function validateMemberGovernance(input: {
   }
 
   return issues;
+}
+
+export function planCoreStatusTransition(member: UserProfile, toCore: boolean): CoreStatusTransitionPlan {
+  const fromCore = Boolean(member.isCoreMember);
+  const currentRoles = normalizeMemberRoles(member.roles || ['member']);
+  const currentMinistries = Array.from(new Set(member.ministries || []));
+
+  if (fromCore === toCore) {
+    return {
+      fromCore,
+      toCore,
+      requiresCleanup: false,
+      rolesToRemove: [],
+      ministriesToRemove: [],
+      preservedRoles: currentRoles,
+      preservedMinistries: currentMinistries,
+      warnings: [],
+    };
+  }
+
+  if (toCore) {
+    return {
+      fromCore,
+      toCore,
+      requiresCleanup: false,
+      rolesToRemove: [],
+      ministriesToRemove: [],
+      preservedRoles: currentRoles,
+      preservedMinistries: currentMinistries,
+      warnings: [
+        'Upgrading to Core Member expands eligibility but does not automatically assign a chore ministry or leadership role.',
+        'Any new role or ministry still requires a separate governed edit and validation.',
+      ],
+    };
+  }
+
+  const rolesToRemove = currentRoles.filter((role) => role !== 'member');
+  const ministriesToRemove = currentMinistries.filter((ministry) => CHORE_MINISTRIES.includes(ministry));
+  const preservedMinistries = currentMinistries.filter((ministry) => !CHORE_MINISTRIES.includes(ministry));
+  const warnings: string[] = [
+    'Downgrading from Core Member removes executive and committee leadership roles under the current legacy policy.',
+    'Kitchen, Cleaning and related cleaning-status assignments are removed; liturgical ministries are preserved.',
+  ];
+
+  if (rolesToRemove.length > 0) warnings.push(`${rolesToRemove.length} non-Member role${rolesToRemove.length === 1 ? '' : 's'} would be removed.`);
+  if (ministriesToRemove.length > 0) warnings.push(`${ministriesToRemove.length} chore ministry/status assignment${ministriesToRemove.length === 1 ? '' : 's'} would be removed.`);
+
+  return {
+    fromCore,
+    toCore,
+    requiresCleanup: rolesToRemove.length > 0 || ministriesToRemove.length > 0,
+    rolesToRemove,
+    ministriesToRemove,
+    preservedRoles: ['member'],
+    preservedMinistries,
+    warnings,
+  };
 }
