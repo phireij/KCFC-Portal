@@ -54,15 +54,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Stage broadcast communication migration candidate
-        run: node scripts/stage-broadcast-communication-migration.mjs
-
-      - name: Typecheck staged broadcast migration
-        run: npm run lint
-
-      - name: Build staged broadcast migration
-        run: npm run build
-
       - name: Guard external connector defaults
         shell: bash
         run: |
