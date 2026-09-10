@@ -54,15 +54,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Stage Web Push-only broadcast dispatch fix
-        run: node scripts/stage-webpush-only-broadcast-dispatch.mjs
-
-      - name: Typecheck staged Web Push-only dispatch fix
-        run: npm run lint
-
-      - name: Build staged Web Push-only dispatch fix
-        run: npm run build
-
       - name: Guard external connector defaults
         shell: bash
         run: |
