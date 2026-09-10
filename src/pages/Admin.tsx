@@ -11,6 +11,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import BroadcastTool from '../components/admin/BroadcastTool';
+import CoreStatusPlanner from '../components/admin/CoreStatusPlanner';
 import LeadershipInquiries from '../components/admin/LeadershipInquiries';
 import LeadershipOverview from '../components/admin/LeadershipOverview';
 import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
@@ -165,12 +166,13 @@ export default function Admin() {
           <div className="space-y-4">
             <MemberApprovalQueue />
             <MemberRoleEditor />
+            <CoreStatusPlanner />
             <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2563EB]" />
                 <div>
-                  <h2 className="text-[13px] font-extrabold text-[#172033] dark:text-white">Core status & account controls</h2>
-                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Core-member status changes, account disabling, profile removal and credential cleanup remain in Advanced tools. Those actions can remove or alter privileges and therefore stay outside the routine approval and role-assignment path until their dedicated governed workflows are ready.</p>
+                  <h2 className="text-[13px] font-extrabold text-[#172033] dark:text-white">Account controls remain isolated</h2>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">The new Core-status planner is read-only. Actual Core-status changes, account disabling, profile removal and credential cleanup remain in Advanced tools until a dedicated governed transition workflow has passed staging and approval.</p>
                 </div>
               </div>
             </section>
