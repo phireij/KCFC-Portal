@@ -1,248 +1,215 @@
-# KCFC Portal — Optional Communication Connector Account-Linking Contract
+# KCFC External Communication Connector — Account Linking Contract
 
-Status: **design / implementation contract only**. No external connector is activated by this document.
+Status: design/implementation contract only. No live connector is authorized.
 
-## Purpose
+## Objective
 
-KCFC Inbox remains the durable record and PWA/Web Push remains the primary alert channel. Optional messaging applications can reinforce selected alerts for members who explicitly connect them.
+Allow an authenticated KCFC member to opt in to optional secondary communication channels such as LINE and Telegram without exposing provider credentials or weakening the Firebase UID identity model.
 
-Initial priority:
+The connector system supplements KCFC Inbox + PWA + Email. It never replaces the Portal Inbox as the durable communication record.
 
-1. LINE
-2. Telegram
-3. WhatsApp — future / conditional
-4. Viber — low priority
+## Providers and priority
 
-No secondary messaging app is required for KCFC membership or Portal use.
+1. LINE — first optional connector for Japan-focused member use.
+2. Telegram — second optional connector.
+3. WhatsApp — future/conditional after current pricing/onboarding validation.
+4. Viber — low priority/future.
 
-## Non-negotiable security rules
+SMS is a separate future paid escalation path, not an account-linked social connector.
 
-- Firebase Auth UID is the KCFC identity key.
-- External platform user IDs are mapped to Firebase UID only on the server.
-- LINE channel secrets, access tokens, Telegram bot tokens and future provider tokens are server-side only.
-- No external credential may be stored in `users/{uid}` or browser local storage.
-- OAuth/state tokens and account-link challenges must be short-lived and single-use.
-- Connector callbacks must validate provider signatures or callback secrets before accepting identity claims.
-- A member must explicitly initiate connection from an authenticated KCFC session.
-- Disconnect must immediately stop new sends to that provider and revoke/delete the KCFC-side mapping where provider APIs permit.
-- External connectors remain OFF unless their server feature flag is enabled.
+## Identity rule
 
-## Member data model
+Firebase UID remains the canonical KCFC identity.
 
-The user profile may contain only display-safe connection state:
+External provider user IDs are server-side attributes mapped to Firebase UID. They are not usernames, primary keys or authentication credentials for the Portal.
 
-```ts
-connectedCommunicationApps?: Array<{
-  provider: 'line' | 'telegram' | 'whatsapp' | 'viber';
-  status: 'connected' | 'pending' | 'disconnected';
-  connectedAt?: Timestamp;
-  displayName?: string;
-}>
-```
+Recommended server-side link record fields:
 
-It must not contain provider access tokens, refresh tokens, bot tokens, signing secrets, raw OAuth state, or webhook secrets.
+- `uid`
+- `provider`
+- `providerUserId` (server-side only; never rendered to other members)
+- `displayName` (optional member-safe provider label)
+- `status` — pending / connected / disconnected
+- `connectedAt`
+- `disconnectedAt`
+- `consentVersion`
+- `lastVerifiedAt`
+- audit metadata
 
-Server-side mapping collection recommendation:
+No provider access token, channel secret, bot token, signing secret or refresh token belongs in the client-readable profile document.
 
-```text
-communication_connectors/{provider}/accounts/{providerUserId}
-  firebaseUid
-  providerUserId
-  displayName
-  consentVersion
-  connectedAt
-  disconnectedAt
-  lastVerifiedAt
-  status
-```
+## Feature gates
 
-A reverse lookup can be maintained in a protected server-only collection if required for efficient sends.
+Server authority:
 
-## Connection lifecycle
+- `KCFC_CONNECTOR_LINE_ENABLED`
+- `KCFC_CONNECTOR_TELEGRAM_ENABLED`
+- `KCFC_CONNECTOR_WHATSAPP_ENABLED`
+- `KCFC_CONNECTOR_VIBER_ENABLED`
 
-### 1. Begin
+Browser UI availability:
 
-Authenticated member selects **Connect** for a provider.
+- `VITE_KCFC_LINE_CONNECTOR_ENABLED`
+- `VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED`
+- `VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED`
+- `VITE_KCFC_VIBER_CONNECTOR_ENABLED`
 
-Server verifies:
+All defaults are OFF.
 
-- user session,
-- provider feature flag,
-- provider configuration,
-- user is not disabled.
+A browser flag only allows the Portal to expose a Connect/Disconnect surface. It does **not** permit sending. The server flag and valid server credentials remain authoritative for callback/link/send operations.
 
-Server creates a short-lived link challenge containing:
+## Generic linking lifecycle
 
-- random challenge ID,
-- Firebase UID,
-- provider,
-- createdAt / expiresAt,
-- single-use state,
-- return path.
+### 1. Member requests connection
 
-### 2. Provider authorization / identity proof
+- Member is authenticated with Firebase.
+- Client calls a server endpoint for the chosen provider.
+- Server verifies Firebase ID token.
+- Server verifies that provider connector is enabled.
+- Server creates a cryptographically random, one-time, short-lived linking challenge/state bound to Firebase UID + provider.
 
-Provider-specific mechanism proves the provider account identity.
+### 2. Provider authorization / handshake
 
-LINE preferred flow:
+Provider-specific method may be OAuth, account-link URL, bot start parameter, webhook handshake or official account flow.
 
-- Official Account / LINE Login or supported account-link mechanism,
-- provider callback validates state and provider signature,
-- provider user ID is captured server-side.
+The outbound link must contain only the opaque short-lived challenge needed for the provider flow, not the Firebase UID itself.
 
-Telegram preferred flow:
-
-- member opens the KCFC bot from a signed one-time deep-link challenge,
-- bot webhook receives the challenge and Telegram user ID,
-- webhook validates bot/callback secret and challenge expiry,
-- server binds Telegram user ID to Firebase UID.
-
-### 3. Confirm
-
-Server writes the protected mapping and updates only display-safe connection state on the user profile.
-
-Portal shows:
-
-- Connected,
-- optional provider display name,
-- Test action when provider sending is enabled,
-- Disconnect action.
-
-### 4. Disconnect
-
-Member requests disconnect from an authenticated KCFC session.
+### 3. Provider callback / webhook
 
 Server:
 
-- disables/deletes the provider mapping,
-- updates user connection state to disconnected or removes the record,
-- records audit metadata,
-- stops provider routing immediately.
+- validates provider signature/token/callback authenticity,
+- resolves the short-lived challenge,
+- rejects expired, reused, mismatched or unknown challenge,
+- obtains provider user ID from the verified provider payload,
+- stores provider user ID → Firebase UID mapping server-side,
+- marks connection connected,
+- records consent/audit timestamp,
+- invalidates the challenge.
 
-## Proposed API contracts
+### 4. Member sees Connected
 
-Routes are contracts only until implemented behind disabled feature flags.
+The client receives only safe read-model state such as:
 
-### Start connection
+- provider,
+- status,
+- connected timestamp,
+- optional display name.
 
-`POST /api/communication-connectors/:provider/connect/start`
+The raw provider account ID is not needed in the normal UI.
 
-Authenticated.
+### 5. Test connection
 
-Response:
+When implemented:
 
-```json
-{
-  "provider": "line",
-  "status": "pending",
-  "authorizationUrl": "provider-or-kcfc-link-url",
-  "expiresAt": "ISO-8601"
-}
-```
+- member explicitly presses Test,
+- client authenticates to server,
+- server verifies connector flag + mapping + member ownership,
+- server sends a single self-targeted test message,
+- result is recorded in delivery diagnostics,
+- quota/cost guard applies before provider send.
 
-### Connection status
+A provider test is not a mass messaging path.
 
-`GET /api/communication-connectors/:provider/status`
+### 6. Disconnect
 
-Authenticated.
+- member explicitly requests disconnect,
+- server authenticates Firebase UID,
+- server marks mapping disconnected/revoked,
+- future routing excludes provider,
+- optional channel preference is disabled,
+- KCFC Inbox history is retained,
+- audit entry records disconnect without retaining unnecessary secrets.
 
-Response:
+## Provider-specific notes
 
-```json
-{
-  "provider": "line",
-  "status": "connected",
-  "displayName": "optional display name"
-}
-```
+### LINE
 
-### Disconnect
+- Use official LINE Messaging API / account-linking capabilities only.
+- Validate LINE webhook signatures server-side.
+- LINE provider IDs remain server-side.
+- Apply quota/cost guard before every outbound provider send.
+- Free/paid plan conditions must be rechecked immediately before production activation because pricing can change.
 
-`POST /api/communication-connectors/:provider/disconnect`
+### Telegram
 
-Authenticated and CSRF/session protected.
+- Use official Telegram Bot API/account-link flow.
+- Bot token is server-side only.
+- A start/deep-link parameter should contain only a one-time challenge, not Firebase UID.
+- Validate that the callback/message containing the challenge belongs to the provider user being linked.
 
-### Test message
+### WhatsApp
 
-`POST /api/communication-connectors/:provider/test`
+- Do not activate until official current onboarding/pricing/template requirements are revalidated.
+- Access tokens and verification secrets remain server-side.
 
-Authenticated. Must rate-limit per user/provider. Available only when the provider is enabled and the member is connected.
+### Viber
 
-## Routing behavior
+- Keep low priority and disabled until a separate business decision because new bots operate under commercial terms.
 
-Every operational message first creates a KCFC Inbox record.
+## Sending contract
 
-Channel routing then evaluates:
+The connector service receives a transport-neutral request containing:
 
-1. message audience,
-2. message urgency,
-3. member notification preference,
-4. provider connection state,
-5. provider feature flag,
-6. quota / cost guard,
-7. delivery eligibility.
+- Firebase recipient UID(s),
+- source event ID/type,
+- message template/content,
+- urgency,
+- requested provider,
+- deep link to KCFC Portal.
 
-Recommended normal hierarchy:
+Before each send, server checks:
 
-- Inbox: always for eligible recipients.
-- PWA: primary alert when enabled.
-- Email: default partner when the member allows it and event policy calls for email.
-- LINE / Telegram: only when connected + opted in + event routing allows it.
-- WhatsApp / Viber: future only.
-- SMS: future paid escalation only.
+1. provider feature flag,
+2. valid connector configuration,
+3. recipient has connected mapping,
+4. recipient opted in to that provider/event class,
+5. provider quota/cost guard,
+6. deduplication/idempotency key where appropriate.
+
+Server never trusts a client-supplied provider user ID as the destination.
 
 ## Delivery diagnostics
 
-Inbox records may expose display-safe delivery metadata:
+Store member-safe state such as queued/sent/delivered/failed/skipped when supported.
 
-```ts
-deliveries?: Array<{
-  channel: CommunicationChannel;
-  status: 'queued' | 'sent' | 'delivered' | 'failed' | 'skipped' | 'read';
-  updatedAt?: Timestamp;
-  detail?: string;
-}>
-```
+Internal diagnostics can contain provider error codes, but secrets/tokens and full provider callback payloads should not be copied into ordinary client-readable documents.
 
-Do not expose provider tokens, request signatures, raw API responses, or sensitive provider identifiers in client-visible delivery diagnostics.
+## Security requirements
 
-## LINE quota guard
+- One-time challenges have short TTL and single use.
+- Challenges are random and unguessable.
+- Callback/provider authenticity is verified.
+- CSRF/state protection applies to OAuth-style flows.
+- Rate limit connect/test endpoints.
+- Enforce Firebase authentication on user-initiated operations.
+- Enforce leadership authorization on audience/mass-send operations.
+- Never log provider secrets.
+- Redact sensitive provider payloads from application logs.
+- Audit link/disconnect/test/send actions.
 
-Before a production LINE send, routing must check the applicable plan/quota configuration. General announcements should not consume constrained quota if Inbox + PWA + email are sufficient. Reserve limited quota for higher-value operational alerts unless the account plan changes.
+## Privacy / consent
 
-## Telegram guard
+Connection is opt-in.
 
-Telegram may be lower-cost, but connection is still opt-in and must never replace the KCFC Inbox record.
+Member-facing copy must explain:
 
-## Audit events
+- which KCFC alert categories may be mirrored,
+- Inbox remains the durable record,
+- disconnect is available,
+- provider messaging remains subject to provider/app notification settings,
+- the external app is optional.
 
-Record server-side audit events for:
+## Staging acceptance before connector activation request
 
-- connection started,
-- connection confirmed,
-- connection failed,
-- disconnect requested,
-- disconnect completed,
-- test message attempted,
-- provider send attempted,
-- provider send failed,
-- quota guard skipped a send.
+- Synthetic staging member can connect.
+- Wrong/expired/reused challenge is rejected.
+- Callback with invalid provider signature is rejected.
+- Browser does not receive provider credential/user ID.
+- Disconnect prevents subsequent provider routing.
+- Test sends only to the signed-in staging member.
+- Quota guard blocks when configured limit is exhausted.
+- Inbox is still created when provider delivery fails.
+- Connector can be disabled instantly through server feature flag.
 
-Audit events should reference Firebase UID and internal message/source IDs rather than copying message content unnecessarily.
-
-## Production approval gates
-
-External connector activation requires explicit approval after all of the following are complete:
-
-- staging callback URL configured,
-- provider signature validation tested,
-- account-link challenge expiry tested,
-- duplicate-link / account-takeover cases tested,
-- disconnect tested,
-- test-message rate limiting verified,
-- Firestore/server rules reviewed,
-- quota/cost guard verified,
-- privacy disclosure prepared,
-- rollback / feature-flag disable tested.
-
-Until that gate, connector environment flags remain `false`.
+Passing staging does not authorize live activation. Production connector activation remains an explicit approval gate.
