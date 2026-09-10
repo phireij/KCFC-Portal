@@ -71,7 +71,7 @@ export function buildCommunicationRoutingPlan(input: CommunicationRoutingInput):
     channels.push('pwa');
     rationale.push('PWA push selected as the primary alert channel.');
   } else if (!routineAllowed) {
-    rationale.push('Routine alert channels suppressed by the member preference; Inbox remains available.');
+    rationale.push('Secondary alert channels suppressed by the member preference; Inbox remains available.');
   } else {
     rationale.push('PWA push disabled for this message by the composer/caller; Inbox remains available.');
   }
@@ -79,21 +79,36 @@ export function buildCommunicationRoutingPlan(input: CommunicationRoutingInput):
   if (routineAllowed && allowEmail && preferences?.emailPartner !== false) {
     channels.push('email');
     rationale.push('Email included as the default partner channel.');
-  } else if (routineAllowed && !allowEmail) {
+  } else if (!routineAllowed) {
+    rationale.push('Email not selected because this event class is muted by the member.');
+  } else if (!allowEmail) {
     rationale.push('Email disabled for this message by the composer/caller.');
+  } else if (preferences?.emailPartner === false) {
+    rationale.push('Email partner channel disabled by the member preference.');
   }
 
-  if (allowExternalConnectors && routineAllowed) {
-    const optional = preferences?.optionalChannels || {};
-    const providers: Array<'line' | 'telegram' | 'whatsapp' | 'viber'> = ['line', 'telegram', 'whatsapp', 'viber'];
+  const optional = preferences?.optionalChannels || {};
+  const providers: Array<'line' | 'telegram' | 'whatsapp' | 'viber'> = ['line', 'telegram', 'whatsapp', 'viber'];
+
+  if (!allowExternalConnectors) {
+    if (connectedProviders.length > 0 || providers.some((provider) => optional[provider] === true)) {
+      rationale.push('External connector delivery is disabled by the current feature gate.');
+    }
+  } else if (!routineAllowed) {
+    rationale.push('External connector delivery suppressed because this event class is muted by the member.');
+  } else {
     providers.forEach((provider) => {
-      if (optional[provider] === true && connectedProviders.includes(provider)) {
-        channels.push(provider);
-        rationale.push(`${provider} included because the member opted in and the provider is connected.`);
+      if (optional[provider] !== true) {
+        if (connectedProviders.includes(provider)) rationale.push(`${provider} connected but not opted in for alerts.`);
+        return;
       }
+      if (!connectedProviders.includes(provider)) {
+        rationale.push(`${provider} opted in but not currently connected.`);
+        return;
+      }
+      channels.push(provider);
+      rationale.push(`${provider} included because the member opted in and the provider is connected.`);
     });
-  } else if (connectedProviders.length > 0) {
-    rationale.push('External connector delivery is disabled by the current feature gate.');
   }
 
   return {
