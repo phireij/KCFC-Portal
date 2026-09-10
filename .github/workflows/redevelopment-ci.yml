@@ -30,6 +30,9 @@ jobs:
       - name: Typecheck
         run: npm run lint
 
+      - name: Verify communication policy
+        run: npx tsx scripts/verify-communication-policy.ts
+
       - name: Build
         run: npm run build
 
