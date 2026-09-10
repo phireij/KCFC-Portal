@@ -112,6 +112,38 @@ export function buildPublishedAssignmentNotification(
   };
 }
 
+export function buildAssignmentChangeNotification(
+  input: SharedInput & { pollTitle: string },
+) {
+  const routing = buildCommunicationRoutingPlan({
+    kind: 'assignment_change',
+    preferences: input.preferences,
+    connectedProviders: connectedProvidersFor(input.connectedCommunicationApps),
+    allowPwa: input.allowPwa ?? true,
+    allowEmail: input.allowEmail ?? true,
+    allowExternalConnectors: false,
+  });
+
+  return {
+    routing,
+    record: buildNotificationRecord({
+      userId: input.userId,
+      title: 'Your liturgical schedule was updated',
+      message: `The published roster for “${input.pollTitle}” has changed. Please review your current assignments.`,
+      type: 'system',
+      link: '/duties?view=mine',
+      sourceId: input.pollId,
+      sourceType: 'assignment',
+      urgency: routing.urgency,
+      channels: routing.channels,
+      extra: {
+        routingRationale: routing.rationale,
+        eventKind: 'assignment_change',
+      },
+    }),
+  };
+}
+
 export function buildAvailabilityRequestBatchPlan({
   recipients,
   pollId,
@@ -174,6 +206,30 @@ export function buildPublishedAssignmentBatchPlan({
   allowEmail?: boolean;
 }) {
   return buildCommunicationBatchPlan(recipients, (recipient) => buildPublishedAssignmentNotification({
+    userId: recipient.uid,
+    pollId,
+    pollTitle,
+    preferences: recipient.preferences,
+    connectedCommunicationApps: recipient.connectedCommunicationApps,
+    allowPwa,
+    allowEmail,
+  }));
+}
+
+export function buildAssignmentChangeBatchPlan({
+  recipients,
+  pollId,
+  pollTitle,
+  allowPwa = true,
+  allowEmail = true,
+}: {
+  recipients: LiturgicalCommunicationRecipient[];
+  pollId: string;
+  pollTitle: string;
+  allowPwa?: boolean;
+  allowEmail?: boolean;
+}) {
+  return buildCommunicationBatchPlan(recipients, (recipient) => buildAssignmentChangeNotification({
     userId: recipient.uid,
     pollId,
     pollTitle,
