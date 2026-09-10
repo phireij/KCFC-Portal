@@ -537,7 +537,7 @@ export default function BroadcastTool() {
                             type="button"
                             aria-label={`Remove ${u.displayName || u.email || 'member'} from selection`}
                             onClick={() => setSelectedIndividualIds(selectedIndividualIds.filter(id => id !== uid))}
-                            className="p-0.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
+                            className="min-h-11 min-w-11 inline-flex items-center justify-center hover:bg-white/20 rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                           >
                             <X size={10} />
                           </button>
@@ -619,9 +619,9 @@ export default function BroadcastTool() {
               aria-pressed={sendInPortal}
               onClick={() => setSendInPortal(!sendInPortal)}
               className={cn(
-                "p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer",
+                "min-h-16 p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                 sendInPortal 
-                  ? "bg-purple-50 dark:bg-purple-950/10 border-purple-200 dark:border-purple-950/40 text-purple-900 dark:text-purple-200" 
+                  ? "bg-[#EAF3FF] dark:bg-blue-500/10 border-blue-200 dark:border-blue-400/20 text-[#123B66] dark:text-blue-200" 
                   : "bg-white dark:bg-slate-900 border-gray-150 dark:border-white/5 text-gray-500 dark:text-gray-400"
               )}
             >
@@ -642,7 +642,7 @@ export default function BroadcastTool() {
               aria-pressed={sendByEmail}
               onClick={() => setSendByEmail(!sendByEmail)}
               className={cn(
-                "p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer",
+                "min-h-16 p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                 sendByEmail 
                   ? "bg-blue-50 dark:bg-blue-950/10 border-blue-200 dark:border-blue-950/40 text-blue-905 dark:text-blue-200" 
                   : "bg-white dark:bg-slate-900 border-gray-150 dark:border-white/5 text-gray-500 dark:text-gray-400"
@@ -669,7 +669,7 @@ export default function BroadcastTool() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full px-6 py-4 bg-gray-50 dark:bg-slate-800 border border-transparent rounded-2xl focus:ring-1 focus:ring-blue-500 hover:bg-gray-100/50 dark:hover:bg-[#252520]/80 transition-all font-medium text-gray-900 dark:text-white outline-none placeholder-gray-400 dark:placeholder-gray-600 text-sm"
+            className="w-full px-6 py-4 bg-gray-50 dark:bg-slate-800 border border-transparent rounded-2xl focus:ring-1 focus:ring-blue-500 hover:bg-gray-100/50 dark:hover:bg-slate-700 transition-all font-medium text-gray-900 dark:text-white outline-none placeholder-gray-400 dark:placeholder-gray-600 text-sm"
             placeholder="e.g. Action Required: Fill Out Member Verification..."
           />
         </div>
@@ -684,7 +684,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('[name]')}
-                className="text-[9px] bg-[#EAF3FF] dark:bg-blue-500/10 text-[#2563EB] dark:text-blue-300 px-2 py-0.5 rounded-md hover:bg-purple-100 transition-colors font-bold cursor-pointer"
+                className="min-h-11 text-[10px] bg-[#EAF3FF] dark:bg-blue-500/10 text-[#2563EB] dark:text-blue-300 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors font-bold cursor-pointer"
                 title="Inserts personalized full name"
               >
                 + [name]
@@ -692,7 +692,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('[nickname]')}
-                className="text-[9px] bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md hover:bg-indigo-100 transition-colors font-bold cursor-pointer"
+                className="min-h-11 text-[10px] bg-[#EAF3FF] dark:bg-blue-500/10 text-[#2563EB] dark:text-blue-300 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors font-bold cursor-pointer"
                 title="Inserts personalized nickname"
               >
                 + [nickname]
@@ -705,13 +705,13 @@ export default function BroadcastTool() {
             Use <code className="bg-gray-150 dark:bg-white/5 px-1 py-0.5 rounded font-mono font-bold">[name]</code> or <code className="bg-gray-150 dark:bg-white/5 px-1 py-0.5 rounded font-mono font-bold">[nickname]</code> anywhere to automatically address members directly in portal alerts and email boxes!
           </p>
 
-          <div className="bg-gray-50 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-150 dark:border-white/5 focus-within:ring-1 focus-within:ring-purple-500">
+          <div className="bg-gray-50 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-150 dark:border-white/5 focus-within:ring-1 focus-within:ring-blue-500">
             {/* Rich text formatting helper toolbar */}
             <div className="flex items-center gap-1 p-2 bg-gray-100 dark:bg-slate-950 border-b border-gray-200 dark:border-white/5 flex-wrap">
               <button
                 type="button"
                 onClick={() => insertText('**', '**')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Bold"
               >
                 <Bold size={14} />
@@ -719,7 +719,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('*', '*')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Italic"
               >
                 <Italic size={14} />
@@ -727,7 +727,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('\n### ', '')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Header"
               >
                 <Heading size={14} />
@@ -735,7 +735,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('\n- ', '')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Bullet List"
               >
                 <List size={14} />
@@ -748,7 +748,7 @@ export default function BroadcastTool() {
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                 className={cn(
-                  "p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400 flex items-center gap-1 text-[11px] font-bold cursor-pointer",
+                  "min-h-11 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400 flex items-center gap-1 text-[11px] font-bold cursor-pointer",
                   showEmojiPicker && "bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"
                 )}
                 title="Insert Emojis"
@@ -768,7 +768,7 @@ export default function BroadcastTool() {
                     onClick={() => {
                       insertText(emoji);
                     }}
-                    className="p-1 text-center hover:bg-gray-150 dark:hover:bg-[#252520] rounded-lg text-lg transition-transform hover:scale-115 cursor-pointer"
+                    className="min-h-11 min-w-11 p-2 text-center hover:bg-gray-150 dark:hover:bg-slate-800 rounded-lg text-lg transition-transform hover:scale-110 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
                     {emoji}
                   </button>
@@ -812,6 +812,7 @@ export default function BroadcastTool() {
           </div>
 
           <button
+            type="button"
             onClick={handleSend}
             disabled={sending || !title || !message || (!sendInPortal && !sendByEmail)}
             className={cn(
