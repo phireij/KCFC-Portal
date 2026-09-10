@@ -16,11 +16,11 @@ Recommended notification fields:
 - `status` — `unread` or `read`.
 - `link` — Portal deep link to the relevant workflow.
 - `sourceId` — source announcement, poll, duty, roster or broadcast identifier when available.
-- `sourceType` — semantic origin such as announcement, availability, assignment, duty, broadcast or system.
+- `sourceType` — semantic origin: announcement, availability, assignment, duty, broadcast or system.
 - `urgency` — normal, important or urgent.
 - `channels` — intended delivery channels after recipient preference and feature-gate evaluation.
 - `deliveries` — optional diagnostic states by channel.
-- `createdAt` — server timestamp.
+- `createdAt` — Firestore server timestamp.
 
 ## Event policy
 
@@ -34,17 +34,41 @@ Recommended notification fields:
 | Broadcast | Normal | Inbox | PWA | Email if allowed | Connected opt-in provider |
 | Urgent same-day notice | Urgent | Inbox | PWA | Email | Connected opt-in provider; SMS only when specifically authorized |
 
-## Routing helper
+## Shared implementation helpers
 
-`src/lib/communicationRouting.ts` centralizes recipient-level channel planning without sending anything. It intentionally separates policy from transport.
+### `src/lib/communicationRouting.ts`
 
-The helper guarantees:
+Centralizes recipient-level channel planning without sending anything. The helper guarantees:
 
 1. Inbox is retained.
 2. PWA is the primary routine alert when the recipient has not disabled that event class.
 3. Email is the default partner when enabled by the member preference.
 4. External providers are considered only when the caller explicitly enables connector routing, the member opted in and the provider is connected.
 5. The helper never reads provider credentials and never bypasses feature gates.
+
+### `src/lib/notificationRecord.ts`
+
+Builds a normalized transport-neutral Inbox payload with:
+
+- compatibility `type`,
+- unread status,
+- source metadata,
+- urgency,
+- de-duplicated channels with `inbox` automatically retained,
+- optional extra compatibility metadata.
+
+The caller adds Firestore `serverTimestamp()` at the database boundary.
+
+## Canonical communication types
+
+`src/types.ts` now defines shared aliases for:
+
+- `CommunicationChannel`,
+- `NotificationUrgency`,
+- `CommunicationSourceType`,
+- `CommunicationConnectorProvider`.
+
+This removes provider/source-type duplication and explicitly includes `duty` as a supported semantic notification source.
 
 ## External connector gates
 
@@ -70,12 +94,14 @@ CI rejects provider secret-style values exposed through `VITE_*` variables and v
 
 1. Preserve current notification creation behavior.
 2. Add semantic metadata to new records without rewriting historical documents.
-3. Move announcement creation to the central routing helper.
-4. Move liturgical availability notifications to the helper.
-5. Move final roster/assignment-change notifications to the helper.
-6. Move duty and leadership broadcasts to the helper.
+3. Move announcement creation to the shared routing + notification-record helpers.
+4. Move liturgical availability notifications to the helpers.
+5. Move final roster/assignment-change notifications to the helpers.
+6. Move duty and leadership broadcasts to the helpers.
 7. Add delivery diagnostics per transport.
 8. Activate an external connector only after staging, security review, user consent UX and explicit production approval.
+
+Each migration should be a small, CI-green increment. Existing message creation remains the fallback until its replacement path is verified.
 
 ## Privacy rules
 
