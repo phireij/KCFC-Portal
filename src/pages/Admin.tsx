@@ -3,6 +3,7 @@ import { useAuth } from '../App';
 import {
   BellRing,
   ChevronRight,
+  Inbox,
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
@@ -10,13 +11,14 @@ import {
   UsersRound,
 } from 'lucide-react';
 import BroadcastTool from '../components/admin/BroadcastTool';
+import LeadershipInquiries from '../components/admin/LeadershipInquiries';
 import LeadershipOverview from '../components/admin/LeadershipOverview';
 import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
 import LegacyAdmin from './LegacyAdmin';
 import { cn } from '../lib/utils';
 
 const adminRoles = ['admin', 'president'];
-type WorkspaceView = 'overview' | 'broadcast' | 'members' | 'advanced';
+type WorkspaceView = 'overview' | 'inquiries' | 'broadcast' | 'members' | 'advanced';
 
 const workspaceItems: Array<{
   id: WorkspaceView;
@@ -30,6 +32,12 @@ const workspaceItems: Array<{
     label: 'Leadership overview',
     description: 'Attention queues and safe operational status.',
     icon: ShieldCheck,
+  },
+  {
+    id: 'inquiries',
+    label: 'Website inquiries',
+    description: 'Review, mark and archive inbound messages.',
+    icon: Inbox,
   },
   {
     id: 'broadcast',
@@ -83,7 +91,7 @@ export default function Admin() {
           </div>
           <div className="grid grid-cols-2 gap-2 sm:min-w-[300px]">
             <HeaderMetric icon={UserCheck} label="Approvals" value="Focused" />
-            <HeaderMetric icon={UsersRound} label="Members" value="Migrating" />
+            <HeaderMetric icon={Inbox} label="Inquiries" value="Focused" />
             <HeaderMetric icon={BellRing} label="Broadcasts" value="Controlled" />
             <HeaderMetric icon={SlidersHorizontal} label="Settings" value="Role-gated" />
           </div>
@@ -96,7 +104,7 @@ export default function Admin() {
           <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">Choose the task you need. Routine operational work is separated from advanced legacy administration.</p>
         </div>
 
-        <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-4" role="tablist" aria-label="Leadership workspace sections">
+        <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-5" role="tablist" aria-label="Leadership workspace sections">
           {workspaceItems.map((item) => {
             const Icon = item.icon;
             const selected = activeView === item.id;
@@ -144,6 +152,8 @@ export default function Admin() {
           </div>
         )}
 
+        {activeView === 'inquiries' && <LeadershipInquiries />}
+
         {activeView === 'broadcast' && (
           <section aria-label="Member communications">
             <BroadcastTool />
@@ -172,7 +182,7 @@ export default function Admin() {
                 <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <h2 className="text-[15px] font-extrabold">Advanced legacy administration</h2>
-                  <p className="mt-1 text-[11px] leading-5">This preserved workspace contains role/ministry management plus low-frequency and potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p>
+                  <p className="mt-1 text-[11px] leading-5">This preserved workspace contains role/ministry management, Gmail inquiry replies and low-frequency potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p>
                 </div>
               </div>
             </div>
