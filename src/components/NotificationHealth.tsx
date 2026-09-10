@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BellRing,
   CheckCircle2,
@@ -9,6 +9,8 @@ import {
   Send,
   ShieldCheck,
   Smartphone,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useAuth } from '../App';
 import { registerDeviceToken, isStandaloneMode } from '../lib/fcmClient';
@@ -28,12 +30,16 @@ const channelCards: Array<{
   { id: 'whatsapp', label: 'WhatsApp', detail: 'Future / conditional', provider: 'whatsapp', stage: 'future' },
 ];
 
+type ServiceWorkerHealth = 'checking' | 'ready' | 'missing' | 'unsupported';
+
 export default function NotificationHealth() {
   const { user, profile } = useAuth();
   const [enabling, setEnabling] = useState(false);
   const [registrationState, setRegistrationState] = useState<'idle' | 'ok' | 'error'>('idle');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [serviceWorkerHealth, setServiceWorkerHealth] = useState<ServiceWorkerHealth>('checking');
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
 
   const permission = typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   const standalone = typeof window !== 'undefined' ? isStandaloneMode() : false;
@@ -42,21 +48,51 @@ export default function NotificationHealth() {
   const subscriptionCount = profile?.webPushSubscriptions?.length || 0;
   const endpointCount = tokenCount + subscriptionCount;
 
+  const refreshServiceWorkerHealth = async () => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      setServiceWorkerHealth('unsupported');
+      return;
+    }
+    setServiceWorkerHealth('checking');
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      setServiceWorkerHealth(registration?.active ? 'ready' : 'missing');
+    } catch (error) {
+      console.warn('Notification health: service worker inspection failed', error);
+      setServiceWorkerHealth('missing');
+    }
+  };
+
+  useEffect(() => {
+    void refreshServiceWorkerHealth();
+
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const health = useMemo(() => {
+    if (!online) return { label: 'Device is offline — Inbox will sync when connection returns', tone: 'warning' as const };
     if (permission === 'unsupported') return { label: 'Not supported in this browser', tone: 'warning' as const };
     if (!standalone && ios) return { label: 'Install the app first on iPhone/iPad', tone: 'warning' as const };
     if (permission === 'denied') return { label: 'Notifications are blocked', tone: 'error' as const };
     if (permission !== 'granted') return { label: 'Notifications are not enabled yet', tone: 'warning' as const };
+    if (serviceWorkerHealth === 'missing') return { label: 'Push service worker needs repair', tone: 'warning' as const };
     if (endpointCount === 0) return { label: 'Permission granted — device registration needs repair', tone: 'warning' as const };
     return { label: 'Notification delivery is ready', tone: 'good' as const };
-  }, [permission, standalone, ios, endpointCount]);
+  }, [permission, standalone, ios, endpointCount, online, serviceWorkerHealth]);
 
   const onboardingStep = useMemo(() => {
     if (ios && !standalone) return 1;
     if (permission !== 'granted') return 2;
-    if (endpointCount === 0) return 2;
+    if (endpointCount === 0 || serviceWorkerHealth === 'missing') return 2;
     return 3;
-  }, [ios, standalone, permission, endpointCount]);
+  }, [ios, standalone, permission, endpointCount, serviceWorkerHealth]);
 
   const connectorStatus = (provider: CommunicationConnector) => {
     const connection = profile?.connectedCommunicationApps?.find((item) => item.provider === provider);
@@ -66,23 +102,25 @@ export default function NotificationHealth() {
   };
 
   const enableNotifications = async () => {
-    if (!user) return;
+    if (!user || !online) return;
     setEnabling(true);
     setRegistrationState('idle');
     setTestResult(null);
     try {
       const token = await registerDeviceToken(user.uid, true);
       setRegistrationState(token ? 'ok' : 'error');
+      await refreshServiceWorkerHealth();
     } catch (error) {
       console.error('Notification health: registration failed', error);
       setRegistrationState('error');
+      await refreshServiceWorkerHealth();
     } finally {
       setEnabling(false);
     }
   };
 
   const sendTestNotification = async () => {
-    if (!user || permission !== 'granted') return;
+    if (!user || permission !== 'granted' || !online) return;
     setTesting(true);
     setTestResult(null);
     try {
@@ -150,17 +188,18 @@ export default function NotificationHealth() {
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <HealthMetric icon={Smartphone} label="App" value={standalone ? 'Installed' : 'Browser'} />
             <HealthMetric icon={BellRing} label="Push permission" value={permission === 'granted' ? 'Allowed' : permission === 'denied' ? 'Blocked' : permission === 'unsupported' ? 'Unsupported' : 'Not enabled'} />
             <HealthMetric icon={ShieldCheck} label="Device endpoints" value={String(endpointCount)} />
+            <HealthMetric icon={online ? Wifi : WifiOff} label="Push service" value={!online ? 'Offline' : serviceWorkerHealth === 'ready' ? 'Ready' : serviceWorkerHealth === 'checking' ? 'Checking' : serviceWorkerHealth === 'unsupported' ? 'Unsupported' : 'Repair needed'} />
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
             <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Recommended setup</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <SetupStep number={1} label="Install KCFC" detail={standalone ? 'Installed' : ios ? 'Add to Home Screen first' : 'Install when browser offers it'} done={standalone} active={onboardingStep === 1} />
-              <SetupStep number={2} label="Enable alerts" detail={permission === 'granted' && endpointCount > 0 ? 'Device registered' : 'Allow notifications and register device'} done={permission === 'granted' && endpointCount > 0} active={onboardingStep === 2} />
+              <SetupStep number={2} label="Enable alerts" detail={permission === 'granted' && endpointCount > 0 && serviceWorkerHealth !== 'missing' ? 'Device registered' : 'Allow notifications and register/repair device'} done={permission === 'granted' && endpointCount > 0 && serviceWorkerHealth !== 'missing'} active={onboardingStep === 2} />
               <SetupStep number={3} label="Send a test" detail="Confirm alerts reach this device" done={Boolean(testResult?.tone === 'ok')} active={onboardingStep === 3} />
             </div>
           </div>
@@ -169,7 +208,7 @@ export default function NotificationHealth() {
             <button
               type="button"
               onClick={enableNotifications}
-              disabled={!user || enabling || permission === 'denied' || permission === 'unsupported' || (ios && !standalone)}
+              disabled={!user || !online || enabling || permission === 'denied' || permission === 'unsupported' || (ios && !standalone)}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               {enabling ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
@@ -179,7 +218,7 @@ export default function NotificationHealth() {
             <button
               type="button"
               onClick={sendTestNotification}
-              disabled={!user || testing || permission !== 'granted' || endpointCount === 0}
+              disabled={!user || !online || testing || permission !== 'granted' || endpointCount === 0 || serviceWorkerHealth === 'missing'}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-[12px] font-bold text-[#123B66] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-400/20 dark:bg-white/5 dark:text-blue-200"
             >
               {testing ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -201,6 +240,14 @@ export default function NotificationHealth() {
             </div>
           )}
 
+          {!online && (
+            <p className="rounded-xl bg-amber-50 p-3 text-[11px] leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"><strong>Offline:</strong> the Inbox can remain your durable record, but registration repair and test notifications need an internet connection.</p>
+          )}
+
+          {serviceWorkerHealth === 'missing' && online && permission === 'granted' && (
+            <p className="rounded-xl bg-amber-50 p-3 text-[11px] leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"><strong>Push service needs repair:</strong> use <strong>Repair / refresh alerts</strong> to restore the service worker/device registration before sending a test.</p>
+          )}
+
           {ios && !standalone && (
             <p className="rounded-xl bg-blue-50 p-3 text-[11px] leading-5 text-slate-600 dark:bg-blue-500/5 dark:text-slate-300"><strong>iPhone/iPad:</strong> open the browser Share menu, choose <strong>Add to Home Screen</strong>, launch KCFC from the Home Screen, then return here to enable alerts.</p>
           )}
@@ -214,7 +261,7 @@ export default function NotificationHealth() {
           <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Communication channels</p>
           <div className="mt-3 space-y-2">
             <ChannelRow label="KCFC Inbox" detail="Durable source of truth" status="Primary record" strong />
-            <ChannelRow label="PWA Push" detail="Primary alert channel" status={permission === 'granted' && endpointCount > 0 ? 'Enabled' : 'Setup needed'} strong />
+            <ChannelRow label="PWA Push" detail="Primary alert channel" status={permission === 'granted' && endpointCount > 0 && serviceWorkerHealth !== 'missing' ? 'Enabled' : 'Setup needed'} strong />
             {channelCards.map((channel) => (
               <ChannelRow
                 key={channel.id}
