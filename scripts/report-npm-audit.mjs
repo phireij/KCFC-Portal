@@ -34,6 +34,10 @@ if (parsed?.metadata?.vulnerabilities) {
     lines.push(`| ${severity} | ${counts[severity]} |`);
   }
   lines.push(`| **total** | **${counts.total}** |`, '');
+
+  if (counts.critical > 0 || counts.high > 0) {
+    process.stdout.write(`::warning title=Production dependency audit::${counts.critical} critical and ${counts.high} high runtime dependency vulnerabilities remain to be triaged before production readiness.\n`);
+  }
 } else {
   lines.push('No parseable vulnerability totals were returned by the registry for this run.', '');
 }
