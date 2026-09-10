@@ -1,135 +1,167 @@
-# KCFC Portal — Communication Routing & Notification Health
+# KCFC Communications Routing & Notification Health
 
-## Objective
+Status: approved redevelopment architecture; external connectors remain disabled.
 
-Important KCFC information must remain available inside the Portal even when a device push, email, or optional external messaging channel is unavailable.
+## Channel hierarchy
 
-The durable source of truth is the **KCFC Inbox**. Delivery channels are secondary transports, not independent message stores.
+1. **KCFC Inbox** — durable source of truth.
+2. **PWA / Web Push** — primary alert channel.
+3. **Email** — default partner channel.
+4. **LINE** — first optional secondary connector for Japan-focused usage.
+5. **Telegram** — optional secondary connector.
+6. **WhatsApp** — future / conditional after onboarding and pricing validation.
+7. **Viber** — low priority because new bot usage is commercial.
+8. **SMS** — future paid emergency escalation only when specifically authorized.
 
-## Approved channel hierarchy
+No secondary messaging app is required for KCFC membership or Portal use.
 
-1. **KCFC Inbox** — durable message record and read/unread state.
-2. **PWA / Web Push** — primary alert channel for supported installed devices.
-3. **Email** — default partner channel; important operational messages should not rely on email alone.
-4. **LINE** — first optional member-connected secondary channel for Japan-focused usage. Free-plan quota is limited and must be monitored before send.
-5. **Telegram** — optional secondary channel with Bot API integration.
-6. **WhatsApp** — future/conditional connector; pricing and onboarding must be revalidated before implementation.
-7. **Viber** — low-priority future connector because new bots are commercial.
-8. **SMS** — future paid emergency/escalation channel only, not baseline.
+## Core rule: message record before transport
 
-No member is required to install or connect a secondary messaging app.
+Operational communication must create the KCFC Inbox record regardless of whether push/email/external delivery later succeeds. A transport failure must not erase or prevent the durable Portal record.
 
-## Message categories
+## Member preferences
 
-- General announcements
-- Liturgical availability request
-- Availability deadline reminder
-- Liturgical roster published
-- Assignment changed / reassigned
-- Community duty assignment
-- Urgent community notice
-- Leadership/admin notice
+Members can separately control routine alerts for:
 
-Each category can define a default routing policy while honoring member opt-in where appropriate.
+- announcements,
+- liturgical availability requests,
+- published assignments / changes,
+- community duties,
+- broadcasts,
+- urgent notices,
+- email partner delivery,
+- future optional connected provider delivery.
 
-## Routing principles
+Urgent alerts should remain exceptional. Preferences must not be used to hide durable Inbox history.
 
-- Always create the Portal Inbox record first for important operational messages.
-- Push should deep-link to the exact Portal context.
-- Email is normally paired with high-value operational messages but is not considered proof of delivery.
-- Optional external channels are used only for members who explicitly connected and enabled them.
-- Avoid sending the same low-priority announcement through every connector.
-- Urgency should control escalation, not convenience.
-- LINE quota/cost should be checked before bulk sending.
-- External channel failures must never delete or invalidate the Portal Inbox copy.
+## Routing implementation
 
-## Connected Communication Apps
+`src/lib/communicationRouting.ts` is the policy layer. It takes event kind, recipient preferences, connected providers and an explicit external-routing feature gate and returns urgency + intended channels.
 
-Profile / Preferences will expose a **Connected Communication Apps** section.
+Important properties:
 
-Each supported connector uses states such as:
+- Inbox is always present.
+- PWA is the normal primary alert when that event class is allowed.
+- Email is the default partner unless disabled by preference/policy.
+- External providers are not added unless the caller explicitly permits connector routing and the member both opted in and is connected.
+- The routing helper does not send, read secrets or override provider feature gates.
 
-- Not connected
-- Connecting
-- Connected
-- Needs attention
-- Disabled by member
+`src/lib/notificationRecord.ts` is the normalized Inbox payload builder. It centralizes source metadata, urgency and de-duplicated channel metadata while leaving Firestore timestamps at the database boundary.
 
-Member actions:
+`src/types.ts` contains canonical communication source/provider/channel types.
 
-- Connect
-- Disconnect
-- Send test message
-- Enable/disable eligible message categories
+## Connector feature gates
 
-Server-side requirements:
+Server gates:
 
-- Map Firebase UID to external platform user ID securely.
-- Keep platform secrets and access tokens server-side only.
-- Record consent and connection timestamps.
-- Allow immediate disconnect.
-- Do not expose another member's connector identifiers.
+- `KCFC_CONNECTOR_LINE_ENABLED`
+- `KCFC_CONNECTOR_TELEGRAM_ENABLED`
+- `KCFC_CONNECTOR_WHATSAPP_ENABLED`
+- `KCFC_CONNECTOR_VIBER_ENABLED`
 
-## Notification Health
+Browser-safe UI availability gates:
 
-The Portal should show a simple health summary rather than making members diagnose browser technology.
+- `VITE_KCFC_LINE_CONNECTOR_ENABLED`
+- `VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED`
+- `VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED`
+- `VITE_KCFC_VIBER_CONNECTOR_ENABLED`
 
-### Member-facing status
+All example values default to `false`.
 
-- App installed / browser mode
-- Push permission: enabled / blocked / not requested
-- Current device subscription: healthy / needs repair
-- Last successful token/subscription refresh
-- Last test notification result
-- Email partner channel: enabled / disabled
-- Optional connected apps and health
+Browser flags may indicate whether a Connect UI is available. They do **not** authorize sending. Server credentials and final server feature gates remain authoritative.
 
-### Primary actions
+CI verifies connector example defaults remain OFF and rejects provider-secret style `VITE_*` variables.
 
-1. Install KCFC Portal
-2. Enable Notifications
-3. Send Test Notification
-4. Done
+## Connected Communication Apps UX
 
-On iOS/iPadOS, installation guidance should lead with **Add to Home Screen** before push enrollment where required.
+Profile / Preferences may show:
 
-## Reliability rules
+- LINE — Connect / Connected / Disconnect / Test when implementation is approved.
+- Telegram — same lifecycle after LINE foundation.
+- WhatsApp — future/conditional.
+- Viber — future/low priority.
 
-- Support multiple device subscriptions per member.
-- Remove invalid/expired push tokens when the provider reports they are no longer usable.
-- Never silently mark push healthy only because browser permission is granted; a usable subscription/token must also exist.
-- Notification taps must resolve to absolute/deep-link-safe URLs.
-- App badge is best-effort where supported.
-- Sound and vibration are best-effort; operating-system Focus/DND and browser settings remain authoritative.
+Current staging-safe status vocabulary:
 
-## Delivery diagnostics
+- **Connected** — a valid server-side mapping is represented by the member profile/read model.
+- **Available to connect** — browser-safe gate allows the UI to be exposed; actual secure linking still required.
+- **Coming next** — planned but current feature gate is OFF.
+- **Future** — not in the active connector implementation path.
 
-Where a channel supports it, store delivery state separately:
+Provider user IDs and provider credentials must never be shown in the member UI.
 
-- queued
-- sent
-- delivered
-- read
-- failed
-- skipped_not_connected
-- skipped_preference
-- skipped_quota
+## Account-linking security
 
-A provider acknowledging a request is not automatically equivalent to a human reading it.
+The detailed contract is maintained in `connector-account-linking-contract.md`. Minimum requirements include:
 
-## Privacy and safety
+- Firebase-authenticated member begins linking.
+- Server creates a short-lived one-time challenge/state.
+- Provider callback/webhook is validated server-side.
+- Server maps provider account to Firebase UID.
+- Consent and connection timestamp are recorded.
+- Disconnect stops future routing.
+- Provider credentials/tokens remain server-side.
+- Audit log identifies actor/provider/result without leaking secrets.
 
-- External platform IDs are private operational identifiers.
-- Message content must respect the message audience before it is routed externally.
-- Private committee/member messages must never be projected onto the public website.
-- Public website publishing is a separate channel decision and only valid for content with a public audience.
+## PWA installation and notification onboarding
 
-## Implementation sequence
+Installation and notification enrollment are separate responsibilities.
 
-1. Normalize Portal Inbox + routing metadata.
-2. Add PWA notification-health diagnostics and test flow.
-3. Pair operational notification policies with email.
-4. Add LINE account linking and quota-aware routing.
-5. Add Telegram linking/routing.
-6. Re-evaluate WhatsApp pricing/onboarding.
-7. Keep Viber and SMS as later optional connectors.
+Recommended flow:
+
+`Install KCFC → Enable Notifications → Device Registration/Repair → Send Test Notification → Done`
+
+The install component now focuses only on installation:
+
+- iPhone/iPad: Safari Share → Add to Home Screen → launch KCFC icon.
+- Android/Chromium: native install prompt when available, browser-menu fallback otherwise.
+- Desktop browsers: install control/browser-menu guidance where supported.
+
+Notification Health owns:
+
+- standalone/browser mode,
+- notification permission,
+- registered endpoint count,
+- healthy/setup-needed/blocked/repair-needed state,
+- enable/repair action,
+- authenticated test-push action,
+- connector readiness summary.
+
+## iOS / Android behavior
+
+### iOS / iPadOS
+
+Web Push requires the supported Home Screen web-app flow and explicit member interaction. The Portal must guide installation before notification enrollment when needed.
+
+### Android / Chromium
+
+Use the native browser installation prompt when available, with a clear manual fallback. Notification enrollment remains an explicit member action.
+
+### Sounds / vibration
+
+Sound, vibration, badges and lock-screen behavior are OS/browser/user-setting dependent. The Portal can request and test delivery but must never promise a forced custom alert sound.
+
+## Multi-device / endpoint health
+
+- A member may have more than one registered device.
+- Invalid or expired tokens/subscriptions should be cleaned without breaking message creation.
+- Permission granted with zero valid endpoints should show repair-needed state.
+- A failed transport should be diagnosable without exposing credentials.
+
+## Delivery diagnostics roadmap
+
+Normalized notification records may carry a `deliveries` array containing channel status such as queued, sent, delivered, failed, skipped or read where the provider supports it.
+
+The UI should expose member-safe diagnostics such as:
+
+- Inbox saved,
+- push attempted / failed,
+- email attempted,
+- connected provider not eligible,
+- device registration needs attention.
+
+Internal provider error payloads and secrets must not be displayed to ordinary members.
+
+## Production authority
+
+No LINE/Telegram/WhatsApp/Viber/SMS live connector activation, mass outbound test or production communication cutover occurs without explicit approval, even when code and staging are green.
