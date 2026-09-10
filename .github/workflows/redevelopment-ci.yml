@@ -42,7 +42,13 @@ jobs:
       - name: Verify liturgical assignment diff
         run: npx tsx scripts/verify-liturgical-assignment-diff.ts
 
-      - name: Build
+      - name: Stage Polls communication migration candidate
+        run: node scripts/stage-polls-communication-migration.mjs
+
+      - name: Typecheck staged Polls migration
+        run: npm run lint
+
+      - name: Build staged Polls migration
         run: npm run build
 
       - name: Guard external connector defaults
