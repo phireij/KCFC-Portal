@@ -12,13 +12,20 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../App';
 import { registerDeviceToken, isStandaloneMode } from '../lib/fcmClient';
+import { communicationConnectorFlags, type CommunicationConnector } from '../lib/communicationConnectorFlags';
 import { cn } from '../lib/utils';
 
-const channelCards = [
-  { id: 'email', label: 'Email', detail: 'Default partner channel', icon: Mail, status: 'included' as const },
-  { id: 'line', label: 'LINE', detail: 'First optional secondary channel', icon: MessageCircle, status: 'planned' as const },
-  { id: 'telegram', label: 'Telegram', detail: 'Optional secondary channel', icon: Send, status: 'planned' as const },
-  { id: 'whatsapp', label: 'WhatsApp', detail: 'Future / conditional', icon: MessageCircle, status: 'future' as const },
+const channelCards: Array<{
+  id: 'email' | CommunicationConnector;
+  label: string;
+  detail: string;
+  provider?: CommunicationConnector;
+  stage: 'included' | 'planned' | 'future';
+}> = [
+  { id: 'email', label: 'Email', detail: 'Default partner channel', stage: 'included' },
+  { id: 'line', label: 'LINE', detail: 'First optional secondary channel', provider: 'line', stage: 'planned' },
+  { id: 'telegram', label: 'Telegram', detail: 'Optional secondary channel', provider: 'telegram', stage: 'planned' },
+  { id: 'whatsapp', label: 'WhatsApp', detail: 'Future / conditional', provider: 'whatsapp', stage: 'future' },
 ];
 
 export default function NotificationHealth() {
@@ -50,6 +57,13 @@ export default function NotificationHealth() {
     if (endpointCount === 0) return 2;
     return 3;
   }, [ios, standalone, permission, endpointCount]);
+
+  const connectorStatus = (provider: CommunicationConnector) => {
+    const connection = profile?.connectedCommunicationApps?.find((item) => item.provider === provider);
+    if (connection?.status === 'connected') return 'Connected';
+    if (communicationConnectorFlags[provider]) return 'Available to connect';
+    return provider === 'whatsapp' || provider === 'viber' ? 'Future' : 'Coming next';
+  };
 
   const enableNotifications = async () => {
     if (!user) return;
@@ -202,10 +216,15 @@ export default function NotificationHealth() {
             <ChannelRow label="KCFC Inbox" detail="Durable source of truth" status="Primary record" strong />
             <ChannelRow label="PWA Push" detail="Primary alert channel" status={permission === 'granted' && endpointCount > 0 ? 'Enabled' : 'Setup needed'} strong />
             {channelCards.map((channel) => (
-              <ChannelRow key={channel.id} label={channel.label} detail={channel.detail} status={channel.status === 'included' ? 'Included' : channel.status === 'planned' ? 'Coming next' : 'Future'} />
+              <ChannelRow
+                key={channel.id}
+                label={channel.label}
+                detail={channel.detail}
+                status={channel.provider ? connectorStatus(channel.provider) : channel.stage === 'included' ? 'Included' : channel.stage === 'planned' ? 'Coming next' : 'Future'}
+              />
             ))}
           </div>
-          <p className="mt-3 text-[10px] leading-4 text-slate-400">Optional messaging apps will never be required. When enabled later, they will only mirror selected KCFC alerts and deep-link members back into the Portal.</p>
+          <p className="mt-3 text-[10px] leading-4 text-slate-400">Optional messaging apps will never be required. A provider can become “Available to connect” only when its browser-safe feature gate is enabled; actual delivery still requires secure server-side account linking and production approval.</p>
         </div>
       </div>
     </section>
