@@ -41,6 +41,12 @@ import { useAuth } from '../App';
 import { Poll, PollResponse, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import LegacyPolls from './LegacyPolls';
+import {
+  buildAvailabilityCompletionCreatorPlan,
+  buildAvailabilityRequestCreatorPlan,
+  buildPublishedRosterCreatorPlan,
+} from '../lib/liturgicalCreatorPlan';
+import { appendCommunicationNotificationsToBatch } from '../lib/communicationFirestore';
 
 type PageMode = 'availability' | 'leader' | 'legacy';
 type LeaderPanel = 'progress' | 'matrix' | 'assignments';
@@ -307,26 +313,15 @@ export default function Polls() {
       const pollRecord = polls.find((item) => item.id === poll.id) as ExtendedPoll & { availabilityCompletionNotifiedAt?: unknown };
       if (pollRecord?.availabilityCompletionNotifiedAt) return;
 
-      const leadershipRecipients = members.filter((member) =>
-        (member.roles || []).some((role) => ['admin', 'president'].includes(role)),
-      );
-      const recipientIds = new Set<string>();
-      if (poll.createdBy) recipientIds.add(poll.createdBy);
-      leadershipRecipients.forEach((member) => recipientIds.add(member.uid));
+      const creatorPlan = buildAvailabilityCompletionCreatorPlan({
+        members,
+        pollId: poll.id,
+        pollTitle: poll.title,
+        createdBy: poll.createdBy,
+      });
 
       const batch = writeBatch(db);
-      recipientIds.forEach((uid) => {
-        const notificationRef = doc(collection(db, 'notifications'));
-        batch.set(notificationRef, {
-          userId: uid,
-          title: 'Liturgical availability complete',
-          message: `All eligible ministry members have responded to “${poll.title}”. You can close the request and begin assignment planning.`,
-          type: 'system',
-          status: 'unread',
-          link: `/polls?id=${poll.id}&leader=1`,
-          createdAt: serverTimestamp(),
-        });
-      });
+      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
       batch.update(doc(db, 'polls', poll.id), { availabilityCompletionNotifiedAt: serverTimestamp() });
       await batch.commit();
     } catch (error) {
@@ -429,19 +424,13 @@ export default function Polls() {
         updatedAt: serverTimestamp(),
       });
 
-      const batch = writeBatch(db);
-      eligibleMembers.forEach((member) => {
-        const notificationRef = doc(collection(db, 'notifications'));
-        batch.set(notificationRef, {
-          userId: member.uid,
-          title: 'New liturgical availability request',
-          message: `${form.title.trim()}: please select every Mass where you are available to serve.`,
-          type: 'system',
-          status: 'unread',
-          link: `/polls?id=${created.id}`,
-          createdAt: serverTimestamp(),
-        });
+      const creatorPlan = buildAvailabilityRequestCreatorPlan({
+        eligibleMembers,
+        pollId: created.id,
+        pollTitle: form.title.trim(),
       });
+      const batch = writeBatch(db);
+      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
       await batch.commit();
 
       setForm({
@@ -547,18 +536,13 @@ export default function Polls() {
         updatedAt: serverTimestamp(),
       });
 
-      assignedUserIds(poll).forEach((uid) => {
-        const notificationRef = doc(collection(db, 'notifications'));
-        batch.set(notificationRef, {
-          userId: uid,
-          title: 'Your liturgical schedule is ready',
-          message: `The final roster for “${poll.title}” has been published. Please review your assignments.`,
-          type: 'system',
-          status: 'unread',
-          link: '/duties?view=mine',
-          createdAt: serverTimestamp(),
-        });
+      const creatorPlan = buildPublishedRosterCreatorPlan({
+        members,
+        assignedUserIds: assignedUserIds(poll),
+        pollId: poll.id,
+        pollTitle: poll.title,
       });
+      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
       await batch.commit();
     } catch (error) {
       console.error('Assignments: failed to publish roster', error);
