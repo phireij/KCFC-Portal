@@ -1,73 +1,122 @@
-# KCFC Portal Redevelopment Baseline — 2026-09-09
+# KCFC Portal Redevelopment Baseline
 
-## Status
+Date established: 9 September 2026
+Current specification revision: **v4 — Communications + Schedule + Staging Safeguards (10 September 2026)**
 
-Redevelopment is active on `redesign/mobile-first-v2`. Production `main` remains untouched until reviewed and approved for merge.
+## Repository baseline
 
-## Approved product direction
+- Repository: `phireij/KCFC-Portal`
+- Production branch: `main`
+- Verified production baseline SHA: `653cc7229600fd7baff17a21a21f12d267b66d2b`
+- Redevelopment branch: `redesign/mobile-first-v2`
+- Production `main` remains untouched while redevelopment continues in the branch/draft PR.
 
-- Mobile-first member experience with a desktop leadership workspace.
-- KCFC visual identity: Deep Navy `#123B66`, Royal Blue `#2563EB`, Soft Sky `#EAF3FF`, restrained Warm Gold `#D6A84B`, cool off-white surfaces.
-- Primary member navigation: **Home / Schedule / Community / Updates / More**.
-- Existing Firebase Authentication UIDs and Firestore data are preserved. Schema evolution must be additive and migration-safe.
-- KCFC Inbox is the durable communications source of truth. PWA push is the primary alert channel, with email as its default partner. Optional member-connected secondary channels are planned in this priority order: LINE, Telegram, WhatsApp (subject to current provider onboarding/pricing), with Viber lower priority. SMS is a future paid escalation channel rather than a baseline dependency.
+## Product objective
 
-## Schedule UX priority
+Redevelop the existing KCFC Portal into a mobile-first, member-friendly community platform while preserving current Firebase Auth identities, Firestore records and critical operating workflows.
 
-Schedule browsing is a P0 member experience, not an admin-only matrix.
+The new Portal must make the most common member questions answerable immediately:
 
-The new Schedule experience begins with three member-oriented views:
+- What is happening next?
+- Where am I serving?
+- When am I serving?
+- What do I need to respond to?
+- What important KCFC message did I miss?
 
-1. **All schedule** — chronological KCFC Mass schedule with expandable published ministry rosters.
-2. **My ministry** — a personalized timeline containing only the member's upcoming liturgical assignments and community duties.
-3. **Availability & duties / Plan & manage** — compatibility access to the existing detailed duty and assignment workspace while the leader workflow is progressively rebuilt.
+Leadership workflows must be powerful without exposing their complexity to ordinary members.
 
-Liturgical rosters shown in the member-facing schedule currently focus on:
+## Navigation baseline
 
-- Lector & Commentator
-- Ushers
-- Altar Servers
+Mobile primary navigation is fixed at five destinations:
 
-The existing code contains a PPT assignment phase, but PPT is not treated as a primary ministry in the new member-facing experience until the product owner confirms that requirement.
+1. Home
+2. Schedule
+3. Community
+4. Updates
+5. More
 
-## Availability-to-assignment workflow
+Desktop uses the same information architecture through a persistent left sidebar and wider leadership/data views.
 
-1. An authorized administrator/officer/ministry leader creates a multi-Mass availability request.
-2. Eligible ministry members select every Mass where they are available to serve.
-3. Leaders monitor responses and missing responders.
-4. The request closes and becomes the availability source for assignment planning.
-5. Leaders build the roster by ministry.
-6. A final roster is published separately from availability.
-7. Members receive their assignments and reminders through the Portal communications layer.
+## Visual baseline
 
-Member-facing language should use **Availability Request**, **My Ministry Schedule**, **Published Roster**, and **Assignments**, avoiding implementation terms such as “committee poll” or “matrix in duties.”
+The previous olive visual identity is retired for redevelopment surfaces.
 
-## First implementation increment
+- KCFC Navy: `#123B66`
+- Royal Blue: `#2563EB`
+- Soft Sky: `#EAF3FF`
+- Warm Gold: `#D6A84B` sparingly
+- Cool Off-White: `#F7F9FC`
+- Blue-Black: `#172033`
+- Slate: `#64748B`
+- Border: `#DDE5EE`
 
-Commit scope:
+Design priorities: readable mobile typography, 44 px minimum touch targets, restrained card styling, strong information hierarchy, accessible focus states and WCAG AA-targeted contrast.
 
-- New KCFC design tokens and accessible base reading scale.
-- Persistent desktop sidebar.
-- Five-item mobile navigation without horizontal scrolling.
-- Mobile More sheet for Resources, Inbox, Profile, Accounting and leadership tools.
-- Role-aware tool visibility.
-- New Schedule wrapper preserving the existing duties implementation as `LegacyDuties.tsx`.
-- Whole-schedule browsing and a personal ministry timeline layered over existing Firestore data without destructive writes.
+## Schedule / liturgical baseline
 
-## Safety constraints
+Availability to serve is distinct from attendance and distinct from the final published assignment.
 
-- Do not delete or regenerate existing Firebase users.
-- Do not change production Firestore data as part of UI development.
-- Do not expose draft/private assignment data to ordinary members.
-- Member schedule shows assignment names only when the existing liturgical workflow is closed and the core Lector/Commentator, Altar Server and Usher phases are completed.
-- Legacy deep links such as `/duties?tab=liturgical&pollId=...` remain functional by automatically opening the detailed management view.
+Leader flow:
 
-## Next increments
+`Create Availability Request → Monitor Responses → Availability Matrix → Build Assignments → Publish Final Roster`
 
-- Home redesign with next assignment, pending availability, latest announcement and schedule highlights.
-- Dedicated availability request member screen and submitted-state screen.
-- Leader response progress and availability matrix redesign.
-- New assignment builder and explicit Published Roster state.
-- Notification onboarding / health diagnostics and communication-channel preferences.
-- Community directory and Updates redesign.
-- Public/parishioner schedule and website publishing projection.
+Member flow:
+
+`Open Request → Select every Mass where available → Submit / revise → Receive final assignment → Browse My Ministry`
+
+The member-facing Schedule must support both **My Ministry** and **Entire Schedule**, including search, ministry filters, upcoming/history browsing, Mass details and explicit roster publication privacy.
+
+## Communications baseline
+
+1. KCFC Inbox is the durable source of truth.
+2. PWA/Web Push is the primary alert channel.
+3. Email is the default partner channel.
+4. LINE is the first optional Japan-focused connector.
+5. Telegram is the next optional connector.
+6. WhatsApp is future/conditional.
+7. Viber is low priority.
+8. SMS remains a future paid escalation path.
+
+Optional external messaging apps are never required for KCFC membership.
+
+Install/notification onboarding is deliberately separated:
+
+`Install KCFC → Enable Notifications → Device Registration/Repair → Send Test Notification → Done`
+
+External provider credentials are server-side only. Provider linking is opt-in, mapped to Firebase UID and disabled by feature flags until explicitly approved.
+
+## Data preservation baseline
+
+- Existing Firebase UID remains the identity key.
+- No member account recreation for first cutover.
+- Schema evolution is additive/backward-compatible.
+- Existing users, polls, responses, duties, assignments, announcements, notifications, resources and accounting records remain readable.
+- Critical legacy engines may remain behind redesigned shells until replacement workflows pass regression validation.
+- No production users are used as dummy test accounts.
+
+## Public website baseline
+
+The Portal is intended to become the editorial source of truth for future public announcements/schedules, but website synchronization remains OFF until separately designed, security-reviewed and explicitly approved.
+
+Private member data, internal roster details, accounting, poll responses and internal leadership content must never be exposed through the public projection.
+
+## Validation and production authority
+
+Redevelopment CI validates TypeScript and production build and includes connector-safety guards.
+
+Before requesting production approval, staging must validate representative roles, existing data compatibility, mobile navigation, Schedule, liturgical planning, PWA reliability, communication routing, Resources, Accounting/Admin compatibility, accessibility, backup and rollback.
+
+The following remain explicit approval gates:
+
+- merge/deploy to production,
+- destructive migration,
+- bulk user mutation,
+- live external connector activation,
+- mass outbound messaging tests,
+- public website publishing cutover.
+
+## Documentation baseline
+
+Living redevelopment documentation is maintained under `docs/redevelopment/`, including schedule UX, liturgical workflow, communication routing, communication event metadata, connector linking, staging readiness and v4 specification release notes.
+
+Completion will also require member/admin guides, quick-start material, presentation material and task-based video tutorial scripts/storyboards after the stable release candidate exists.
