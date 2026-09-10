@@ -57,6 +57,9 @@ jobs:
       - name: Verify Core status transition planning
         run: npx tsx scripts/verify-core-status-transition.ts
 
+      - name: Verify Core status mutation safeguards
+        run: npx tsx scripts/verify-core-status-mutation-plan.ts
+
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
