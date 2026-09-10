@@ -5,12 +5,13 @@ import {
   type Firestore,
   type WriteBatch,
 } from 'firebase/firestore';
+import type { CommunicationChannel } from '../types';
 import type { CommunicationBatchPlan } from './communicationBatch';
 import type { PlannedNotificationRecord } from './notificationPersistence';
 import { materializeNotificationRecord } from './notificationPersistence';
 
 type NotificationPlanLike = {
-  routing: { channels: any[] };
+  routing: { channels: CommunicationChannel[] };
   record: PlannedNotificationRecord;
 };
 
