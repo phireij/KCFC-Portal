@@ -39,6 +39,9 @@ jobs:
       - name: Verify liturgical creator plans
         run: npx tsx scripts/verify-liturgical-creator-plans.ts
 
+      - name: Verify liturgical assignment diff
+        run: npx tsx scripts/verify-liturgical-assignment-diff.ts
+
       - name: Build
         run: npm run build
 
