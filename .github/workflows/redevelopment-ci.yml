@@ -54,6 +54,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Stage per-member PWA delivery evidence server migration
+        run: node scripts/stage-pwa-delivery-evidence-server.mjs
+
+      - name: Typecheck staged PWA evidence server migration
+        run: npm run lint
+
+      - name: Build staged PWA evidence server migration
+        run: npm run build
+
       - name: Guard external connector defaults
         shell: bash
         run: |
