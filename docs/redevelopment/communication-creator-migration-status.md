@@ -7,128 +7,85 @@ This document tracks progressive adoption of the shared communication-routing an
 
 ## Shared foundations
 
-- `src/lib/communicationRouting.ts`
-  - Inbox always remains the durable record.
-  - PWA/Web Push is the primary alert when the member preference and composer allow it.
-  - Email is the default partner when the member preference and composer allow it.
-  - External providers require explicit feature-gate permission, member opt-in and connected state.
-  - Composer-level PWA/email suppression is supported without suppressing Inbox.
-  - Routing rationale explains event-class mute, composer suppression, email-partner opt-out, connector feature-gate blocking, connector opt-in and connector connection state separately.
-- `src/lib/notificationRecord.ts`
-  - Normalizes source, urgency and channel metadata for new Inbox records.
-- `src/lib/communicationAudience.ts`
-  - Centralizes current audience eligibility for Public, Parishioners, KCFC Members and Leadership.
-  - Disabled accounts are excluded from new operational delivery.
-- `src/lib/communicationBatch.ts`
-  - De-duplicates recipient UIDs and FCM tokens.
-  - Produces PWA recipient/token sets only for recipients whose routing plan includes PWA.
-  - Produces email recipient IDs independently from PWA routing.
-  - Produces per-provider LINE / Telegram / WhatsApp / Viber recipient IDs only when a plan explicitly contains that provider.
-  - Remains pure and non-sending.
-- `src/lib/communicationRecipient.ts`
-  - Converts existing member profiles into transport-neutral recipients and excludes disabled accounts from targeted recipient sets.
-- `src/lib/notificationPersistence.ts`
-  - Adds database-bound timestamps without moving Firebase concerns into pure planners.
-- `src/lib/communicationFirestore.ts`
-  - Appends planned Inbox records to an existing Firestore `WriteBatch` without committing it or executing any transport.
-- `src/lib/liturgicalCommunication.ts`
-  - Provides pure builders for availability requests, availability-complete notices, published liturgical assignments and assignment-change notices.
-  - Provides batch planners for availability requests, completion notices, publication and assignment changes.
-- `src/lib/liturgicalCreatorPlan.ts`
-  - Maps current member profiles and liturgical events into recipient-aware creator plans.
-- `src/lib/liturgicalAssignmentDiff.ts`
-  - Compares the last published assignment snapshot with the current draft and identifies affected members only.
-- `src/lib/liturgicalPublicationPlan.ts`
-  - Chooses initial publication, revision or unchanged-republication behavior and increments roster revision safely.
-- `src/lib/dutyCommunication.ts`
-  - Provides a pure community-duty notification builder and batch planner.
-- `src/lib/broadcastCommunication.ts`
-  - Provides routine/urgent broadcast builders and batch planning without activating any external provider.
-- `src/lib/broadcastCreatorPlan.ts`
-  - Adds leadership-composer personalization while excluding disabled profiles and retaining preference-aware Inbox/PWA routing.
+- `communicationRouting.ts` keeps KCFC Inbox as the durable source of truth, applies event-class preferences, supports independent PWA/email composer gates, and keeps external connectors approval-gated.
+- `notificationRecord.ts`, `notificationPersistence.ts` and `communicationFirestore.ts` normalize new Inbox records and preserve database-bound timestamps/atomic batch ownership.
+- `communicationBatch.ts` de-duplicates recipient UIDs and FCM tokens and exposes independent PWA, email and optional-provider recipient sets.
+- `communicationRecipient.ts` maps current user profiles into communication recipients while excluding disabled accounts from targeted delivery.
+- `liturgicalCommunication.ts`, `liturgicalCreatorPlan.ts`, `liturgicalAssignmentDiff.ts` and `liturgicalPublicationPlan.ts` cover availability, completion, initial publication, revision publication and no-change republish behavior.
+- `dutyCommunication.ts` provides normalized community-duty planning.
+- `broadcastCommunication.ts` and `broadcastCreatorPlan.ts` provide normalized leadership broadcast planning, personalization and preference-aware PWA/email recipient sets.
+- `deliveryDiagnostics.ts` defines queued/sent/delivered/failed/skipped/read state handling and deliberately does not equate a planned channel with successful delivery.
 
 ## Creator migration table
 
 | Creator | Current state | Notes |
 | --- | --- | --- |
-| Updates / Announcements | **Normalized + CI GREEN** | Uses shared audience eligibility, routing policy and notification-record helper. Inbox is retained even when routine announcement alerts are muted. PWA token collection follows the per-recipient routing result. External connectors remain disabled. |
-| Liturgical availability request | **Integrated + CI GREEN** | Current `Polls.tsx` creator now appends normalized availability Inbox plans while leaving poll creation and response storage behavior intact. |
-| Availability completion notice | **Integrated + CI GREEN** | Completion detection now uses the shared leadership completion plan and a one-time `availabilityCompletionNotifiedAt` marker. |
-| Published liturgical assignment | **Integrated + CI GREEN** | Initial publication persists the explicit publication state and normalized assignment notifications atomically in the existing Firestore batch. |
-| Assignment change / republish | **Integrated + CI GREEN** | Last published assignments are snapshotted; revised publication notifies only affected members, increments `rosterRevision`, and unchanged republication emits no redundant assignment notification. |
-| Community duty assignment | **Auto-assignment Inbox normalized; CI validation in progress** | The legacy automatic assignment algorithm is unchanged. Its notification now uses the shared duty schema and durable Inbox semantics. PWA/email remain disabled in this legacy service because it did not previously execute those transports. |
-| Leadership broadcast | **Creator planner ready; staged migration under CI validation** | New personalized creator planner excludes disabled accounts and produces preference-aware PWA recipient/token sets. Existing Gmail path remains separate and external connectors remain disabled. |
-| Urgent notice | **Policy + builder foundation ready** | Urgent severity is supported, but no new production urgent-send surface or external escalation is activated. |
+| Updates / Announcements | **Integrated + CI GREEN** | Shared audience/routing/notification schema; Inbox survives muted routine alerts; PWA recipients are preference-aware. |
+| Liturgical availability request | **Integrated + CI GREEN** | Poll creation remains compatible while normalized availability Inbox records are appended. |
+| Availability completion notice | **Integrated + CI GREEN** | Completion uses the shared leadership plan and one-time completion marker. |
+| Published liturgical assignment | **Integrated + CI GREEN** | Publication metadata and normalized assignment Inbox records are committed atomically. |
+| Assignment change / republish | **Integrated + CI GREEN** | Last published assignment snapshot is retained; revised publication targets only affected members; no-change republish emits no duplicate alert. |
+| Community duty auto-assignment | **Integrated + CI GREEN** | Existing assignment algorithm is unchanged; durable duty Inbox records now use normalized source metadata. Legacy auto-duty does not claim PWA/email because it never executed those transports. |
+| Leadership broadcast Portal/PWA | **Integrated + CI GREEN** | Disabled profiles excluded; personalized Inbox records retained; PWA recipient IDs/tokens follow each member's broadcast preference and are de-duplicated. |
+| Leadership broadcast Email | **Integrated + CI GREEN** | Existing Gmail execution remains intact but the recipient set now follows the shared broadcast + `emailPartner` preferences before sending. No email is sent during CI. |
+| Urgent notice | **Policy + builder foundation ready** | Urgent severity exists; no new live urgent-send surface or external escalation is activated. |
 
 ## Liturgical publication behavior
 
-For a new explicit roster publication:
+For initial explicit publication, the current roster is saved as `lastPublishedAssignments`, `rosterRevision` begins at 1, and assigned members receive normalized assignment records. After a published assignment is edited, the roster returns to unpublished review state while the last published snapshot remains available. Re-publication computes added, removed, date-changed and role-changed members, notifies only those affected, and increments the revision. An unchanged re-publication creates no redundant assignment notification.
 
-1. the current assignment set is saved as `lastPublishedAssignments`;
-2. `rosterRevision` begins at 1;
-3. assigned members receive normalized assignment Inbox records;
-4. PWA recipients/tokens are derived from each member's routing plan;
-5. publication metadata and Inbox records are committed atomically.
+Historical records remain readable through compatibility fallbacks and are not rewritten.
 
-For a later roster edit:
+## Community-duty behavior
 
-1. editing returns the roster to unpublished review state;
-2. the last deliberately published snapshot remains available for comparison;
-3. publication computes added, removed and role/date-changed members;
-4. only affected members receive an assignment-change notice;
-5. `rosterRevision` increments;
-6. an unchanged re-publication creates no redundant assignment notification.
+`autoAssignDuties` preserves the current duty-generation logic and Firestore `duties` records. The notification path now captures the created duty ID as `sourceId`, uses `sourceType=duty`, deep-links to My Ministry, and reads the member's communication preferences when available. PWA/email are deliberately suppressed in this legacy path until a transport-aware duty delivery cutover is separately validated.
 
-Historical/legacy roster behavior remains readable through compatibility fallbacks; no historical documents are rewritten.
+## Leadership broadcast behavior
 
-## Community-duty migration behavior
+The existing leadership target filters, confirmation flow, personalized Gmail content and backend PWA endpoint remain available. The migrated routing layer now:
 
-`autoAssignDuties` still uses the existing random legacy auto-assignment behavior and writes the same `duties` records. The notification portion now:
+- excludes disabled accounts before delivery planning;
+- collapses duplicate UIDs and FCM tokens;
+- keeps a durable Inbox record for Portal broadcasts even when a member mutes broadcast alerts;
+- sends PWA only to members whose routing plan includes PWA;
+- keeps `[name]`, `{name}`, `[nickname]` and `{nickname}` personalization for Inbox/email;
+- filters Gmail recipients through both the broadcast event preference and `emailPartner` preference;
+- keeps LINE, Telegram, WhatsApp and Viber disabled;
+- performs no real mass-send during CI or migration validation.
 
-- captures the created duty document ID as the notification `sourceId`;
-- uses `sourceType=duty` and the shared notification schema;
-- keeps the Inbox record durable even if secondary alerts are muted;
-- deep-links members to My Ministry / duties;
-- reads profile communication preferences when available;
-- intentionally disables PWA/email execution in this legacy path until a transport-aware duty cutover is separately validated.
+## Delivery diagnostics foundation
 
-This avoids falsely recording a PWA/email channel that the legacy service never attempted.
+`deliveryDiagnostics.ts` adds pure state helpers for transport evidence. A planned or queued channel does not count as sent. A channel becomes successful only after a transport explicitly reports `sent`, `delivered`, or `read`; failures/skips remain distinguishable. The existing Inbox already renders delivery diagnostics when `deliveries` metadata is present.
 
-## Leadership broadcast migration target
-
-The staged migration preserves the existing target filters, confirmation flow, Gmail sending path and backend PWA endpoint while changing Portal planning so that:
-
-- disabled accounts are excluded;
-- duplicate recipient UIDs and FCM tokens are collapsed;
-- muted broadcast alerts retain a durable Inbox record but do not receive PWA;
-- personalized `[name]`, `{name}`, `[nickname]` and `{nickname}` substitutions remain supported for Inbox records;
-- the PWA backend receives only the recipient IDs/tokens selected by routing policy;
-- external connectors remain unavailable;
-- no mass message is sent by CI or migration validation.
+Persisting real transport outcomes is the next step and must only use actual provider/backend responses rather than assumptions.
 
 ## Validation evidence
 
-- Normalized Announcements head `295ad9d11767160b731232210156fe3afeea5018`: GitHub Actions run #92 / id `34443219237` PASS.
-- Liturgical builder verification head `cc7fc0a6c027a256867a39a71c5b345863048815`: GitHub Actions run #106 / id `34443618265` PASS.
-- Communication batch verification head `f7f7e215e7d5c5162acc2cb9798fda1bbb8d33b6`: GitHub Actions run #154 / id `34453312081` PASS.
-- Cleaned redevelopment head `be119c6354fda4a1c9d237bd3a74bcb2d158a66a`: GitHub Actions run #246 / id `34456375948` PASS.
-- Current duty/broadcast migration candidate validation is tracked by the active branch CI and is not marked green in this document until the run completes.
+- Announcements normalization: run #92 / `34443219237` — PASS.
+- Liturgical builder verification: run #106 / `34443618265` — PASS.
+- Communication batch verification: run #154 / `34453312081` — PASS.
+- Cleaned redevelopment head `be119c6354fda4a1c9d237bd3a74bcb2d158a66a`: run #246 / `34456375948` — PASS.
+- Community-duty normalization commit `f38da2472f8499d60bbbf07d5527458510fc6b63`: run `34456736739` — PASS.
+- Broadcast creator + delivery diagnostics + staged Portal/PWA migration validation on `029a09e28917f9c5dc044036069367fd13e64787`: run `34457152546` — PASS.
+- One-time leadership broadcast Portal/PWA migration run `34457278564` — PASS; migrated source typechecked and built before commit.
+- Broadcast email-routing staged validation on `f76269c63ea76497aab431e5018f3df4bc3767c8`: run `34457749385` — PASS.
+- One-time broadcast email-routing migration run `34457885367` — PASS; migrated source typechecked and built before commit.
 
 ## Safety invariants
 
-- No historical notification backfill is performed.
-- No Firebase UID changes.
-- No destructive Firestore migration.
-- No live external connector activation.
+- No Firebase UID changes or user recreation.
+- No destructive Firestore migration or historical notification backfill.
+- No live connector activation.
 - No public website publishing cutover.
-- No production mass-message test is authorized by these migrations.
-- CI uses pure/synthetic planner verification and never invokes production send endpoints.
-- A failed PWA transport does not remove the durable Inbox record.
+- No production mass-message test is executed by CI.
+- Migration workflows are temporary and removed after application.
+- A failed secondary transport never removes the durable Inbox record.
+- A queued/planned channel is never presented as successfully delivered without transport evidence.
 
-## Next migration order
+## Next work
 
-1. Complete CI validation of normalized automatic duty Inbox records.
-2. Validate and apply the staged leadership BroadcastTool communication migration on the redevelopment branch only.
-3. Remove temporary migration machinery after successful application.
-4. Add delivery-attempt diagnostics without claiming successful delivery before transport confirmation.
-5. Continue isolated staging, accessibility, mobile-device and role-regression QA before any production approval request.
+1. Persist delivery-attempt/result metadata from actual PWA/email execution without overstating delivery.
+2. Continue isolated staging and role-regression scenarios for leadership broadcast, liturgical publication and duty flows.
+3. Continue mobile accessibility/device QA, including PWA install/notification health behavior.
+4. Review dependency-security findings separately and plan non-breaking remediation rather than using forced upgrades.
+5. Keep external connectors and public website synchronization disabled until their explicit approval gates.
