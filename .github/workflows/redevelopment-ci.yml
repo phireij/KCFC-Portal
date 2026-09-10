@@ -48,6 +48,9 @@ jobs:
       - name: Verify leadership broadcast creator plan
         run: npx tsx scripts/verify-broadcast-creator-plan.ts
 
+      - name: Verify leadership broadcast composer accessibility
+        run: npx tsx scripts/verify-broadcast-composer-accessibility.ts
+
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
