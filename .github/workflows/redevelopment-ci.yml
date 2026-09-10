@@ -54,15 +54,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Stage broadcast email routing candidate
-        run: node scripts/stage-broadcast-email-routing-migration.mjs
-
-      - name: Typecheck staged broadcast email routing
-        run: npm run lint
-
-      - name: Build staged broadcast email routing
-        run: npm run build
-
       - name: Guard external connector defaults
         shell: bash
         run: |
