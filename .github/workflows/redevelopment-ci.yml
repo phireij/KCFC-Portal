@@ -57,6 +57,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Stage mobile-first broadcast composer refresh
+        run: node scripts/stage-broadcast-composer-mobile-refresh.mjs
+
+      - name: Typecheck staged broadcast composer refresh
+        run: npm run lint
+
+      - name: Build staged broadcast composer refresh
+        run: npm run build
+
       - name: Guard external connector defaults
         shell: bash
         run: |
