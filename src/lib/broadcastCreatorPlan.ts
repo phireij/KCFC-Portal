@@ -23,6 +23,15 @@ export type LeadershipBroadcastCreatorPlanInput = {
 };
 
 /**
+ * A PWA request must be dispatched whenever routing selected at least one member,
+ * even if there are no FCM tokens. iOS/Home-Screen members may be reachable only
+ * through native Web Push subscriptions, which the server resolves by user ID.
+ */
+export function shouldDispatchPwaForPlan(plan: { pushRecipientIds: string[] }) {
+  return plan.pushRecipientIds.length > 0;
+}
+
+/**
  * Creates a transport-neutral broadcast plan for the leadership composer.
  *
  * Safety/compatibility rules:
