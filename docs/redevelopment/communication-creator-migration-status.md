@@ -25,7 +25,7 @@ This document tracks progressive adoption of the shared communication-routing an
 
 | Creator | Current state | Notes |
 | --- | --- | --- |
-| Updates / Announcements | **Normalized** | Uses shared audience eligibility, routing policy and notification-record helper. Inbox is retained even when routine announcement alerts are muted. PWA token collection follows the per-recipient routing result. External connectors remain disabled. |
+| Updates / Announcements | **Normalized + CI GREEN** | Uses shared audience eligibility, routing policy and notification-record helper. Inbox is retained even when routine announcement alerts are muted. PWA token collection follows the per-recipient routing result. External connectors remain disabled. CI run #92 passed all required steps. |
 | Liturgical availability request | Pending | Existing member Inbox creation remains operational. Next migration will add `sourceType=availability`, routing channels and preference-aware PWA metadata without changing poll/response data. |
 | Availability completion notice | Pending | Leadership completion message remains operational. Next migration will normalize source/urgency metadata. |
 | Published liturgical assignment | Pending | Existing roster publication remains operational. Next migration will add assignment routing metadata while preserving explicit roster publication behavior. |
@@ -43,9 +43,24 @@ For each eligible registered Portal account, a new announcement publication now:
 3. creates the KCFC Inbox record regardless of whether routine announcement alert channels are muted;
 4. records normalized `sourceId`, `sourceType`, `urgency`, `channels`, audience and routing rationale;
 5. includes an FCM token in the push dispatch only when PWA is selected for that recipient and the publisher enabled push;
-6. does not activate LINE, Telegram, WhatsApp or Viber.
+6. removes duplicate FCM tokens before dispatch;
+7. does not activate LINE, Telegram, WhatsApp or Viber.
 
 The existing announcement document continues to use its compatibility `portal` / `push` channel fields. Website synchronization stays `not_requested` and remains separately approval-gated.
+
+## Validation evidence
+
+Normalized Announcements head:
+`295ad9d11767160b731232210156fe3afeea5018`
+
+GitHub Actions:
+- workflow: `KCFC Redevelopment CI`
+- run: #92 / id `34443219237`
+- TypeScript: PASS
+- synthetic communication policy: PASS
+- production build: PASS
+- connector default-OFF guard: PASS
+- provider-secret browser guard: PASS
 
 ## Safety invariants
 
