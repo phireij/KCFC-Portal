@@ -1,9 +1,9 @@
-import type { CommunicationConnectorProvider } from '../types';
+import type { CommunicationChannel, CommunicationConnectorProvider } from '../types';
 import type { CommunicationBatchPlan } from './communicationBatch';
 import { materializeNotificationRecord, type PlannedNotificationRecord } from './notificationPersistence';
 
 type BatchPlanLike = CommunicationBatchPlan<{
-  routing: { channels: any[] };
+  routing: { channels: CommunicationChannel[] };
   record: PlannedNotificationRecord;
 }>;
 
