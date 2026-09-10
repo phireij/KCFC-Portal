@@ -33,6 +33,9 @@ jobs:
       - name: Verify communication policy
         run: npx tsx scripts/verify-communication-policy.ts
 
+      - name: Verify communication batches
+        run: npx tsx scripts/verify-communication-batches.ts
+
       - name: Build
         run: npm run build
 
