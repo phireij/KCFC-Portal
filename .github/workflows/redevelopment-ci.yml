@@ -63,6 +63,9 @@ jobs:
       - name: Verify staging-only Core status executor
         run: npx tsx scripts/verify-core-status-staging-executor.ts
 
+      - name: Verify Core status executor isolation
+        run: npx tsx scripts/verify-core-status-executor-isolation.ts
+
       - name: Verify leadership accessibility contracts
         run: npx tsx scripts/verify-leadership-accessibility.ts
 
