@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../App';
 import { BellRing, ShieldCheck, SlidersHorizontal, UserCheck, UsersRound } from 'lucide-react';
+import LeadershipOverview from '../components/admin/LeadershipOverview';
 import LegacyAdmin from './LegacyAdmin';
 
 const adminRoles = ['admin', 'president'];
@@ -41,6 +42,8 @@ export default function Admin() {
           </div>
         </div>
       </section>
+
+      <LeadershipOverview />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Principle title="Review first" body="Pending approvals and requests should remain visibly separate from completed work." />
