@@ -22,17 +22,20 @@ The canonical working specification has been advanced to **v4 — Communications
 
 ## Implementation alignment
 
-The active branch `redesign/mobile-first-v2` already implements or scaffolds the major v4 areas:
+The active branch `redesign/mobile-first-v2` implements or scaffolds the major v4 areas:
 
 - Responsive shell and navigation.
 - Home, Schedule, Community, Updates, Inbox and Profile redesigns.
 - Liturgical availability, response monitoring, matrix, assignment builder and explicit publication.
-- Notification health and guided test-push flow.
-- Connected-app preference foundation.
-- Communication routing policy helper and connector feature gates.
+- Notification health and guided authenticated test-push flow.
+- Focused device-aware PWA installation component with iOS and Android guidance, separated from push registration logic.
+- Connected-app preference foundation and browser-safe connector readiness states.
+- Central communication routing policy helper.
+- Normalized notification-record helper and canonical source/provider types.
+- Connector server/UI feature gates default OFF, with CI safeguards against browser-exposed provider secrets.
 - Resources redesign.
 - Safe legacy-preserving shells for Accounting and Admin.
-- CI validation and staging-readiness checklist.
+- CI validation, staging-readiness checklist and executable staging test matrix.
 
 ## Document QA
 
