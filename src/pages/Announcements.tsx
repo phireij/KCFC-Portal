@@ -14,13 +14,12 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Announcement } from '../types';
+import { Announcement, ConnectedCommunicationApp, NotificationPreferences } from '../types';
 import {
   Bell,
   Check,
   Clock3,
   Edit3,
-  Eye,
   Globe2,
   Megaphone,
   Plus,
@@ -33,8 +32,11 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { buildCommunicationRoutingPlan } from '../lib/communicationRouting';
+import { buildNotificationRecord } from '../lib/notificationRecord';
+import { CommunicationAudience, isProfileEligibleForAudience } from '../lib/communicationAudience';
 
-type Audience = 'public' | 'parishioners' | 'kcfc_members' | 'leadership';
+type Audience = CommunicationAudience;
 type ExtendedAnnouncement = Announcement & {
   audience?: Audience;
   summary?: string;
@@ -89,6 +91,11 @@ const audienceIcon = (audience?: Audience) => {
   if (audience === 'leadership') return ShieldCheck;
   return UsersRound;
 };
+
+const connectedProvidersFor = (apps?: ConnectedCommunicationApp[]) =>
+  (apps || [])
+    .filter((app) => app.status === 'connected')
+    .map((app) => app.provider);
 
 export default function Announcements() {
   const { profile, user } = useAuth();
@@ -158,42 +165,69 @@ export default function Announcements() {
   const publishNotifications = async (announcementId: string, title: string, audience: Audience, push: boolean) => {
     const usersSnapshot = await getDocs(collection(db, 'users'));
     const batch = writeBatch(db);
-    const recipientTokens: string[] = [];
+    const recipientTokens = new Set<string>();
 
     usersSnapshot.docs.forEach((userDoc) => {
-      const userData = userDoc.data();
-      if (userData.isDisabled) return;
-      if (userData.preferences?.announcements === false) return;
-      if (audience === 'leadership' && !(userData.roles || []).some((role: string) => ['admin', 'president', 'vice_president', 'secretary', 'treasurer', 'auditor', 'pro', 'spiritual_director'].includes(role))) return;
-      if (audience === 'kcfc_members' && userData.isVerified !== true) return;
+      const userData = userDoc.data() as {
+        isDisabled?: boolean;
+        isVerified?: boolean;
+        roles?: any[];
+        preferences?: NotificationPreferences;
+        connectedCommunicationApps?: ConnectedCommunicationApp[];
+        fcmTokens?: unknown[];
+      };
+
+      if (!isProfileEligibleForAudience(userData, audience)) return;
+
+      const routing = buildCommunicationRoutingPlan({
+        kind: 'announcement',
+        preferences: userData.preferences,
+        connectedProviders: connectedProvidersFor(userData.connectedCommunicationApps),
+        allowPwa: push,
+        allowEmail: true,
+        allowExternalConnectors: false,
+      });
 
       const notificationRef = doc(collection(db, 'notifications'));
       batch.set(notificationRef, {
-        userId: userDoc.id,
-        title: 'KCFC Update',
-        message: title,
-        type: 'announcement',
-        status: 'unread',
-        link: `/announcements?id=${announcementId}`,
-        sourceId: announcementId,
-        audience,
+        ...buildNotificationRecord({
+          userId: userDoc.id,
+          title: 'KCFC Update',
+          message: title,
+          type: 'announcement',
+          link: `/announcements?id=${announcementId}`,
+          sourceId: announcementId,
+          sourceType: 'announcement',
+          urgency: routing.urgency,
+          channels: routing.channels,
+          extra: {
+            audience,
+            routingRationale: routing.rationale,
+          },
+        }),
         createdAt: serverTimestamp(),
       });
 
-      if (push && Array.isArray(userData.fcmTokens)) {
-        recipientTokens.push(...userData.fcmTokens.filter((token: unknown) => typeof token === 'string' && token.trim()));
+      if (push && routing.channels.includes('pwa') && Array.isArray(userData.fcmTokens)) {
+        userData.fcmTokens.forEach((token) => {
+          if (typeof token === 'string' && token.trim()) recipientTokens.add(token.trim());
+        });
       }
     });
 
     await batch.commit();
 
-    if (push && recipientTokens.length > 0 && user) {
+    if (push && recipientTokens.size > 0 && user) {
       try {
         const idToken = await user.getIdToken();
         const response = await fetch('/api/admin/broadcast-announcement-push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ title: `KCFC Update: ${title}`, body: form.summary || form.content, recipientTokens }),
+          body: JSON.stringify({
+            title: `KCFC Update: ${title}`,
+            body: form.summary || form.content,
+            recipientTokens: Array.from(recipientTokens),
+          }),
         });
         if (!response.ok) console.warn('Announcements: push broadcast returned non-success status');
       } catch (error) {
@@ -297,7 +331,7 @@ function EditorSheet({ form, setForm, editing, saving, onClose, onSave }: { form
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/40 backdrop-blur-[2px] sm:items-center sm:p-4">
       <section role="dialog" aria-modal="true" aria-label={editing ? 'Edit KCFC update' : 'Create KCFC update'} className="max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] bg-white shadow-2xl sm:max-w-2xl sm:rounded-[28px] dark:bg-[#10243a]">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-5 dark:border-white/10 dark:bg-[#10243a]/95"><div><p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#2563EB]">Updates</p><h2 className="mt-1 text-[20px] font-extrabold text-[#172033] dark:text-white">{editing ? 'Edit update' : 'Create update'}</h2></div><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300"><X className="h-5 w-5" /></button></div>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-5 dark:border-white/10 dark:bg-[#10243a]/95"><div><p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#2563EB]">Updates</p><h2 className="mt-1 text-[20px] font-extrabold text-[#172033] dark:text-white">{editing ? 'Edit update' : 'Create update'}</h2></div><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300" aria-label="Close update editor"><X className="h-5 w-5" /></button></div>
         <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
           <label className="block"><span className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Title</span><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Clear, useful headline" className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
           <label className="block"><span className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Short summary</span><input value={form.summary} onChange={(event) => setForm((current) => ({ ...current, summary: event.target.value }))} placeholder="One-line summary shown before the full message" className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
@@ -305,7 +339,7 @@ function EditorSheet({ form, setForm, editing, saving, onClose, onSave }: { form
 
           <div><span className="mb-2 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Audience</span><div className="grid grid-cols-2 gap-2">{(['kcfc_members', 'leadership', 'parishioners', 'public'] as Audience[]).map((audience) => { const Icon = audienceIcon(audience); const active = form.audience === audience; return <button key={audience} type="button" onClick={() => setForm((current) => ({ ...current, audience }))} className={cn('flex min-h-12 items-center gap-2 rounded-xl border px-3 text-left text-[11px] font-bold', active ? 'border-blue-300 bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-200' : 'border-slate-200 text-slate-500 dark:border-white/10 dark:text-slate-300')}><Icon className="h-4 w-4" />{audienceLabel(audience)}</button>; })}</div><p className="mt-2 text-[10px] leading-4 text-slate-400">Public website publishing will be enabled later as a separate channel. Selecting Public here does not publish to the website yet.</p></div>
 
-          <label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-white/10"><button type="button" onClick={() => setForm((current) => ({ ...current, push: !current.push }))} className={cn('flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors', form.push ? 'bg-[#2563EB]' : 'bg-slate-300 dark:bg-slate-600')}><span className={cn('h-5 w-5 rounded-full bg-white shadow-sm transition-transform', form.push && 'translate-x-4')} /></button><div><p className="text-[12px] font-bold text-[#172033] dark:text-white">PWA / Web Push alert</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">The Portal notification record is still created even if push delivery fails.</p></div></label>
+          <div className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-white/10"><button type="button" role="switch" aria-checked={form.push} aria-label="PWA Web Push alert" onClick={() => setForm((current) => ({ ...current, push: !current.push }))} className={cn('flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', form.push ? 'bg-[#2563EB]' : 'bg-slate-300 dark:bg-slate-600')}><span className={cn('h-5 w-5 rounded-full bg-white shadow-sm transition-transform', form.push && 'translate-x-4')} /></button><div><p className="text-[12px] font-bold text-[#172033] dark:text-white">PWA / Web Push alert</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">The Portal notification record is still created even if push delivery is disabled or fails.</p></div></div>
 
           <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-white/10"><button type="button" onClick={() => onSave('draft')} disabled={saving || !form.title.trim() || !form.content.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-[11px] font-bold text-slate-600 disabled:opacity-45 dark:border-white/10 dark:text-slate-300"><Save className="h-4 w-4" />Save draft</button><button type="button" onClick={() => onSave('published')} disabled={saving || !form.title.trim() || !form.content.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[11px] font-bold text-white disabled:opacity-45">{saving ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{saving ? 'Saving…' : editing ? 'Save & publish' : 'Publish update'}</button></div>
         </div>
