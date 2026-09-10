@@ -143,7 +143,7 @@ export default function MemberRoleEditor() {
       const finalMinistries = draftMinistries.includes('cleaning')
         ? Array.from(new Set<MinistryType>([...draftMinistries, ...preservedCleaningStatus]))
         : draftMinistries.filter((ministry) => !CHORE_MINISTRIES.includes(ministry) || ministry === 'kitchen' || ministry === 'cleaning');
-      const updates: Partial<UserProfile> & { updatedAt: unknown; lcRoles?: string[] } = {
+      const updates: { roles: UserRole[]; ministries: MinistryType[]; updatedAt: ReturnType<typeof serverTimestamp>; lcRoles?: string[] } = {
         roles: normalizeMemberRoles(draftRoles),
         ministries: finalMinistries,
         updatedAt: serverTimestamp(),
