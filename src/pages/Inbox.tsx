@@ -1,620 +1,239 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, where, writeBatch, deleteDoc } from 'firebase/firestore';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCheck,
+  ChevronRight,
+  Inbox as InboxIcon,
+  Info,
+  Mail,
+  MailOpen,
+  Megaphone,
+  MessageSquare,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { useAuth } from '../App';
 import { Notification as NotificationType } from '../types';
-import { 
-  Inbox as InboxIcon, 
-  Trash2, 
-  MailOpen, 
-  Mail, 
-  Search, 
-  Calendar, 
-  Megaphone, 
-  Info, 
-  MessageSquare, 
-  CheckSquare, 
-  ChevronRight, 
-  Clock, 
-  ArrowLeft,
-  Sparkles,
-  AlertCircle
-} from 'lucide-react';
 import { cn } from '../lib/utils';
-import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'motion/react';
-import { useSearchParams } from 'react-router-dom';
+
+const tabs = ['all', 'unread', 'announcement', 'duty', 'broadcast', 'system'] as const;
+type Tab = typeof tabs[number];
+
+const toDate = (value: any): Date | null => {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatDate = (value: any) => {
+  const date = toDate(value);
+  if (!date) return 'Recent';
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(undefined, sameDay ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric' }).format(date);
+};
 
 export default function Inbox() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const noteIdParam = searchParams.get('id') || searchParams.get('noteId');
-  const [hasInitiallySelectedFromUrl, setHasInitiallySelectedFromUrl] = useState(false);
-
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
-  const [selectedNote, setSelectedNote] = useState<NotificationType | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'broadcast' | 'duty' | 'announcement' | 'system'>('all');
-  const [mobileDetailView, setMobileDetailView] = useState(false);
+  const [selected, setSelected] = useState<NotificationType | null>(null);
+  const [tab, setTab] = useState<Tab>('all');
+  const [search, setSearch] = useState('');
+  const [mobileDetail, setMobileDetail] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const notes = snap.docs.map(d => ({ id: d.id, ...d.data() } as NotificationType));
-      setNotifications(notes);
+    const q = query(collection(db, 'notifications'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const next = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as NotificationType));
+      setNotifications(next);
       setLoading(false);
-    }, (err) => {
-      console.error("Error fetching inbox notifications:", err);
+    }, (error) => {
+      console.error('Inbox: failed to load messages', error);
       setLoading(false);
     });
-
-    return () => unsubscribe();
   }, [user]);
 
-  // Handle auto-selecting a notification when noteIdParam is set in URL
   useEffect(() => {
-    if (loading || notifications.length === 0 || !noteIdParam || hasInitiallySelectedFromUrl) return;
-
-    const targetNote = notifications.find(n => n.id === noteIdParam);
-    if (targetNote) {
-      setSelectedNote(targetNote);
-      setMobileDetailView(true);
-      setHasInitiallySelectedFromUrl(true);
+    const id = searchParams.get('id') || searchParams.get('noteId');
+    if (!id || notifications.length === 0) return;
+    const target = notifications.find((item) => item.id === id);
+    if (target) {
+      setSelected(target);
+      setMobileDetail(true);
     }
-  }, [notifications, noteIdParam, loading, hasInitiallySelectedFromUrl]);
-
-  // Keep selectedNote reference updated with latest live data
-  useEffect(() => {
-    if (selectedNote && notifications.length > 0) {
-      const updatedSelected = notifications.find(n => n.id === selectedNote.id);
-      if (updatedSelected && updatedSelected.status !== selectedNote.status) {
-        setSelectedNote(updatedSelected);
-      }
-    }
-  }, [notifications, selectedNote]);
-
-  // Mark selected notification as read when viewed
-  useEffect(() => {
-    if (selectedNote && selectedNote.id && selectedNote.status === 'unread') {
-      markAsRead(selectedNote.id);
-    }
-  }, [selectedNote]);
-
-  const markAsRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'notifications', id), { status: 'read' });
-    } catch (err) {
-      console.error("Failed to mark read:", err);
-    }
-  };
-
-  const markAsUnread = async (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    try {
-      await updateDoc(doc(db, 'notifications', id), { status: 'unread' });
-      // If we are currently viewing this, we can optionally deselect or just let it be marked unread
-    } catch (err) {
-      console.error("Failed to mark unread:", err);
-    }
-  };
-
-  const deleteNotification = async (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    try {
-      await deleteDoc(doc(db, 'notifications', id));
-      if (selectedNote?.id === id) {
-        setSelectedNote(null);
-        setMobileDetailView(false);
-      }
-    } catch (err: any) {
-      console.error("Failed to delete notification:", err);
-      alert("Failed to delete message: " + (err.message || err.toString()));
-    }
-  };
-
-  const markAllAsRead = async () => {
-    const unread = notifications.filter(n => n.status === 'unread');
-    if (unread.length === 0) return;
-    try {
-      const batch = writeBatch(db);
-      unread.forEach(n => {
-        if (n.id) batch.update(doc(db, 'notifications', n.id), { status: 'read' });
-      });
-      await batch.commit();
-    } catch (err: any) {
-      console.error("Failed marking all read:", err);
-      alert("Failed to mark all as read: " + (err.message || err.toString()));
-    }
-  };
-
-  const clearReadNotifications = async () => {
-    const read = notifications.filter(n => n.status === 'read');
-    if (read.length === 0) return;
-    if (!window.confirm(`Are you sure you want to permanently delete all ${read.length} read notifications from your inbox?`)) return;
-
-    try {
-      const batch = writeBatch(db);
-      read.forEach(n => {
-        if (n.id) batch.delete(doc(db, 'notifications', n.id));
-      });
-      await batch.commit();
-      setSelectedNote(null);
-      setMobileDetailView(false);
-    } catch (err: any) {
-      console.error("Failed clearing read items:", err);
-      alert("Failed to clear read messages: " + (err.message || err.toString()));
-    }
-  };
-
-  // Multi-select state and handlers
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  }, [notifications, searchParams]);
 
   useEffect(() => {
-    setSelectedIds([]);
-  }, [activeTab]);
+    if (!selected?.id || selected.status !== 'unread') return;
+    updateDoc(doc(db, 'notifications', selected.id), { status: 'read' }).catch((error) => console.error('Inbox: failed to mark message read', error));
+  }, [selected]);
 
-  const bulkMarkAsRead = async () => {
-    if (selectedIds.length === 0) return;
-    try {
-      const batch = writeBatch(db);
-      selectedIds.forEach(id => {
-        batch.update(doc(db, 'notifications', id), { status: 'read' });
-      });
-      await batch.commit();
-      setSelectedIds([]);
-    } catch (err: any) {
-      console.error("Bulk mark read failed:", err);
-      alert("Failed to mark messages as read: " + err.message);
+  useEffect(() => {
+    if (!selected?.id) return;
+    const latest = notifications.find((item) => item.id === selected.id);
+    if (latest) setSelected(latest);
+  }, [notifications, selected?.id]);
+
+  const unreadCount = notifications.filter((item) => item.status === 'unread').length;
+
+  const visible = useMemo(() => notifications.filter((item) => {
+    if (tab === 'unread' && item.status !== 'unread') return false;
+    if (!['all', 'unread'].includes(tab) && item.type !== tab) return false;
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+    return `${item.title} ${item.message} ${item.sourceType || ''}`.toLowerCase().includes(needle);
+  }), [notifications, search, tab]);
+
+  const markAllRead = async () => {
+    const unread = notifications.filter((item) => item.status === 'unread' && item.id);
+    if (!unread.length) return;
+    const batch = writeBatch(db);
+    unread.forEach((item) => batch.update(doc(db, 'notifications', item.id!), { status: 'read' }));
+    await batch.commit();
+  };
+
+  const toggleUnread = async (item: NotificationType) => {
+    if (!item.id) return;
+    await updateDoc(doc(db, 'notifications', item.id), { status: item.status === 'unread' ? 'read' : 'unread' });
+  };
+
+  const removeMessage = async (item: NotificationType) => {
+    if (!item.id || !window.confirm('Delete this message from your KCFC Inbox?')) return;
+    await deleteDoc(doc(db, 'notifications', item.id));
+    if (selected?.id === item.id) {
+      setSelected(null);
+      setMobileDetail(false);
     }
   };
 
-  const bulkMarkAsUnread = async () => {
-    if (selectedIds.length === 0) return;
-    try {
-      const batch = writeBatch(db);
-      selectedIds.forEach(id => {
-        batch.update(doc(db, 'notifications', id), { status: 'unread' });
-      });
-      await batch.commit();
-      setSelectedIds([]);
-    } catch (err: any) {
-      console.error("Bulk mark unread failed:", err);
-      alert("Failed to mark messages as unread: " + err.message);
-    }
+  const openMessage = (item: NotificationType) => {
+    setSelected(item);
+    setMobileDetail(true);
   };
 
-  const bulkDelete = async () => {
-    if (selectedIds.length === 0) return;
-    if (!window.confirm(`Are you sure you want to permanently delete these ${selectedIds.length} selected messages?`)) return;
-    try {
-      const batch = writeBatch(db);
-      selectedIds.forEach(id => {
-        batch.delete(doc(db, 'notifications', id));
-      });
-      await batch.commit();
-      if (selectedNote && selectedIds.includes(selectedNote.id!)) {
-        setSelectedNote(null);
-        setMobileDetailView(false);
-      }
-      setSelectedIds([]);
-    } catch (err: any) {
-      console.error("Bulk delete failed:", err);
-      alert("Failed to delete messages: " + err.message);
-    }
+  const followMessage = () => {
+    if (selected?.link) navigate(selected.link);
   };
-
-  const getIcon = (type: NotificationType['type'], size = 18) => {
-    switch (type) {
-      case 'announcement': return <Megaphone size={size} className="text-blue-500 dark:text-blue-400" />;
-      case 'duty': return <Calendar size={size} className="text-orange-500 dark:text-orange-400" />;
-      case 'broadcast': return <MessageSquare size={size} className="text-purple-500 dark:text-purple-400" />;
-      default: return <Info size={size} className="text-[#5A5A40] dark:text-[#d4d4bc]" />;
-    }
-  };
-
-  const getCategoryLabel = (type: NotificationType['type']) => {
-    switch (type) {
-      case 'announcement': return 'Announcement';
-      case 'duty': return 'Duty/Assignment';
-      case 'broadcast': return 'Community Broadcast';
-      default: return 'System Notice';
-    }
-  };
-
-  // Filter & Search
-  const filteredNotes = notifications.filter(n => {
-    const matchesTab = activeTab === 'all' || n.type === activeTab;
-    const matchesQuery = 
-      n.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      n.message.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesQuery;
-  });
-
-  const unreadCount = notifications.filter(n => n.status === 'unread').length;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      {/* Title Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-[#1a1a1a] dark:text-[#f5f5f0] tracking-tight">Personal Inbox</h1>
-          <p className="text-gray-500 dark:text-gray-400 font-sans text-sm mt-1">
-            Read and manage your personal portal alerts, community broadcasts, and liturgical scheduling notices.
-          </p>
-        </div>
-
-        {/* Global Toolbar */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
+    <div className="kcfc-page space-y-5 pb-4">
+      <section className="overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-[#123B66] via-[#174E83] to-[#2563EB] p-5 text-white shadow-[0_18px_45px_rgba(18,59,102,0.18)] sm:p-7">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-blue-100"><InboxIcon className="h-4 w-4" /><span className="text-[11px] font-extrabold uppercase tracking-[0.13em]">KCFC Inbox</span></div>
+            <h1 className="text-[28px] font-extrabold tracking-[-0.03em] sm:text-[34px]">Every important message, in one place.</h1>
+            <p className="mt-2 max-w-2xl text-[14px] leading-6 text-blue-50/90">Push, email and future connected apps are delivery channels. Your KCFC Inbox is the durable record you can always return to.</p>
+          </div>
           {unreadCount > 0 && (
-            <button
-              onClick={markAllAsRead}
-              className="px-3 py-1.5 text-xs font-semibold bg-[#5A5A40]/5 hover:bg-[#5A5A40]/10 text-[#5A5A40] dark:text-[#d4d4bc] dark:bg-[#5A5A40]/10 dark:hover:bg-[#5A5A40]/20 rounded-full transition-all flex items-center gap-1"
-            >
-              <MailOpen size={13} />
-              Mark All Read
-            </button>
-          )}
-          {notifications.some(n => n.status === 'read') && (
-            <button
-              onClick={clearReadNotifications}
-              className="px-3 py-1.5 text-xs font-semibold bg-red-500/5 hover:bg-red-500/10 text-red-600 dark:text-red-400 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded-full transition-all flex items-center gap-1"
-            >
-              <Trash2 size={13} />
-              Clear Read ({notifications.filter(n => n.status === 'read').length})
-            </button>
+            <button type="button" onClick={markAllRead} className="inline-flex min-h-11 w-fit items-center gap-2 rounded-2xl bg-white px-4 text-[12px] font-bold text-[#123B66] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"><CheckCheck className="h-4 w-4" /> Mark all read</button>
           )}
         </div>
-      </div>
+      </section>
 
-      {loading ? (
-        <div className="min-h-[450px] bg-white dark:bg-[#1c1c18] border border-gray-100 dark:border-white/5 rounded-[32px] flex items-center justify-center">
-          <div className="animate-pulse text-center">
-            <div className="w-12 h-12 bg-[#5A5A40]/10 rounded-full mb-4 mx-auto flex items-center justify-center">
-              <InboxIcon size={24} className="text-[#5A5A40] animate-bounce" />
+      <section className="grid min-h-[610px] overflow-hidden rounded-[24px] border border-slate-200 bg-white lg:grid-cols-[420px_1fr] dark:border-white/10 dark:bg-[#10243a]">
+        <div className={cn('border-r border-slate-100 dark:border-white/10', mobileDetail && 'hidden lg:block')}>
+          <div className="space-y-3 border-b border-slate-100 p-4 dark:border-white/10">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search messages" className="min-h-11 w-full rounded-xl border border-slate-200 bg-[#F7F9FC] pl-10 pr-3 text-[13px] text-[#172033] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-blue-500/20" />
             </div>
-            <p className="text-xs text-gray-400 font-serif italic">Loading your messages...</p>
+            <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
+              {tabs.map((item) => {
+                const count = item === 'all' ? notifications.length : item === 'unread' ? unreadCount : notifications.filter((note) => note.type === item).length;
+                if (count === 0 && !['all', 'unread'].includes(item)) return null;
+                return <button key={item} type="button" onClick={() => setTab(item)} className={cn('min-h-9 shrink-0 rounded-xl px-3 text-[10px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', tab === item ? 'bg-[#123B66] text-white' : 'bg-[#F7F9FC] text-slate-500 dark:bg-white/5 dark:text-slate-300')}>{item}{count > 0 && <span className="ml-1.5 opacity-70">{count}</span>}</button>;
+              })}
+            </div>
           </div>
+
+          {loading ? (
+            <div className="space-y-2 p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />)}</div>
+          ) : visible.length === 0 ? (
+            <EmptyList search={search} />
+          ) : (
+            <div className="max-h-[520px] overflow-y-auto p-2">
+              {visible.map((item) => <MessageRow key={item.id} item={item} selected={selected?.id === item.id} onOpen={() => openMessage(item)} />)}
+            </div>
+          )}
         </div>
-      ) : notifications.length === 0 ? (
-        <div className="min-h-[450px] bg-white dark:bg-[#1c1c18] border border-gray-100 dark:border-white/5 rounded-[32px] p-12 text-center flex flex-col items-center justify-center">
-          <div className="w-16 h-16 bg-[#5A5A40]/10 rounded-full mb-4 flex items-center justify-center">
-            <InboxIcon size={32} className="text-[#5A5A40]" />
-          </div>
-          <h3 className="text-lg font-serif font-bold text-[#1a1a1a] dark:text-[#f5f5f0]">Your Inbox is Clear</h3>
-          <p className="text-gray-400 dark:text-gray-500 text-sm max-w-md mt-2 leading-relaxed">
-            Beautiful! You do not have any notices at the moment. All future community broadcasts, scheduling changes, and portal alerts will show up here.
-          </p>
+
+        <div className={cn('min-w-0', !mobileDetail && 'hidden lg:block')}>
+          {!selected ? (
+            <div className="flex h-full min-h-[520px] flex-col items-center justify-center px-6 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Mail className="h-7 w-7" /></div>
+              <h2 className="mt-4 text-[18px] font-extrabold text-[#172033] dark:text-white">Choose a message</h2>
+              <p className="mt-2 max-w-sm text-[13px] leading-5 text-slate-500 dark:text-slate-400">Announcements, assignments, availability requests and important notices will remain here even after you dismiss a push alert.</p>
+            </div>
+          ) : (
+            <article className="flex h-full min-h-[520px] flex-col">
+              <div className="flex items-center gap-2 border-b border-slate-100 p-3 dark:border-white/10 lg:hidden">
+                <button type="button" onClick={() => setMobileDetail(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7F9FC] text-slate-600 dark:bg-white/5 dark:text-slate-300"><ArrowLeft className="h-5 w-5" /></button>
+                <span className="text-[12px] font-bold text-slate-500 dark:text-slate-400">Back to Inbox</span>
+              </div>
+              <div className="flex-1 p-5 sm:p-7">
+                <div className="flex flex-wrap items-center gap-2">
+                  <MessageIcon type={selected.type} />
+                  <span className="rounded-full bg-[#EAF3FF] px-2.5 py-1 text-[10px] font-extrabold capitalize text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">{categoryLabel(selected)}</span>
+                  {selected.urgency && selected.urgency !== 'normal' && <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase', selected.urgency === 'urgent' ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300')}>{selected.urgency}</span>}
+                  <span className="ml-auto text-[11px] font-medium text-slate-400">{formatDate(selected.createdAt)}</span>
+                </div>
+                <h2 className="mt-5 text-[24px] font-extrabold leading-tight tracking-[-0.02em] text-[#172033] dark:text-white sm:text-[28px]">{selected.title}</h2>
+                <p className="mt-4 whitespace-pre-wrap text-[14px] leading-7 text-slate-600 dark:text-slate-300">{selected.message}</p>
+
+                {selected.channels && selected.channels.length > 0 && (
+                  <div className="mt-6 rounded-2xl bg-[#F7F9FC] p-4 dark:bg-white/5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Delivery channels</p>
+                    <div className="mt-2 flex flex-wrap gap-2">{selected.channels.map((channel) => <span key={channel} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold capitalize text-slate-500 shadow-sm dark:bg-white/10 dark:text-slate-300">{channel}</span>)}</div>
+                  </div>
+                )}
+
+                {selected.link && (
+                  <button type="button" onClick={followMessage} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Open related page <ChevronRight className="h-4 w-4" /></button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-slate-100 p-4 dark:border-white/10">
+                <button type="button" onClick={() => toggleUnread(selected)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#F7F9FC] px-3 text-[11px] font-bold text-slate-600 dark:bg-white/5 dark:text-slate-300">{selected.status === 'unread' ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}{selected.status === 'unread' ? 'Mark read' : 'Mark unread'}</button>
+                <button type="button" onClick={() => removeMessage(selected)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-red-50 px-3 text-[11px] font-bold text-red-600 dark:bg-red-500/10 dark:text-red-300"><Trash2 className="h-4 w-4" /> Delete</button>
+              </div>
+            </article>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[550px]">
-          {/* Left Column: Sidebar with tabs & search + message list */}
-          <div className={cn(
-            "lg:col-span-5 bg-white dark:bg-[#1c1c18] border border-gray-100 dark:border-white/5 rounded-[32px] flex flex-col overflow-hidden transition-all",
-            mobileDetailView ? "hidden lg:flex" : "flex"
-          )}>
-            {/* Search and Tabs */}
-            <div className="p-4 border-b border-gray-100 dark:border-white/5 space-y-3 bg-gray-50/50 dark:bg-[#171714]">
-              {/* Search input */}
-              <div className="relative">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search messages..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-white dark:bg-[#252520] border border-gray-100 dark:border-white/5 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-[#5A5A40] text-[#1a1a1a] dark:text-[#f5f5f0]"
-                />
-              </div>
-
-              {/* Category tabs */}
-              <div className="flex gap-1 overflow-x-auto no-scrollbar pb-1">
-                {(['all', 'broadcast', 'duty', 'announcement', 'system'] as const).map(tab => {
-                  const count = tab === 'all' 
-                    ? notifications.length 
-                    : notifications.filter(n => n.type === tab).length;
-
-                  if (count === 0 && tab !== 'all') return null;
-
-                  return (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full text-xs font-semibold capitalize whitespace-nowrap transition-all",
-                        activeTab === tab 
-                          ? "bg-[#5A5A40] text-white" 
-                          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5"
-                      )}
-                    >
-                      {tab === 'all' ? 'All' : tab}
-                      <span className={cn(
-                        "ml-1.5 px-1.5 py-0.5 text-[9px] rounded-full",
-                        activeTab === tab 
-                          ? "bg-white/20 text-white" 
-                          : "bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400"
-                      )}>
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Bulk Selection Bar */}
-            <div className="px-4 py-2.5 bg-gray-50/70 dark:bg-[#1a1a17] border-b border-gray-100 dark:border-white/5 flex items-center justify-between text-xs text-gray-500">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={filteredNotes.length > 0 && selectedIds.length === filteredNotes.length}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedIds(filteredNotes.map(n => n.id!).filter(Boolean));
-                    } else {
-                      setSelectedIds([]);
-                    }
-                  }}
-                  className="rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] h-4 w-4 cursor-pointer"
-                />
-                <span className="font-bold uppercase tracking-wider text-[10px] text-gray-400">
-                  {selectedIds.length > 0 ? `${selectedIds.length} Selected` : 'Select All'}
-                </span>
-              </div>
-
-              {selectedIds.length > 0 && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={bulkMarkAsRead}
-                    title="Mark selected as read"
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 text-[#5A5A40] dark:text-[#d4d4bc] rounded flex items-center gap-1 transition-all"
-                  >
-                    <MailOpen size={13} />
-                    <span className="hidden sm:inline font-bold uppercase tracking-widest text-[9px]">Read</span>
-                  </button>
-                  <button
-                    onClick={bulkMarkAsUnread}
-                    title="Mark selected as unread"
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 rounded flex items-center gap-1 transition-all"
-                  >
-                    <Mail size={13} />
-                    <span className="hidden sm:inline font-bold uppercase tracking-widest text-[9px]">Unread</span>
-                  </button>
-                  <button
-                    onClick={bulkDelete}
-                    title="Delete selected"
-                    className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-500 hover:text-red-700 rounded flex items-center gap-1 transition-all"
-                  >
-                    <Trash2 size={13} />
-                    <span className="hidden sm:inline font-bold uppercase tracking-widest text-[9px]">Delete</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Message List */}
-            <div className="flex-1 overflow-y-auto no-scrollbar divide-y divide-gray-50 dark:divide-white/5 max-h-[500px] lg:max-h-[600px]">
-              {filteredNotes.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Search size={28} className="mx-auto text-gray-300 dark:text-gray-600 mb-2" />
-                  <p className="text-xs text-gray-400 font-serif italic">No messages match your search.</p>
-                </div>
-              ) : (
-                filteredNotes.map((n) => {
-                  const isSelected = selectedNote?.id === n.id;
-                  const isUnread = n.status === 'unread';
-                  const isChecked = selectedIds.includes(n.id!);
-
-                  return (
-                    <div
-                      key={n.id}
-                      onClick={() => {
-                        setSelectedNote(n);
-                        setMobileDetailView(true);
-                      }}
-                      className={cn(
-                        "p-4 hover:bg-gray-50/50 dark:hover:bg-white/[0.02] cursor-pointer transition-all flex gap-3 items-start relative group",
-                        isSelected 
-                          ? "bg-[#5A5A40]/5 dark:bg-[#5A5A40]/10 border-l-4 border-[#5A5A40]" 
-                          : isUnread 
-                            ? "bg-blue-50/20 dark:bg-blue-500/[0.03] border-l-4 border-blue-500" 
-                            : "border-l-4 border-transparent"
-                      )}
-                    >
-                      {/* Checkbox for Multi-Select */}
-                      <div 
-                        className="mt-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedIds(prev => [...prev, n.id!]);
-                            } else {
-                              setSelectedIds(prev => prev.filter(id => id !== n.id));
-                            }
-                          }}
-                          className="rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] h-4 w-4 cursor-pointer"
-                        />
-                      </div>
-
-                      {/* Left Badge/Icon */}
-                      <div className="mt-1 p-1.5 bg-gray-50 dark:bg-white/[0.03] rounded-xl flex-shrink-0">
-                        {getIcon(n.type, 16)}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start gap-2">
-                          <h4 className={cn(
-                            "text-xs leading-snug line-clamp-1",
-                            isUnread ? "font-bold text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"
-                          )}>
-                            {n.title}
-                          </h4>
-                          <span className="text-[9px] text-gray-400 dark:text-gray-500 whitespace-nowrap mt-0.5">
-                            {format(n.createdAt?.toDate ? n.createdAt.toDate() : new Date(), 'MMM d, h:mm a')}
-                          </span>
-                        </div>
-                        
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-relaxed">
-                          {n.message}
-                        </p>
-
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="text-[8px] uppercase tracking-wider font-bold text-gray-400 bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
-                            {getCategoryLabel(n.type)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Micro actions on hover */}
-                      <div className="absolute right-2 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-white dark:bg-[#1c1c18] pl-2 py-0.5 rounded-full shadow-sm">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (isUnread) {
-                              markAsRead(n.id!);
-                            } else {
-                              markAsUnread(n.id!, e);
-                            }
-                          }}
-                          title={isUnread ? "Mark as Read" : "Mark as Unread"}
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full"
-                        >
-                          {isUnread ? <MailOpen size={12} /> : <Mail size={12} />}
-                        </button>
-                        <button
-                          onClick={(e) => deleteNotification(n.id!, e)}
-                          title="Delete Message"
-                          className="p-1 hover:bg-red-500/10 text-gray-400 hover:text-red-500 rounded-full"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Right Column: Detailed View */}
-          <div className={cn(
-            "lg:col-span-7 bg-white dark:bg-[#1c1c18] border border-gray-100 dark:border-white/5 rounded-[32px] flex flex-col overflow-hidden",
-            mobileDetailView ? "flex" : "hidden lg:flex"
-          )}>
-            {selectedNote ? (
-              <div className="flex flex-col h-full min-h-[450px]">
-                {/* Detail Header / Mobile Back bar */}
-                <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#171714]">
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => setMobileDetailView(false)}
-                      className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
-                    >
-                      <ArrowLeft size={18} />
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <span className="p-1.5 bg-[#5A5A40]/10 text-[#5A5A40] dark:text-[#d4d4bc] rounded-xl">
-                        {getIcon(selectedNote.type, 18)}
-                      </span>
-                      <div>
-                        <span className="text-[10px] font-bold text-[#5A5A40] dark:text-[#d4d4bc] uppercase tracking-wider block">
-                          {getCategoryLabel(selectedNote.type)}
-                        </span>
-                        <div className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500 text-[10px] mt-0.5">
-                          <Clock size={10} />
-                          <span>
-                            {format(selectedNote.createdAt?.toDate ? selectedNote.createdAt.toDate() : new Date(), 'EEEE, MMMM d, yyyy @ h:mm a')}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={(e) => {
-                        if (selectedNote.status === 'unread') {
-                          markAsRead(selectedNote.id!);
-                        } else {
-                          markAsUnread(selectedNote.id!, e);
-                        }
-                      }}
-                      className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-[#f5f5f0] hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
-                      title={selectedNote.status === 'unread' ? "Mark as Read" : "Mark as Unread"}
-                    >
-                      {selectedNote.status === 'unread' ? <MailOpen size={18} /> : <Mail size={18} />}
-                    </button>
-                    <button
-                      onClick={(e) => deleteNotification(selectedNote.id!, e)}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
-                      title="Delete notification"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Detail Body */}
-                <div className="p-6 sm:p-8 flex-1 overflow-y-auto space-y-6 max-h-[450px] lg:max-h-[550px] no-scrollbar">
-                  {/* Styled Message Box */}
-                  <div className="bg-[#fcfcf9] dark:bg-[#1a1a17] border border-gray-100 dark:border-white/5 rounded-3xl p-6 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 inset-x-0 h-1.5 bg-[#5A5A40]" />
-                    
-                    <h2 className="text-xl font-serif font-bold text-[#4A4A30] dark:text-[#d4d4bc] border-b border-gray-100 dark:border-white/5 pb-4 mb-4 leading-snug">
-                      {selectedNote.title}
-                    </h2>
-                    
-                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed space-y-4 whitespace-pre-wrap font-sans">
-                      {selectedNote.message}
-                    </div>
-
-                    {selectedNote.link && (
-                      <div className="pt-6 mt-6 border-t border-gray-100 dark:border-white/5 flex justify-end">
-                        <a
-                          href={selectedNote.link}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#5A5A40] text-white text-xs font-bold uppercase tracking-wider rounded-full hover:shadow-md transition-all"
-                        >
-                          Go to Resource
-                          <ChevronRight size={14} />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 font-serif italic max-w-sm mx-auto leading-relaxed">
-                      This alert was issued via the KCFC Community Portal. You can manage your notification preferences anytime under My Profile settings.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-[450px]">
-                <div className="w-16 h-16 bg-gray-50 dark:bg-white/[0.02] rounded-full mb-4 flex items-center justify-center text-gray-300 dark:text-gray-600">
-                  <InboxIcon size={28} />
-                </div>
-                <h3 className="text-sm font-serif font-bold text-gray-400 dark:text-gray-500">No Message Selected</h3>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-xs">
-                  Choose a notification or broadcast from the list on the left to read its full message content here.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      </section>
     </div>
   );
+}
+
+function MessageRow({ item, selected, onOpen }: { item: NotificationType; selected: boolean; onOpen: () => void }) {
+  return <button type="button" onClick={onOpen} className={cn('mb-1 flex min-h-[78px] w-full items-start gap-3 rounded-2xl p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', selected ? 'bg-[#EAF3FF] dark:bg-blue-500/15' : 'hover:bg-[#F7F9FC] dark:hover:bg-white/5')}><div className={cn('mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', item.status === 'unread' ? 'bg-[#123B66] text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300')}><MessageIcon type={item.type} plain /></div><div className="min-w-0 flex-1"><div className="flex items-start gap-2"><p className={cn('line-clamp-1 text-[13px] text-[#172033] dark:text-white', item.status === 'unread' ? 'font-extrabold' : 'font-semibold')}>{item.title}</p><span className="ml-auto shrink-0 text-[9px] font-medium text-slate-400">{formatDate(item.createdAt)}</span></div><p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{item.message}</p></div>{item.status === 'unread' && <span className="mt-4 h-2 w-2 shrink-0 rounded-full bg-[#2563EB]" />}</button>;
+}
+
+function MessageIcon({ type, plain = false }: { type: NotificationType['type']; plain?: boolean }) {
+  const className = plain ? 'h-4 w-4' : 'h-4 w-4 text-[#2563EB]';
+  if (type === 'announcement') return <Megaphone className={className} />;
+  if (type === 'duty') return <CalendarDays className={className} />;
+  if (type === 'broadcast') return <MessageSquare className={className} />;
+  return <Info className={className} />;
+}
+
+function categoryLabel(item: NotificationType) {
+  if (item.sourceType === 'availability') return 'Availability';
+  if (item.sourceType === 'assignment') return 'Assignment';
+  if (item.type === 'announcement') return 'Announcement';
+  if (item.type === 'duty') return 'Duty';
+  if (item.type === 'broadcast') return 'Broadcast';
+  return 'System';
+}
+
+function EmptyList({ search }: { search: string }) {
+  return <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">{search ? <Search className="h-6 w-6" /> : <InboxIcon className="h-6 w-6" />}</div><h3 className="mt-4 text-[15px] font-extrabold text-[#172033] dark:text-white">{search ? 'No matching messages' : 'Nothing here right now'}</h3><p className="mt-2 max-w-xs text-[12px] leading-5 text-slate-500 dark:text-slate-400">{search ? 'Try another keyword or change the message filter.' : 'New KCFC notices will appear here automatically.'}</p></div>;
 }
