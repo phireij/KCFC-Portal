@@ -28,7 +28,7 @@ for (const [name, source] of [
 assert.match(roles, /aria-pressed=/, 'Role/ministry toggles must expose pressed state');
 assert.match(core, /aria-pressed=/, 'Core status preview toggles must expose pressed state');
 assert.match(core, /Read-only impact preview/, 'Core status planner must remain explicitly preview-only');
-assert.match(approvals, /Firebase Auth account is not recreated/, 'Approval UX must retain identity-preservation copy');
+assert.match(approvals, /without recreating the Firebase account, changing the UID/, 'Approval UX must retain identity-preservation copy');
 
 assert.doesNotMatch(admin, /onClick=.*delete/i, 'Routine Leadership shell must not expose inline deletion actions');
 
