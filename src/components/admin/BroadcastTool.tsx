@@ -26,6 +26,8 @@ import {
 import { UserProfile, MinistryType } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
+import { buildLeadershipBroadcastCreatorPlan } from '../../lib/broadcastCreatorPlan';
+import { appendCommunicationNotificationsToBatch } from '../../lib/communicationFirestore';
 
 export default function BroadcastTool() {
   const [selectedTargets, setSelectedTargets] = useState<string[]>(['all']);
@@ -107,7 +109,7 @@ export default function BroadcastTool() {
         allMatched.set(u.uid, u);
       });
     });
-    return Array.from(allMatched.values());
+    return Array.from(allMatched.values()).filter(u => !u.isDisabled);
   };
 
   const filteredRecipients = getFilteredRecipients();
@@ -145,44 +147,31 @@ export default function BroadcastTool() {
 
     setSending(true);
     try {
-      // 1. Send via Portal (Firestore notifications & FCM Smartphone Alerts)
+      // 1. Send via Portal (durable Inbox + preference-aware FCM targets)
       if (sendInPortal) {
-        const batch = writeBatch(db);
-        filteredRecipients.forEach(u => {
-          // Respect notification preference
-          if (u.preferences?.broadcasts === false) return;
-
-          const userDisplayName = u.displayName || 'Member';
-          const userNickname = u.nickname || userDisplayName;
-          const personalizedMsg = message
-            .replace(/\[name\]/gi, userDisplayName)
-            .replace(/\{name\}/gi, userDisplayName)
-            .replace(/\[nickname\]/gi, userNickname)
-            .replace(/\{nickname\}/gi, userNickname);
-
-          const noteRef = doc(collection(db, 'notifications'));
-          batch.set(noteRef, {
-            userId: u.uid,
-            title: `Broadcast: ${title}`,
-            message: personalizedMsg,
-            type: 'broadcast',
-            status: 'unread',
-            link: `/inbox?id=${noteRef.id}`,
-            createdAt: serverTimestamp()
-          });
+        const broadcastId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const creatorPlan = buildLeadershipBroadcastCreatorPlan({
+          recipients: filteredRecipients,
+          broadcastId,
+          title,
+          message,
+          allowPwa: true,
         });
+
+        const batch = writeBatch(db);
+        appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
         await batch.commit();
 
-        // 1b. Trigger native smartphone alert (FCM Push Notification)
+        // Trigger native smartphone alert only for recipients whose routing plan includes PWA.
         try {
           const currentUser = auth.currentUser;
-          if (currentUser) {
+          if (currentUser && creatorPlan.pushRecipientIds.length > 0 && creatorPlan.pushTokens.length > 0) {
             const idToken = await currentUser.getIdToken();
             const fcmBody = message
-              .replace(/\[name\]/gi, "Member")
-              .replace(/\{name\}/gi, "Member")
-              .replace(/\[nickname\]/gi, "Member")
-              .replace(/\{nickname\}/gi, "Member");
+              .replace(/\[name\]/gi, 'Member')
+              .replace(/\{name\}/gi, 'Member')
+              .replace(/\[nickname\]/gi, 'Member')
+              .replace(/\{nickname\}/gi, 'Member');
 
             const pResponse = await fetch('/api/admin/broadcast-custom-push', {
               method: 'POST',
@@ -191,18 +180,18 @@ export default function BroadcastTool() {
                 'Authorization': `Bearer ${idToken}`
               },
               body: JSON.stringify({
-                userIds: filteredRecipients.map(u => u.uid),
-                recipientTokens: filteredRecipients.flatMap(u => u.fcmTokens || []),
+                userIds: creatorPlan.pushRecipientIds,
+                recipientTokens: creatorPlan.pushTokens,
                 title: `Broadcast: ${title}`,
                 body: fcmBody,
                 clickAction: '/inbox'
               })
             });
             const pResult = await pResponse.json();
-            console.info("FCM smartphone alerts dispatch completed:", pResult);
+            console.info('FCM smartphone alerts dispatch completed:', pResult);
           }
         } catch (pushErr) {
-          console.error("FCM smartphone alerts dispatch failed:", pushErr);
+          console.error('FCM smartphone alerts dispatch failed:', pushErr);
         }
       }
 
