@@ -48,6 +48,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Stage roster revision migration candidate
+        run: node scripts/stage-polls-roster-revision-migration.mjs
+
+      - name: Typecheck staged roster revision migration
+        run: npm run lint
+
+      - name: Build staged roster revision migration
+        run: npm run build
+
       - name: Guard external connector defaults
         shell: bash
         run: |
