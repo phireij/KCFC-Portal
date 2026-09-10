@@ -18,6 +18,7 @@ export type LeadershipBroadcastCreatorPlanInput = {
   title: string;
   message: string;
   allowPwa?: boolean;
+  allowEmail?: boolean;
   urgent?: boolean;
 };
 
@@ -27,11 +28,10 @@ export type LeadershipBroadcastCreatorPlanInput = {
  * Safety/compatibility rules:
  * - disabled profiles are excluded;
  * - duplicate UIDs/tokens are collapsed by the shared batch planner;
- * - every included recipient receives a durable Inbox plan even when the member
- *   has muted broadcast alerts;
- * - PWA delivery is governed per-recipient by communication preferences;
- * - email is deliberately disabled here because BroadcastTool still executes its
- *   existing personalized Gmail path separately;
+ * - every included recipient receives a durable Inbox plan when the plan is persisted;
+ * - PWA and email recipient sets are governed independently by member preferences;
+ * - callers may use the email recipient IDs only as an execution filter without
+ *   persisting the generated Inbox records (used by the existing Gmail path);
  * - external connectors remain disabled by buildBroadcastNotification.
  */
 export function buildLeadershipBroadcastCreatorPlan({
@@ -40,6 +40,7 @@ export function buildLeadershipBroadcastCreatorPlan({
   title,
   message,
   allowPwa = true,
+  allowEmail = false,
   urgent = false,
 }: LeadershipBroadcastCreatorPlanInput) {
   const profilesByUid = new Map<string, UserProfile>();
@@ -66,7 +67,7 @@ export function buildLeadershipBroadcastCreatorPlan({
       preferences: recipient.preferences,
       connectedCommunicationApps: recipient.connectedCommunicationApps,
       allowPwa,
-      allowEmail: false,
+      allowEmail,
       urgent,
     });
   });
