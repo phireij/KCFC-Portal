@@ -57,15 +57,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Stage current-device notification health UI
-        run: node scripts/stage-current-device-notification-health-ui.mjs
-
-      - name: Typecheck staged notification health UI
-        run: npm run lint
-
-      - name: Build staged notification health UI
-        run: npm run build
-
       - name: Guard external connector defaults
         shell: bash
         run: |
