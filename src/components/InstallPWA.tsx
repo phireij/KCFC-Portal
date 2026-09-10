@@ -1,462 +1,179 @@
-import React, { useState, useEffect } from 'react';
-import { Smartphone, Download, Share, PlusSquare, BellRing, CheckCircle, X, Info, ChevronRight, Bell, RefreshCw } from 'lucide-react';
-import { useAuth } from '../App';
-import { registerDeviceToken, VAPID_KEY, prepareNativeWebPushPrerequisites } from '../lib/fcmClient';
+import React, { useEffect, useState } from 'react';
+import {
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  MoreVertical,
+  PlusSquare,
+  Share2,
+  Smartphone,
+} from 'lucide-react';
+import { isStandaloneMode } from '../lib/fcmClient';
+import { cn } from '../lib/utils';
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
 
 export default function InstallPWA() {
-  const { user } = useAuth();
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isDismissed, setIsDismissed] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
-  const [enablingNotifications, setEnablingNotifications] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [registeredToken, setRegisteredToken] = useState<string | null>(() => {
-    return typeof window !== "undefined" ? localStorage.getItem("kcfc_registered_fcm_token") : null;
-  });
-  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
-  const [testingPush, setTestingPush] = useState(false);
-  const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
-  const [testCountdown, setTestCountdown] = useState<number | null>(null);
-  const testTimerRef = React.useRef<{ interval: any; timeout: any } | null>(null);
-
-  const checkActivePushSubscription = async () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        const reg = regs.find(r => r.active && r.active.scriptURL.includes('firebase-messaging-sw'));
-        if (reg && reg.pushManager) {
-          const sub = await reg.pushManager.getSubscription();
-          setHasActiveSubscription(!!sub);
-        } else {
-          // Fallback to checking the default registration if none match specifically
-          const defaultReg = await navigator.serviceWorker.getRegistration();
-          if (defaultReg && defaultReg.pushManager) {
-            const sub = await defaultReg.pushManager.getSubscription();
-            setHasActiveSubscription(!!sub);
-          } else {
-            setHasActiveSubscription(false);
-          }
-        }
-      } catch (e) {
-        console.warn("Error checking active push subscription:", e);
-        setHasActiveSubscription(false);
-      }
-    } else {
-      setHasActiveSubscription(false);
-    }
-  };
+  const [standalone, setStandalone] = useState(false);
+  const [ios, setIos] = useState(false);
+  const [android, setAndroid] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    // 1. Check if already installed / standalone
-    const checkStandalone = 
-      window.matchMedia('(display-mode: standalone)').matches || 
-      (window.navigator as any).standalone === true ||
-      document.referrer.includes('android-app://');
-    
-    setIsStandalone(checkStandalone);
+    const userAgent = navigator.userAgent || '';
+    setIos(/iPad|iPhone|iPod/.test(userAgent));
+    setAndroid(/Android/i.test(userAgent));
+    setStandalone(isStandaloneMode());
 
-    // 2. Check platform / device
-    const ua = window.navigator.userAgent.toLowerCase();
-    const iosDevice = /iphone|ipad|ipod/.test(ua);
-    setIsIOS(iosDevice);
-
-    const mobileDevice = /android|iphone|ipad|ipod|windows phone|iemobile|opera mini/i.test(ua);
-    setIsMobile(mobileDevice);
-
-    // 3. Save current notification permission status
-    if ('Notification' in window) {
-      setNotificationPermission(Notification.permission);
-    }
-
-    // 4. Capture beforeinstallprompt event for Android / Chrome
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+    const handlePrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    const handleInstalled = () => {
+      setStandalone(true);
+      setInstallPrompt(null);
+      setMessage('KCFC Portal is installed on this device.');
+    };
 
-    // 5. Read localstorage dismissal state
-    const dismissed = localStorage.getItem('kcfc_pwa_install_dismissed') === 'true';
-    setIsDismissed(dismissed);
-
-    // 6. Preload VAPID key and auto-register silently if permission already granted
-    prepareNativeWebPushPrerequisites()
-      .then(() => {
-        if (user && 'Notification' in window && Notification.permission === 'granted') {
-          console.log("PWA: Notifications granted. Silently auto-registering standard Web Push on mount...");
-          return registerDeviceToken(user.uid, false);
-        }
-      })
-      .then((token) => {
-        if (token) {
-          setRegisteredToken(token);
-          setHasActiveSubscription(true);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("kcfc_registered_fcm_token", token);
-          }
-        } else {
-          checkActivePushSubscription();
-        }
-      })
-      .catch((err) => {
-        console.warn("PWA: Preload or background auto-registration failed on mount:", err);
-        checkActivePushSubscription();
-      });
-
+    window.addEventListener('beforeinstallprompt', handlePrompt);
+    window.addEventListener('appinstalled', handleInstalled);
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      if (testTimerRef.current) {
-        clearInterval(testTimerRef.current.interval);
-        clearTimeout(testTimerRef.current.timeout);
-      }
+      window.removeEventListener('beforeinstallprompt', handlePrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
     };
-  }, [user]);
+  }, []);
 
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    
-    // Show the native browser install prompt
-    deferredPrompt.prompt();
-    
-    // Wait for the user's choice
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`PWA Install Prompt outcome: ${outcome}`);
-    
-    // Clear the deferred prompt (it can only be used once)
-    setDeferredPrompt(null);
-  };
-
-  const handleEnableNotifications = async () => {
-    if (!user) return;
-
-    // Check if inside a sandboxed iframe (like the AI Studio preview window)
-    const isIframe = window.self !== window.top;
-    if (isIframe) {
-      alert(
-        "Preview Sandbox Limitation:\n\n" +
-        "You are currently viewing the portal inside a sandboxed preview iframe where browser notification requests are restricted.\n\n" +
-        "To enable and test smartphone alerts, please open the application in a new browser tab or install it directly on your device."
-      );
-      return;
-    }
-
-    // Check if on iOS and not running as standalone PWA
-    if (isIOS && !isStandalone) {
-      alert(
-        "iPhone / iPad Requirement:\n\n" +
-        "Apple iOS requires web applications to be added to the Home Screen before push notifications can be requested.\n\n" +
-        "Please follow the 3 steps listed below:\n" +
-        "1. Tap your mobile browser's Share button (the square with an up-arrow at the bottom or top).\n" +
-        "2. Scroll down and select 'Add to Home Screen'.\n" +
-        "3. Launch the KCFC Portal app from your Home Screen, sign in, and click 'Enable Smartphone Alerts' again."
-      );
-      return;
-    }
-
-    setEnablingNotifications(true);
+  const requestInstall = async () => {
+    if (!installPrompt || installing) return;
+    setInstalling(true);
+    setMessage(null);
     try {
-      const token = await registerDeviceToken(user.uid, true);
-      if (token) {
-        await checkActivePushSubscription();
-        if (token.includes("webpush-registered")) {
-          setHasActiveSubscription(true);
-          setRegisteredToken(token);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("kcfc_registered_fcm_token", token);
-          }
-        } else if (!token.startsWith("simulated")) {
-          setRegisteredToken(token);
-          setHasActiveSubscription(true);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("kcfc_registered_fcm_token", token);
-          }
-        }
-        if ('Notification' in window) {
-          setNotificationPermission(Notification.permission);
-        }
-        
-        if (token.startsWith("simulated") && !token.includes("webpush-registered")) {
-          let reason = "An unknown browser issue occurred during device registration.";
-          if (token === "simulated-browser-token") {
-            reason = "Firebase Cloud Messaging (FCM) is not fully supported in this browser environment or inside an iframe.";
-          } else if (token === "simulated-device-token") {
-            reason = "The server's VAPID Public Key (VITE_FCM_VAPID_KEY) is empty or missing.";
-          } else if (token === "simulated-invalid-vapid-token") {
-            reason = `The configured VAPID Public Key is invalid or malformed.\n\n` +
-                     `• Configured Key: "${VAPID_KEY || ""}"\n` +
-                     `• Current Key Length: ${VAPID_KEY?.length || 0} characters.\n` +
-                     `• Expected Format: Standard Web Push VAPID public keys are P-256 EC keys and are exactly 87-88 characters long (and usually start with 'B').\n\n` +
-                     `Please open your Firebase Console, navigate to Project Settings -> Cloud Messaging -> Web Push certificates, and copy the full 87-88 character 'Key pair'.`;
-          } else if (token.startsWith("simulated-registration-failed-token:")) {
-            const rawError = token.substring("simulated-registration-failed-token:".length);
-            reason = `The Firebase FCM registration server rejected the request with the following error:\n"${rawError}"\n\n` +
-                     `• Configured VAPID Key: "${VAPID_KEY || ""}" (Length: ${VAPID_KEY?.length || 0} characters).\n\n` +
-                     `This typically happens if the VAPID Public Key is mismatched with your active Firebase project configuration, if the key is truncated, or if there is a network blocker.`;
-          }
-
-          alert(
-            "Notice: Smartphone Alerts Activated in Simulated Mode.\n\n" +
-            reason + "\n\n" +
-            "You will receive live alerts inside the KCFC Portal while using it, but native push notifications may not appear on your device's lock screen when the app is closed."
-          );
-        } else {
-          alert("Success!\n\nSmartphone alerts have been successfully activated on this device!");
-        }
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setMessage('Installation accepted. Open KCFC from your Home Screen or app list when it finishes.');
       } else {
-        alert("Could not activate push notifications at this time. Please make sure notifications are allowed in your browser and device settings.");
+        setMessage('Installation was dismissed. You can install KCFC later from this page.');
       }
-    } catch (err: any) {
-      console.error("Error enabling notifications:", err);
-      const errMsg = err?.message || String(err);
-      
-      if (errMsg.toLowerCase().includes('denied') || errMsg.toLowerCase().includes('permission')) {
-        alert(
-          "Notice: Notification permission was denied or blocked by iOS settings.\n\n" +
-          "To fix this on your iPhone / iPad:\n" +
-          "1. Open your device's 'Settings' app.\n" +
-          "2. Scroll down to 'Notifications'.\n" +
-          "3. Find and select 'KCFC Portal'.\n" +
-          "4. Toggle 'Allow Notifications' to ON.\n" +
-          "5. Re-open this app and tap 'Enable Smartphone Alerts' again!"
-        );
-      } else {
-        alert(
-          "Notice: Could not register device for smartphone alerts.\n\n" +
-          "Details: " + errMsg + "\n\n" +
-          "If the permission prompt did not appear, please make sure you allowed notifications in your iOS Settings -> Notifications -> KCFC Portal, or reset the app and try again."
-        );
-      }
+      setInstallPrompt(null);
+    } catch (error) {
+      console.error('PWA install prompt failed', error);
+      setMessage('The browser could not open its install prompt. Use the manual installation steps below.');
     } finally {
-      setEnablingNotifications(false);
+      setInstalling(false);
     }
   };
 
-  const handleDismiss = () => {
-    setIsDismissed(true);
-    localStorage.setItem('kcfc_pwa_install_dismissed', 'true');
-  };
-
-  const handleSendTestPush = async () => {
-    if (!user) return;
-    setTestingPush(true);
-    setTestSuccessMessage(null);
-
-    // Start 5 second countdown to allow them to put the app in the background!
-    setTestCountdown(5);
-    
-    const countdownInterval = setInterval(() => {
-      setTestCountdown((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(countdownInterval);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    testTimerRef.current = {
-      interval: countdownInterval,
-      timeout: setTimeout(async () => {
-        try {
-          const idToken = await user.getIdToken();
-          const response = await fetch('/api/users/send-test-push', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            },
-            body: JSON.stringify({
-              targetToken: registeredToken || undefined
-            })
-          });
-
-          const result = await response.json();
-          if (response.ok && result.success) {
-            if (result.isSandboxSimulated) {
-              setTestSuccessMessage(
-                `🎉 In-App & Browser Alert Triggered!\n\n${result.message}`
-              );
-            } else {
-              setTestSuccessMessage(
-                `Success! Test notification dispatched to your active subscription. It should appear on your device shortly!`
-              );
-            }
-          } else {
-            let errorDetails = "";
-            if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
-              errorDetails = "\n\nDetails:\n" + result.errors.map((e: any) => `• ${e.errorCode}: ${e.errorMessage}`).join("\n");
-            }
-            setTestSuccessMessage(
-              `Dispatch Notice: ${result.error || result.message || "Failed to dispatch test notification."}${errorDetails}`
-            );
-          }
-        } catch (err: any) {
-          console.error("Test push error:", err);
-          setTestSuccessMessage(`Failed to send test push: ${err.message || err}`);
-        } finally {
-          setTestingPush(false);
-        }
-      }, 5000)
-    };
-  };
-
-  const handleCancelTest = () => {
-    if (testTimerRef.current) {
-      clearInterval(testTimerRef.current.interval);
-      clearTimeout(testTimerRef.current.timeout);
-      testTimerRef.current = null;
-    }
-    setTestCountdown(null);
-    setTestingPush(false);
-    setTestSuccessMessage("Test cancelled.");
-  };
-
-  // If dismissed or already installed and notifications are active, we don't need to show anything.
-  const hasNotificationsActive = notificationPermission === 'granted';
-  if (isDismissed && isStandalone && hasNotificationsActive) {
-    return null;
+  if (standalone) {
+    return (
+      <section className="kcfc-surface overflow-hidden">
+        <div className="flex items-start gap-3 p-4 sm:p-5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-300">
+            <CheckCircle2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[17px] font-extrabold tracking-tight text-[#172033] dark:text-white">KCFC Portal is installed</h2>
+              <span className="rounded-full bg-green-100 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-green-700 dark:bg-green-500/15 dark:text-green-300">App mode</span>
+            </div>
+            <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">Launch KCFC from your Home Screen or app list for the best mobile experience. Notification setup and testing are managed in App & Notification Status above.</p>
+          </div>
+        </div>
+      </section>
+    );
   }
 
   return (
-    <div className="bg-[#5a5a40]/5 dark:bg-[#5a5a40]/10 border border-[#5a5a40]/20 rounded-3xl p-5 md:p-6 backdrop-blur-md relative overflow-hidden shadow-sm transition-all duration-300">
-      {/* Absolute top decoration */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-[#5a5a40]/10 rounded-full blur-2xl pointer-events-none" />
-      
-      <button 
-        onClick={handleDismiss} 
-        className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-600 transition-all"
-        title="Dismiss panel"
-      >
-        <X size={16} />
-      </button>
-
-      <div className="flex flex-col md:flex-row gap-5 items-start">
-        {/* Status icon badge */}
-        <div className="p-3 bg-[#5a5a40] text-white rounded-2xl shadow-md shrink-0 flex items-center justify-center">
-          {isStandalone ? <CheckCircle size={24} /> : <Smartphone size={24} />}
-        </div>
-
-        <div className="space-y-3 w-full">
+    <section className="kcfc-surface overflow-hidden">
+      <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
+            <Smartphone className="h-5 w-5" />
+          </div>
           <div>
-            <h3 className="text-lg font-serif font-semibold text-[#1a1a1a] dark:text-[#f5f5f0] flex items-center gap-2">
-              {isStandalone ? 'KCFC App Installed' : 'Install KCFC Portal on your Phone'}
-              {isStandalone && (
-                <span className="text-xs px-2.5 py-0.5 bg-green-500/15 text-green-600 dark:text-green-400 rounded-full font-bold uppercase tracking-wider">
-                  Active
-                </span>
-              )}
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-2xl leading-relaxed">
-              {isStandalone 
-                ? 'Great! You are running the official portal as a mobile application. To receive instant smartphone notifications when the admin or president broadcasts messages, please make sure notification alerts are active.'
-                : 'Turn this web portal into a fast, dedicated app on your iPhone or Android home screen. It takes up no space, starts instantly, and connects you directly to club activities.'}
-            </p>
+            <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Install KCFC Portal</h2>
+            <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">Add KCFC to your phone or tablet so Schedule, Inbox and member tools open like an app.</p>
           </div>
+        </div>
+      </div>
 
-          {/* Sub-actions block */}
-          <div className="pt-2 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-            {/* 1. NOTIFICATION ACTIVATION REQUIREMENT */}
-            {notificationPermission !== 'granted' && (
-              <button
-                onClick={handleEnableNotifications}
-                disabled={enablingNotifications}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm shrink-0"
-              >
-                <BellRing size={14} className="animate-bounce" />
-                {enablingNotifications ? 'Activating Alerts...' : 'Enable Smartphone Alerts'}
-              </button>
-            )}
+      <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[.9fr_1.1fr]">
+        <div className="rounded-2xl bg-gradient-to-br from-[#123B66] to-[#2563EB] p-5 text-white">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-blue-100">Recommended</p>
+          <h3 className="mt-2 text-[20px] font-extrabold tracking-tight">One tap from your Home Screen.</h3>
+          <p className="mt-2 text-[12px] leading-5 text-blue-50/90">Installation does not create a new KCFC account and does not copy your member data. You sign in with the same existing account.</p>
 
-            {/* 2. ANDROID / CHROME INSTALL BUTTON */}
-            {!isStandalone && deferredPrompt && (
-              <button
-                onClick={handleInstallClick}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#5a5a40] hover:bg-[#4d4d36] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-soft"
-              >
-                <Download size={14} />
-                Install App Instantly
-              </button>
-            )}
-          </div>
-
-          {/* 3. APPLE iOS STEP-BY-STEP WORKAROUND */}
-          {!isStandalone && isIOS && (
-            <div className="mt-4 bg-white/50 dark:bg-black/20 border border-gray-100 dark:border-white/5 rounded-2xl p-4 space-y-3">
-              <span className="text-xs font-bold text-[#5a5a40] dark:text-[#d4d4bc] uppercase tracking-wider block">
-                iPhone / iPad Installation Steps (Safari):
-              </span>
-              <ol className="text-xs text-gray-600 dark:text-gray-400 space-y-2">
-                <li className="flex items-center gap-2.5">
-                  <span className="w-5 h-5 rounded-full bg-[#5a5a40]/15 text-[#5a5a40] dark:text-[#d4d4bc] font-bold flex items-center justify-center shrink-0">1</span>
-                  <span>Tap the <strong className="font-semibold text-gray-800 dark:text-white inline-flex items-center gap-1">Share <Share size={12} className="inline" /></strong> button (the square icon with an up arrow at the bottom).</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span className="w-5 h-5 rounded-full bg-[#5a5a40]/15 text-[#5a5a40] dark:text-[#d4d4bc] font-bold flex items-center justify-center shrink-0">2</span>
-                  <span>Scroll down and select <strong className="font-semibold text-gray-800 dark:text-white inline-flex items-center gap-1">Add to Home Screen <PlusSquare size={12} className="inline" /></strong>.</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span className="w-5 h-5 rounded-full bg-[#5a5a40]/15 text-[#5a5a40] dark:text-[#d4d4bc] font-bold flex items-center justify-center shrink-0">3</span>
-                  <span>Tap <strong className="font-semibold text-gray-800 dark:text-white">Add</strong> at the top right corner. The icon will appear on your phone's screen!</span>
-                </li>
-              </ol>
+          {installPrompt ? (
+            <button
+              type="button"
+              onClick={requestInstall}
+              disabled={installing}
+              className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 text-[12px] font-extrabold text-[#123B66] shadow-sm disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <Download className={cn('h-4 w-4', installing && 'animate-bounce')} />
+              {installing ? 'Opening install prompt…' : 'Install KCFC Portal'}
+            </button>
+          ) : (
+            <div className="mt-5 rounded-2xl bg-white/10 p-3 text-[11px] leading-5 text-blue-50">
+              Your browser is not currently offering a one-tap install prompt. Use the device-specific steps beside this card.
             </div>
           )}
 
-          {/* 4. OTHER DEVICE GUIDE / GENERIC FALLBACK */}
-          {!isStandalone && !isIOS && !deferredPrompt && (
-            <div className="mt-4 flex items-start gap-2 bg-white/50 dark:bg-black/20 border border-gray-100 dark:border-white/5 rounded-2xl p-3">
-              <Info size={14} className="text-gray-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                To install on your mobile, open <strong className="text-gray-700 dark:text-white">portal.kcfcjp.com</strong> or your shared link inside <strong className="text-gray-700 dark:text-white">Chrome (Android)</strong> or <strong className="text-gray-700 dark:text-white">Safari (iOS)</strong> directly on your smartphone to activate direct home-screen shortcuts and live push notification support!
-              </p>
-            </div>
-          )}
+          {message && <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[10px] leading-4 text-blue-50">{message}</p>}
+        </div>
 
-          {/* Notification diagnostic confirmation and self-testing panel */}
-          {hasNotificationsActive && (
-            <div className="mt-4 pt-3.5 border-t border-[#5a5a40]/10 dark:border-white/5 space-y-3">
-              {hasActiveSubscription === true && (
-                <p className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-1.5 font-semibold uppercase tracking-wider">
-                  <CheckCircle size={10} /> Smartphone Push Alerts Active on This Device
-                </p>
-              )}
-              
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                {testCountdown !== null ? (
-                  <button
-                    onClick={handleCancelTest}
-                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all"
-                  >
-                    <X size={12} />
-                    Cancel Test (Sending in {testCountdown}s...)
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleSendTestPush}
-                    disabled={testingPush}
-                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#5a5a40] hover:bg-[#4d4d36] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all shadow-sm disabled:opacity-50 shrink-0"
-                  >
-                    <Bell size={12} className={testingPush ? "animate-pulse" : ""} />
-                    {testingPush ? "Sending..." : "Test Smartphone Alert"}
-                  </button>
-                )}
-                
-                <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-normal max-w-sm">
-                  Sends an instant notification to your phone with a <strong>5-second delay</strong> so you can lock your screen or go back to your Home Screen to watch it arrive!
-                </span>
-              </div>
-
-              {testSuccessMessage && (
-                <div className="text-xs p-3 bg-white/70 dark:bg-black/30 border border-[#5a5a40]/10 dark:border-white/5 rounded-xl text-[#5a5a40] dark:text-[#d4d4bc] font-medium leading-relaxed">
-                  {testSuccessMessage}
-                </div>
-              )}
-            </div>
+        <div className="space-y-3">
+          {ios ? (
+            <>
+              <InstallStep icon={Share2} number={1} title="Open Share" detail="In Safari, tap the Share button (square with an upward arrow)." />
+              <InstallStep icon={PlusSquare} number={2} title="Add to Home Screen" detail="Scroll the Share menu and choose Add to Home Screen." />
+              <InstallStep icon={ExternalLink} number={3} title="Open the KCFC icon" detail="Launch KCFC from the new Home Screen icon, sign in, then enable alerts in App & Notification Status." />
+            </>
+          ) : android ? (
+            <>
+              <InstallStep icon={Download} number={1} title="Use Install app" detail="If Chrome shows Install app / Add to Home Screen, select it and confirm." />
+              <InstallStep icon={MoreVertical} number={2} title="If no prompt appears" detail="Open the browser menu (⋮) and choose Install app or Add to Home Screen." />
+              <InstallStep icon={ExternalLink} number={3} title="Open KCFC as an app" detail="Launch KCFC from your Home Screen/app list, sign in and complete notification setup." />
+            </>
+          ) : (
+            <>
+              <InstallStep icon={Download} number={1} title="Look for the install control" detail="Supported desktop/mobile browsers may show an Install icon in the address bar or browser menu." />
+              <InstallStep icon={MoreVertical} number={2} title="Use the browser menu" detail="Choose Install app, Apps → Install, or Add to Home Screen depending on the browser." />
+              <InstallStep icon={Smartphone} number={3} title="Use KCFC in app mode" detail="The same member account and data remain available after installation." />
+            </>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function InstallStep({
+  icon: Icon,
+  number,
+  title,
+  detail,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  number: number;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
+        <Icon className="h-5 w-5" />
+        <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#2563EB] text-[9px] font-extrabold text-white">{number}</span>
+      </div>
+      <div>
+        <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">{title}</p>
+        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">{detail}</p>
       </div>
     </div>
   );
