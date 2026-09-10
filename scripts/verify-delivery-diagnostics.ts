@@ -5,6 +5,7 @@ import {
   recordDeliveryOutcome,
   summarizeDeliveryDiagnostics,
 } from '../src/lib/deliveryDiagnostics';
+import { materializeNotificationRecord } from '../src/lib/notificationPersistence';
 
 const initialized = initializeDeliveryDiagnostics(['inbox', 'pwa', 'email', 'pwa']);
 assert.deepEqual(initialized, [
@@ -12,6 +13,32 @@ assert.deepEqual(initialized, [
   { channel: 'email', status: 'queued' },
 ]);
 assert.equal(initialized.some(isDeliverySuccessful), false);
+
+const materialized = materializeNotificationRecord({
+  userId: 'member-1',
+  title: 'Synthetic notice',
+  message: 'Delivery diagnostics test',
+  type: 'system',
+  status: 'unread',
+  channels: ['inbox', 'pwa', 'email', 'pwa'],
+}, 'synthetic-created-at');
+assert.deepEqual(materialized.deliveries, [
+  { channel: 'pwa', status: 'queued' },
+  { channel: 'email', status: 'queued' },
+]);
+assert.equal(materialized.createdAt, 'synthetic-created-at');
+
+const preservedLedger = materializeNotificationRecord({
+  userId: 'member-2',
+  title: 'Synthetic existing ledger',
+  message: 'Preserve transport evidence',
+  type: 'system',
+  status: 'unread',
+  channels: ['inbox', 'pwa'],
+  deliveries: [{ channel: 'pwa', status: 'sent', updatedAt: 'synthetic-existing-time' }],
+}, 'synthetic-created-at-2');
+assert.equal(preservedLedger.deliveries?.[0].status, 'sent');
+assert.equal(preservedLedger.deliveries?.[0].updatedAt, 'synthetic-existing-time');
 
 const pushSent = recordDeliveryOutcome({
   deliveries: initialized,
