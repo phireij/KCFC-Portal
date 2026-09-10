@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { buildCommunicationRoutingPlan } from '../src/lib/communicationRouting';
 import { buildNotificationRecord } from '../src/lib/notificationRecord';
 import { isProfileEligibleForAudience } from '../src/lib/communicationAudience';
+import {
+  buildAvailabilityCompletionNotification,
+  buildAvailabilityRequestNotification,
+  buildPublishedAssignmentNotification,
+} from '../src/lib/liturgicalCommunication';
 
 const defaults = {
   announcements: true,
@@ -90,5 +95,46 @@ assert.equal(isProfileEligibleForAudience({ roles: ['member'] }, 'leadership'), 
 assert.equal(isProfileEligibleForAudience({ roles: ['president'] }, 'leadership'), true);
 assert.equal(isProfileEligibleForAudience({ isDisabled: false }, 'public'), true);
 assert.equal(isProfileEligibleForAudience({ isDisabled: false }, 'parishioners'), true);
+
+const availabilityRequest = buildAvailabilityRequestNotification({
+  userId: 'lector-1',
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  preferences: defaults,
+});
+assert.equal(availabilityRequest.record.sourceType, 'availability');
+assert.equal(availabilityRequest.record.sourceId, 'poll-availability');
+assert.equal(availabilityRequest.record.urgency, 'normal');
+assert.deepEqual(availabilityRequest.record.channels, ['inbox', 'pwa', 'email']);
+assert.equal(availabilityRequest.record.link, '/polls?id=poll-availability');
+
+const mutedAvailability = buildAvailabilityRequestNotification({
+  userId: 'usher-1',
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  preferences: { ...defaults, availability: false },
+});
+assert.deepEqual(mutedAvailability.record.channels, ['inbox']);
+
+const availabilityComplete = buildAvailabilityCompletionNotification({
+  userId: 'leader-1',
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  preferences: defaults,
+});
+assert.equal(availabilityComplete.record.sourceType, 'availability');
+assert.equal(availabilityComplete.record.link, '/polls?id=poll-availability&leader=1');
+
+const publishedAssignment = buildPublishedAssignmentNotification({
+  userId: 'altar-server-1',
+  pollId: 'poll-availability',
+  pollTitle: 'October Liturgical Availability',
+  preferences: defaults,
+});
+assert.equal(publishedAssignment.record.sourceType, 'assignment');
+assert.equal(publishedAssignment.record.urgency, 'important');
+assert.equal(publishedAssignment.record.link, '/duties?view=mine');
+assert.ok(publishedAssignment.record.channels.includes('inbox'));
+assert.ok(publishedAssignment.record.channels.includes('pwa'));
 
 console.log('Communication policy verification passed.');
