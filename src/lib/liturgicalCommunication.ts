@@ -136,6 +136,30 @@ export function buildAvailabilityRequestBatchPlan({
   }));
 }
 
+export function buildAvailabilityCompletionBatchPlan({
+  recipients,
+  pollId,
+  pollTitle,
+  allowPwa = true,
+  allowEmail = true,
+}: {
+  recipients: LiturgicalCommunicationRecipient[];
+  pollId: string;
+  pollTitle: string;
+  allowPwa?: boolean;
+  allowEmail?: boolean;
+}) {
+  return buildCommunicationBatchPlan(recipients, (recipient) => buildAvailabilityCompletionNotification({
+    userId: recipient.uid,
+    pollId,
+    pollTitle,
+    preferences: recipient.preferences,
+    connectedCommunicationApps: recipient.connectedCommunicationApps,
+    allowPwa,
+    allowEmail,
+  }));
+}
+
 export function buildPublishedAssignmentBatchPlan({
   recipients,
   pollId,
