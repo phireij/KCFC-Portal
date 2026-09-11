@@ -1,0 +1,75 @@
+name: Apply KCFC Route Code Splitting
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/apply-route-code-splitting.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Convert route pages to lazy chunks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          app = Path('src/App.tsx')
+          text = app.read_text()
+          old_react = "import React, { createContext, useContext, useEffect, useState } from 'react';"
+          new_react = "import React, { createContext, lazy, Suspense, useContext, useEffect, useState } from 'react';"
+          if old_react not in text:
+              raise SystemExit('Expected React import not found')
+          text = text.replace(old_react, new_react, 1)
+          old_pages = "// Pages\nimport Dashboard from './pages/Dashboard';\nimport Login from './pages/Login';\nimport Polls from './pages/Polls';\nimport Resources from './pages/Resources';\nimport Duties from './pages/Duties';\nimport Admin from './pages/Admin';\nimport Profile from './pages/Profile';\nimport Members from './pages/Members';\nimport Announcements from './pages/Announcements';\nimport Accounting from './pages/Accounting';\nimport Inbox from './pages/Inbox';\nimport Navbar from './components/layout/Navbar';"
+          new_pages = "// Route pages are lazy-loaded so members download only the workflow they open.\nconst Dashboard = lazy(() => import('./pages/Dashboard'));\nconst Login = lazy(() => import('./pages/Login'));\nconst Polls = lazy(() => import('./pages/Polls'));\nconst Resources = lazy(() => import('./pages/Resources'));\nconst Duties = lazy(() => import('./pages/Duties'));\nconst Admin = lazy(() => import('./pages/Admin'));\nconst Profile = lazy(() => import('./pages/Profile'));\nconst Members = lazy(() => import('./pages/Members'));\nconst Announcements = lazy(() => import('./pages/Announcements'));\nconst Accounting = lazy(() => import('./pages/Accounting'));\nconst Inbox = lazy(() => import('./pages/Inbox'));\nimport Navbar from './components/layout/Navbar';"
+          if old_pages not in text:
+              raise SystemExit('Expected static page import block not found')
+          text = text.replace(old_pages, new_pages, 1)
+          old_routes = '            <Routes>\n'
+          new_routes = '            <Suspense fallback={<div className="min-h-[40vh] flex items-center justify-center text-sm text-slate-500">Loading KCFC Portal…</div>}>\n              <Routes>\n'
+          if old_routes not in text:
+              raise SystemExit('Expected Routes opening not found')
+          text = text.replace(old_routes, new_routes, 1)
+          old_close = '            </Routes>\n          </main>'
+          new_close = '              </Routes>\n            </Suspense>\n          </main>'
+          if old_close not in text:
+              raise SystemExit('Expected Routes closing not found')
+          app.write_text(text.replace(old_close, new_close, 1))
+          PY
+      - name: Validate TypeScript and production build
+        run: |
+          npm run lint
+          npm run build 2>&1 | tee /tmp/kcfc-build.log
+          test "$(find dist/assets -maxdepth 1 -name '*.js' | wc -l)" -gt 5
+      - name: Commit validated route splitting
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'phireij'
+          git config user.email 'phireij@gmail.com'
+          git add src/App.tsx
+          if git diff --cached --quiet; then
+            echo 'No route code-splitting changes to commit.'
+            exit 0
+          fi
+          git commit -m 'perf: lazy-load route pages'
+          git push origin HEAD:redesign/mobile-first-v2
