@@ -1209,7 +1209,7 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { title, body, recipientTokens } = req.body;
+    const { title, body } = req.body;
 
     if (!title || !body) {
       res.status(400).json({ error: "Missing required parameters (title, body)" });
@@ -1240,23 +1240,18 @@ async function startServer() {
       const allTokens: string[] = [];
       let targetedUsersCount = 0;
 
-      if (Array.isArray(recipientTokens) && recipientTokens.length > 0) {
-        logMessage(`[FCM BROADCAST] Using ${recipientTokens.length} client-provided tokens for announcement push.`);
-        allTokens.push(...recipientTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-        targetedUsersCount = recipientTokens.length;
-      } else {
-        logMessage(`[FCM BROADCAST] Fetching tokens from Firestore with REST fallback for announcement push.`);
-        const allUsers = await fetchAllUsersWithFallback(token);
-        allUsers.forEach(u => {
-          if (u.preferences?.announcements === false) return; // Opted out of announcement updates
+      logMessage(`[FCM BROADCAST] Fetching tokens from Firestore with REST fallback for announcement push.`);
+      const allUsers = await fetchAllUsersWithFallback(token);
+      allUsers.forEach(u => {
+        if (u.preferences?.announcements === false) return; // Opted out of announcement updates
 
-          const tokens = u.fcmTokens || [];
-          if (Array.isArray(tokens) && tokens.length > 0) {
-            allTokens.push(...tokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-            targetedUsersCount++;
-          }
-        });
-      }
+        const tokens = u.fcmTokens || [];
+        const validTokens = tokens.filter(isDeliverableFcmToken);
+        if (validTokens.length > 0) {
+          allTokens.push(...validTokens);
+          targetedUsersCount++;
+        }
+      });
 
       // De-duplicate tokens and filter out high-fidelity simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
@@ -1430,7 +1425,7 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { userIds, title, body, clickAction, recipientTokens, notificationIdsByUser } = req.body;
+    const { userIds, title, body, clickAction, notificationIdsByUser } = req.body;
 
     if (!userIds || !Array.isArray(userIds) || !title || !body) {
       res.status(400).json({ error: "Missing required parameters (userIds, title, body)" });
@@ -1475,20 +1470,13 @@ async function startServer() {
       // 3. Find targeted users who have registered fcmTokens and whose preferences allow broadcasts
       const allTokens: string[] = [];
 
-      if (Array.isArray(recipientTokens) && recipientTokens.length > 0) {
-        logMessage(`[FCM CUSTOM] Using ${recipientTokens.length} client-provided tokens for custom push.`);
-        allTokens.push(...recipientTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-      } else {
-        logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
-        targetUsers.forEach(u => {
-          if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
+      logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
+      targetUsers.forEach(u => {
+        if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
 
-          const tokens = u.fcmTokens || [];
-          if (Array.isArray(tokens) && tokens.length > 0) {
-            allTokens.push(...tokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-          }
-        });
-      }
+        const tokens = u.fcmTokens || [];
+        allTokens.push(...tokens.filter(isDeliverableFcmToken));
+      });
 
       // De-duplicate tokens and filter out high-fidelity simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
