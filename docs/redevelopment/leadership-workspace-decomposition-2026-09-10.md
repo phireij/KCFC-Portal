@@ -14,8 +14,13 @@ This increment moves common leadership work out of the preserved all-in-one `Leg
 - Reads existing `messages` records.
 - Supports unread, active and archived views plus search.
 - Supports mark read/unread, archive and restore.
-- Does not expose message deletion or automatic Gmail sending in the routine queue.
-- Gmail reply functionality remains only in the preserved advanced legacy workspace until its own governed flow is migrated.
+- Individual inquiry reply is now available directly in the focused workspace.
+- Reply composition is explicit: the recipient is locked to the inquiry sender, the leader edits the subject/body, presses **Send reply**, and confirms the recipient before any transport call is made.
+- No reply is sent automatically when an inquiry is opened, read, archived or restored.
+- Successful reply preserves the inquiry record and marks an unread inquiry as read; it does not delete or replace the source message.
+- Permanent message deletion remains outside the focused queue in Advanced legacy tools.
+- The focused reply uses the existing KCFC Gmail/SMTP transport path; this migration does not change provider authorization, credentials or production transport configuration.
+- Redevelopment CI does not execute live outbound inquiry email.
 
 ### Member communications
 - Uses the rebuilt Broadcast composer.
@@ -39,8 +44,8 @@ This increment moves common leadership work out of the preserved all-in-one `Leg
 
 ### Advanced legacy tools
 - `LegacyAdmin.tsx` remains available as a protected compatibility surface.
-- Core-member status changes, account disabling, profile deletion, credential purge and Gmail inquiry replies remain there for now.
-- The older pre-registration control remains present only as legacy compatibility while the new focused flow is validated in staging; it is no longer required for normal leadership navigation.
+- Core-member status changes, account disabling, profile deletion and credential purge remain there for now.
+- Legacy inquiry reply and pre-registration controls remain only as compatibility fallbacks while their focused replacements complete staging validation; routine leadership navigation no longer depends on them.
 - Potentially destructive actions remain approval-gated for production use.
 
 ## Governance implementation
@@ -66,15 +71,15 @@ The pre-registration contract is independently covered by `scripts/verify-member
 - The first focused roles-editor integration correctly failed TypeScript because a Firestore `serverTimestamp()` field had been typed as the profile's string timestamp. The source typing was corrected before proceeding.
 - One-time correction runner `34467242659` — PASS: corrected source typecheck, governance test and production build all passed before the correction commit was pushed.
 - Cleanup CI on the corrected source completed TypeScript, all communication/liturgical/broadcast/governance checks, production build, connector-off guards and browser-secret guards successfully in run `34467385032`.
-- Pre-registration remains branch-only until its new permanent CI contract and the full redevelopment suite are green; no live member was pre-registered by this change.
+- Pre-registration and focused inquiry reply remain branch-only until their full redevelopment CI and staging/device scenarios are green; no live member was pre-registered and no live inquiry reply was sent by this redevelopment work.
 
 ## Safety status
 
-No production merge or deployment has occurred. No Firebase user has been deleted or recreated. No destructive migration, Core-member downgrade, live mass broadcast, external connector activation or public website publishing cutover was performed by this increment.
+No production merge or deployment has occurred. No Firebase user has been deleted or recreated. No destructive migration, Core-member downgrade, live mass broadcast, external connector activation, live inquiry-reply QA send or public website publishing cutover was performed by this increment.
 
 ## Next decomposition targets
 
 1. Add change-summary/preview ergonomics to governed member role/ministry changes.
-2. Evaluate Gmail inquiry reply migration into a focused, explicit-send workflow without changing provider authorization or sending any live QA message.
-3. Continue isolated role/regression and mobile accessibility testing.
+2. Continue isolated role/regression and mobile accessibility testing for focused leadership workflows.
+3. Evaluate whether any remaining non-destructive low-frequency settings can safely leave `LegacyAdmin` without weakening access controls.
 4. Keep Core-status mutation, account disabling, member removal and credential purge in Advanced tools until separately reviewed governed workflows exist.
