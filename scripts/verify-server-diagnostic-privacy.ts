@@ -11,6 +11,12 @@ const forbidden = [
   'res.status(500).json({ error: err.message || "Failed to register web push subscription" });',
   'res.status(500).json({ error: error.message || "Failed to dispatch push notification" });',
   'res.status(500).json({ error: error.message || "Failed to dispatch custom push notification" });',
+  'res.status(500).json({ error: error.message || "Failed to dispatch test push notification" });',
+  'res.status(500).json({ error: error.message || "Failed to process verification email dispatch" });',
+  'logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for user ${callerUid}`);',
+  'logMessage(`[SMTP SUCCESS] Sent custom server-side verification link to ${email}`);',
+  'logMsgText = `[SMTP INITIATED] Custom server-side verification link dispatch started for ${email}`;',
+  'Raw verification link: ${verificationLink}',
 ];
 
 for (const marker of forbidden) {
@@ -23,6 +29,7 @@ const identifierMarkers = [
   '${userId}',
   '${targetUserId}',
   '${currentUid}',
+  '${callerUid}',
   '${emailTrimmed}',
   '${targetUser.uid}',
   '${targetUser.email}',
@@ -49,6 +56,12 @@ const required = [
   'res.status(500).json({ error: "Failed to register web push subscription" });',
   'res.status(500).json({ error: "Failed to dispatch push notification" });',
   'res.status(500).json({ error: "Failed to dispatch custom push notification" });',
+  'res.status(500).json({ error: "Failed to dispatch test push notification" });',
+  'res.status(500).json({ error: "Failed to process verification email dispatch" });',
+  'logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for authenticated caller.`);',
+  'logMessage(`[SMTP SUCCESS] Custom server-side verification link dispatched.`);',
+  'logMsgText = `[SMTP INITIATED] Custom server-side verification link dispatch started.`;',
+  'Verification link generated for authenticated caller without logging the link.',
 ];
 
 for (const marker of required) {
@@ -67,4 +80,4 @@ if (smtpSafeCount < 1) {
   throw new Error('Expected at least one privacy-safe SMTP result log statement.');
 }
 
-console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers, broadcast message previews, and notification backend exception details are absent from public diagnostic/error surfaces.`);
+console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers, broadcast message previews, notification backend exception details, and verification-link values are absent from public/persistent diagnostic surfaces.`);
