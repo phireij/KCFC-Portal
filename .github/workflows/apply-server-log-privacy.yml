@@ -23,9 +23,9 @@ jobs:
       - run: |
           rm scripts/patch-server-log-privacy.py
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email '4189828+github-actions[bot]@users.noreply.github.com'
           git add server.ts scripts/verify-server-diagnostic-privacy.ts scripts/patch-server-log-privacy.py
           git commit -m 'fix: remove member identifiers from server diagnostics'
           git push origin HEAD:redesign/mobile-first-v2
 
-# retrigger after marker correction
+# retrigger after count correction
