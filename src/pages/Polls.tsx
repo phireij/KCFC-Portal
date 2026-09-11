@@ -169,6 +169,7 @@ const assignedUserIds = (poll: Poll) => {
 export default function Polls() {
   const { profile, user } = useAuth();
   const [searchParams] = useSearchParams();
+  const focusedPollId = searchParams.get('id');
   const [mode, setMode] = useState<PageMode>('availability');
   const [polls, setPolls] = useState<ExtendedPoll[]>([]);
   const [members, setMembers] = useState<UserProfile[]>([]);
@@ -264,6 +265,15 @@ export default function Polls() {
     });
   }, [myResponses]);
 
+  const focusPollTarget = (prefix: 'availability' | 'leader-availability', targetId: string) => {
+    window.setTimeout(() => {
+      const target = document.getElementById(`${prefix}-${targetId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    }, 150);
+  };
+
   useEffect(() => {
     const targetId = searchParams.get('id');
     if (!targetId || polls.length === 0) return;
@@ -276,12 +286,11 @@ export default function Polls() {
     if (canLead && searchParams.get('leader') === '1') {
       setMode('leader');
       setExpandedLeaderPoll(targetId);
+      focusPollTarget('leader-availability', targetId);
       return;
     }
     setMode('availability');
-    setTimeout(() => {
-      document.getElementById(`availability-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 150);
+    focusPollTarget('availability', targetId);
   }, [polls, searchParams, canLead]);
 
   const memberPolls = useMemo(() => {
@@ -635,7 +644,7 @@ export default function Polls() {
             ) : (
               <div className="space-y-4 p-4 sm:p-5">
                 {activeMemberPolls.map((poll) => (
-                  <AvailabilityCard key={poll.id} poll={poll} response={myResponses[poll.id]} selected={draftSelections[poll.id] || []} saving={savingPollId === poll.id} saved={savedPollId === poll.id} onToggle={(date) => toggleMassSelection(poll.id, date)} onSave={(selected) => saveAvailability(poll, selected)} />
+                  <AvailabilityCard key={poll.id} poll={poll} focused={focusedPollId === poll.id} response={myResponses[poll.id]} selected={draftSelections[poll.id] || []} saving={savingPollId === poll.id} saved={savedPollId === poll.id} onToggle={(date) => toggleMassSelection(poll.id, date)} onSave={(selected) => saveAvailability(poll, selected)} />
                 ))}
               </div>
             )}
@@ -685,7 +694,7 @@ export default function Polls() {
                 const expanded = expandedLeaderPoll === poll.id;
                 const panel = leaderPanel[poll.id] || 'progress';
                 return (
-                  <article key={poll.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]">
+                  <article key={poll.id} id={`leader-availability-${poll.id}`} tabIndex={focusedPollId === poll.id ? -1 : undefined} aria-current={focusedPollId === poll.id ? 'true' : undefined} className={cn('overflow-hidden rounded-2xl border bg-white transition-colors dark:bg-white/[0.03]', focusedPollId === poll.id ? 'border-blue-300 ring-2 ring-blue-300/60 dark:border-blue-400/40 dark:ring-blue-400/30' : 'border-slate-200 dark:border-white/10')}>
                     <button type="button" onClick={() => setExpandedLeaderPoll(expanded ? null : poll.id)} className="flex min-h-[86px] w-full items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
                       <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl', poll.rosterPublished ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300' : poll.status === 'active' ? 'bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200' : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300')}>
                         {poll.rosterPublished ? <Eye className="h-5 w-5" /> : <UsersRound className="h-5 w-5" />}
@@ -862,14 +871,14 @@ function AssignmentBuilder({ poll, eligibleMembers, latest, members, onAssign }:
   );
 }
 
-function AvailabilityCard({ poll, response, selected, saving, saved, onToggle, onSave }: { poll: Poll; response?: PollResponse; selected: string[]; saving: boolean; saved: boolean; onToggle: (date: string) => void; onSave: (selected: string[]) => void }) {
+function AvailabilityCard({ poll, focused, response, selected, saving, saved, onToggle, onSave }: { poll: Poll; focused: boolean; response?: PollResponse; selected: string[]; saving: boolean; saved: boolean; onToggle: (date: string) => void; onSave: (selected: string[]) => void }) {
   const original = response?.selectedOptions || [];
   const dirty = JSON.stringify([...original].sort()) !== JSON.stringify([...selected].sort()) || !response;
   const deadline = parseDateValue(poll.endDate);
   const expired = Boolean(deadline && deadline < new Date());
   const dates = massDatesForPoll(poll);
   return (
-    <article id={`availability-${poll.id}`} className={cn('overflow-hidden rounded-[22px] border bg-white dark:bg-white/[0.03]', response ? 'border-green-200 dark:border-green-400/20' : 'border-blue-200 dark:border-blue-400/20')}>
+    <article id={`availability-${poll.id}`} tabIndex={focused ? -1 : undefined} aria-current={focused ? 'true' : undefined} className={cn('overflow-hidden rounded-[22px] border bg-white transition-colors dark:bg-white/[0.03]', focused ? 'border-blue-300 ring-2 ring-blue-300/60 dark:border-blue-400/40 dark:ring-blue-400/30' : response ? 'border-green-200 dark:border-green-400/20' : 'border-blue-200 dark:border-blue-400/20')}>
       <div className="p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
