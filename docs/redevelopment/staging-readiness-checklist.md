@@ -45,7 +45,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: head `49c34b9833b7dc2036a0e1bab948689608108ed4`, `KCFC Redevelopment CI` run **#1443** / id `34595996778`, conclusion **SUCCESS**, with all **58** named validation/build/security steps green. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, complete build-artifact manifest/hash coverage, and 30-day retention of the non-secret verified manifest. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
+Latest exact-head automated evidence before this checklist update: head `8ea202c552d88712ffe34b53e7697caa40b6d6b2`, `KCFC Redevelopment CI` run **#1459** / id `34596788624`, conclusion **SUCCESS**, with all **58** named validation/build/security steps green. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, complete build-artifact manifest/hash coverage, and 30-day retention of the non-secret verified manifest. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
 
 ## Gate B — Data compatibility
 

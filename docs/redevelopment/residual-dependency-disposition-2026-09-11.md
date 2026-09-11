@@ -6,13 +6,14 @@ Status: production-readiness evidence only. This record does **not** authorize a
 
 ## Current measured position
 
-The production/runtime audit is now reduced to **3 findings: 0 critical, 0 high, 2 moderate, 1 low**.
+The production/runtime audit is now reduced to **2 findings: 0 critical, 0 high, 2 moderate, 0 low**.
 
-Latest exact-clean-head evidence before this disposition refresh: `KCFC Redevelopment CI` run **#1451** / id `34596219092` on head `ff110178d85247d143359e35acb81bf526d1e34c`. `npm audit --omit=dev` reported:
+Latest exact-clean-head evidence before this disposition refresh: `KCFC Redevelopment CI` run **#1459** / id `34596788624` on head `8ea202c552d88712ffe34b53e7697caa40b6d6b2`. `npm audit --omit=dev` reported exactly two remaining runtime findings:
 
 - `gaxios` — moderate — affected installed range `6.4.0 - 6.7.1`;
-- `uuid` — moderate — affected installed range `<11.1.1`;
-- `esbuild` — low — affected installed range `0.27.3 - 0.28.0`.
+- `uuid` — moderate — affected installed range `<11.1.1`.
+
+The previous `esbuild` low finding is no longer present in the production/runtime audit snapshot.
 
 The previously open `qs` moderate was remediated by a supported parent migration from Express 4 to **Express 5.2.1**. The migration was first exercised in an isolated probe with TypeScript, all KCFC redevelopment contracts, production build, live `/api/health` startup and SPA fallback routing. The tested package/lock/server state was then committed to the redevelopment branch and the ordinary `KCFC Redevelopment CI` passed again.
 
@@ -24,7 +25,7 @@ No `npm audit fix --force`, speculative leaf override, or production deployment 
 | --- | --- | --- | --- |
 | `uuid` | moderate | `uuid` 9.0.1 remains under the optional Firebase Admin / `@google-cloud/storage` chain. The reviewed advisory is specific to v3/v5/v6 caller-provided output-buffer behavior; the audit requires a fixed `uuid` line above the installed major. | **BOUNDED / OPEN FOR PARENT REMEDIATION.** KCFC source does not import Firebase Admin Storage, `@google-cloud/storage`, or call `getStorage()`. Permanent CI guards that boundary. Reopen reachability review before any Storage activation. |
 | `gaxios` | moderate | The affected `gaxios` 6.7.1 copy remains under the optional `@google-cloud/storage` dependency path. Current upstream `gaxios` has moved beyond the affected 6.x line, but the current supported Storage parent still declares the legacy 6.x dependency family. | **BOUNDED / OPEN FOR PARENT REMEDIATION.** Do not force a global leaf override. Treat the Storage path as unused unless a future feature explicitly activates it. |
-| `esbuild` | low | Reported through the `tsx` development/tooling chain. Production starts with `node dist/server.cjs`. | **LOW PRODUCTION EXPOSURE / TOOLING PATH.** Keep visible and update through supported tooling versions when compatible. |
+| `esbuild` | low | The affected nested copy came from `tsx@4.21.0` resolving `esbuild@0.27.7`. A direct top-level `esbuild@0.28.2` probe did not remove that nested copy, so it was rejected. Updating the supported parent to `tsx@4.23.13` together with top-level `esbuild@0.28.2` removed the audit finding. | **CLOSED through supported tooling-parent remediation.** TypeScript, production build and all ordinary redevelopment CI checks passed afterward. |
 
 ## Current upstream parent-package check
 
@@ -45,6 +46,18 @@ Therefore the correct current action is **containment + visibility**, not a forc
 5. do not add a third-party repackaged Storage fork or dependency override solely to make the audit count disappear.
 
 This upstream check is a point-in-time disposition. It should be revisited when either Firebase Admin or Google Cloud Storage publishes a compatible parent release that changes the affected dependency chain.
+
+## Closed finding: `esbuild`
+
+The prior development/tooling tree contained `tsx@4.21.0 -> esbuild@0.27.7`, which was within the low-severity affected range. A direct top-level update to `esbuild@0.28.2` was intentionally tested first and **rejected** because `tsx` still retained its own affected nested copy.
+
+A supported parent update then moved the toolchain to:
+
+- `tsx` **4.23.13**; and
+- top-level `esbuild` **0.28.2**.
+
+The remediation probe confirmed the `esbuild` audit finding was absent, then passed TypeScript and the production build before committing only `package.json` / `package-lock.json`. The temporary remediation workflow was removed. Ordinary `KCFC Redevelopment CI` run **#1459** on clean head `8ea202c552d88712ffe34b53e7697caa40b6d6b2` then passed all **58** named checks and recorded **0 low** runtime findings. No override, force-fix or fork was used.
+
 
 ## Closed finding: `qs`
 
@@ -80,7 +93,7 @@ This is a reachability boundary, not a claim that the installed packages are pat
 - `qs` moderate: **CLOSED through validated Express 5.2.1 migration**.
 - `uuid` moderate: **BOUNDED to currently unused optional Storage path; no supported parent remediation available at the 2026-09-11 upstream check**.
 - `gaxios` moderate: **BOUNDED to currently unused optional Storage path for the affected older copy; no supported parent remediation available at the 2026-09-11 upstream check**.
-- `esbuild` low: **documented as development/tooling exposure**.
+- `esbuild` low: **CLOSED through supported `tsx@4.23.13` + `esbuild@0.28.2` remediation, validated by CI #1459**.
 - Production merge/deployment: **still requires explicit user approval** regardless of dependency status.
 
 ## Required follow-up

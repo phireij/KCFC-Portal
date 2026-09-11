@@ -53,8 +53,8 @@ These can be treated as repository evidence when the exact intended branch head 
 
 Latest fully validated code/docs checkpoint before this map refresh:
 
-- head `49c34b9833b7dc2036a0e1bab948689608108ed4`
-- `KCFC Redevelopment CI` run **#1443** / id `34595996778`
+- head `8ea202c552d88712ffe34b53e7697caa40b6d6b2`
+- `KCFC Redevelopment CI` run **#1459** / id `34596788624`
 - conclusion: **SUCCESS**
 - all **58** named validation/build/security steps completed successfully, including staging runtime-evidence validation, complete build-artifact manifest/hash coverage and manifest retention.
 
@@ -203,9 +203,9 @@ Current runtime audit position remains:
 - 0 critical;
 - 0 high;
 - 2 moderate;
-- 1 low.
+- 0 low.
 
-The remaining moderate `uuid` / older `gaxios` findings are within Firebase Admin's optional `@google-cloud/storage` path. KCFC does not currently activate that Storage path, and CI guards against silent activation. Continue preferring supported parent-package remediation over forced leaf overrides.
+The remaining moderate `uuid` / older `gaxios` findings are within Firebase Admin's optional `@google-cloud/storage` path. The former `esbuild` low is closed through supported `tsx@4.23.13` + `esbuild@0.28.2` remediation. KCFC does not currently activate that Storage path, and CI guards against silent activation. Continue preferring supported parent-package remediation over forced leaf overrides.
 
 ## Production request minimum
 

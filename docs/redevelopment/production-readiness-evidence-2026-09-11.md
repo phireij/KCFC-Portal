@@ -63,7 +63,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - 30-day GitHub Actions retention of the verified non-secret build manifest as repository-side release evidence;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `49c34b9833b7dc2036a0e1bab948689608108ed4`, `KCFC Redevelopment CI` run **#1443** / id `34595996778`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed, including staging runtime-evidence validation, complete build-artifact manifest/hash coverage, and retention of the verified manifest as a GitHub Actions artifact.
+Latest validated clean branch checkpoint: `8ea202c552d88712ffe34b53e7697caa40b6d6b2`, `KCFC Redevelopment CI` run **#1459** / id `34596788624`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed. The runtime audit is now **0 critical, 0 high, 2 moderate, 0 low**; staging runtime-evidence validation, complete build-artifact manifest/hash coverage and manifest retention all remained green.
 
 The validated staging isolation work establishes:
 
@@ -92,7 +92,7 @@ Every later code/dependency change still requires a fresh green run before it is
 
 ## Dependency position
 
-Current runtime audit: **0 critical, 0 high, 2 moderate, 1 low**.
+Current runtime audit: **0 critical, 0 high, 2 moderate, 0 low**.
 
 - `qs` moderate: **closed** through validated Express **5.2.1** migration, which resolves the relevant parent chain to patched `qs` 6.16.0.
 - The Express migration was validated through TypeScript, all KCFC contracts, production build, actual server startup, `/api/health`, SPA fallback routing, and ordinary redevelopment CI after commit.
@@ -100,7 +100,7 @@ Current runtime audit: **0 critical, 0 high, 2 moderate, 1 low**.
 - KCFC source currently does not import `firebase-admin/storage`, directly import `@google-cloud/storage`, or call `getStorage()`.
 - Permanent CI guards that Storage boundary so future activation cannot silently change the reachability assumption.
 - The remaining findings stay visible and should be removed through supported Firebase Admin / Google Cloud parent updates when available and compatible; forced overrides remain prohibited.
-- `esbuild` low remains documented as development/tooling exposure because production starts with `node dist/server.cjs`.
+- The former `esbuild` low is **closed** through the supported tooling-parent update to `tsx` 4.23.13 plus top-level `esbuild` 0.28.2; CI #1459 confirms it is absent from `npm audit --omit=dev`.
 
 See `residual-dependency-disposition-2026-09-11.md`.
 
@@ -265,7 +265,7 @@ The plan establishes:
 - post-rollback non-destructive smoke verification;
 - a strict separation between readiness documentation and actual production backup/restore execution.
 
-Repository-side build identity is now captured by `build-artifact-identity-2026-09-11.md` and the verified `dist/kcfc-build-manifest.json` contract. CI #1443 retained manifest artifact `kcfc-build-manifest-49c34b9833b7dc2036a0e1bab948689608108ed4` through 2026-10-11; this is repository evidence only, not provider deployment evidence. Provider/environment backup evidence and exact production deployment-artifact rollback/redeployability evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those provider artifacts/backups already exist.
+Repository-side build identity is now captured by `build-artifact-identity-2026-09-11.md` and the verified `dist/kcfc-build-manifest.json` contract. CI #1459 retained manifest artifact `kcfc-build-manifest-8ea202c552d88712ffe34b53e7697caa40b6d6b2` (artifact id `10261723910`, archive digest `sha256:b523ba2c7062b58e4d2451726a9e435140ded21934548c160b5f9f984c7d5ccb`) through `2026-10-11T12:01:45Z`; this is repository evidence only, not provider deployment evidence. Provider/environment backup evidence and exact production deployment-artifact rollback/redeployability evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those provider artifacts/backups already exist.
 
 ## Production-readiness blockers still open
 

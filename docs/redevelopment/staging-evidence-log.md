@@ -23,8 +23,8 @@ GitHub Actions workflow: `KCFC Redevelopment CI`
 
 Latest exact-head run before this documentation refresh:
 
-- validated head: `49c34b9833b7dc2036a0e1bab948689608108ed4`
-- run: **#1443 / id 34595996778**
+- validated head: `8ea202c552d88712ffe34b53e7697caa40b6d6b2`
+- run: **#1459 / id 34596788624**
 - conclusion: **SUCCESS**
 - named validation/build/security steps: **58 passed**
 
@@ -125,7 +125,7 @@ Result: **PASS — build/reporting controls present.**
 
 ## Evidence E-010 — Retained repository build-manifest artifact
 
-CI #1443 retained the verified non-secret manifest produced for source head `49c34b9833b7dc2036a0e1bab948689608108ed4` as GitHub Actions artifact `kcfc-build-manifest-49c34b9833b7dc2036a0e1bab948689608108ed4`. Artifact id: `10262082863`; archive digest: `sha256:54701b07d5658dbc9045fe4ffa77fbfd6cc8acba986fcc6fe09283b4a306089d`; expiration: `2026-10-11T11:51:53Z`.
+CI #1443 retained the verified non-secret manifest produced for source head `8ea202c552d88712ffe34b53e7697caa40b6d6b2` as GitHub Actions artifact `kcfc-build-manifest-8ea202c552d88712ffe34b53e7697caa40b6d6b2`. Artifact id: `10261723910`; archive digest: `sha256:b523ba2c7062b58e4d2451726a9e435140ded21934548c160b5f9f984c7d5ccb`; expiration: `2026-10-11T12:01:45Z`.
 
 This proves repository-side evidence retention only. It does not prove a provider deployment/revision, provider image digest, or redeployable last-known-good provider artifact.
 

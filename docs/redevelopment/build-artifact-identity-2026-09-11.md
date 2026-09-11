@@ -63,4 +63,4 @@ The repository manifest proves what the repository built. Its GitHub Actions art
 
 ## Current retained evidence
 
-CI #1443 / run `34595996778` for source `49c34b9833b7dc2036a0e1bab948689608108ed4` retained artifact `kcfc-build-manifest-49c34b9833b7dc2036a0e1bab948689608108ed4` (artifact id `10262082863`) with archive digest `sha256:54701b07d5658dbc9045fe4ffa77fbfd6cc8acba986fcc6fe09283b4a306089d`, expiring `2026-10-11T11:51:53Z`. This is repository-side evidence only.
+CI #1459 / run `34596788624` for source `8ea202c552d88712ffe34b53e7697caa40b6d6b2` retained artifact `kcfc-build-manifest-8ea202c552d88712ffe34b53e7697caa40b6d6b2` (artifact id `10261723910`) with archive digest `sha256:b523ba2c7062b58e4d2451726a9e435140ded21934548c160b5f9f984c7d5ccb`, expiring `2026-10-11T12:01:45Z`. This is repository-side evidence only.
