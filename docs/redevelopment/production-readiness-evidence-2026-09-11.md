@@ -25,6 +25,8 @@ Permanent `KCFC Redevelopment CI` validates:
 - member governance, pre-registration safety, pre-registration email-verification migration and account-status classification;
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
+- client/server Firebase runtime isolation for staging;
+- synthetic execution of the staging preflight contract;
 - leadership accessibility;
 - mobile navigation contract;
 - delivery diagnostics, current-device notification health, privacy-safe device QA snapshots and self-test recipient isolation;
@@ -32,9 +34,21 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code/CI head before this documentation-only refresh: `93e2cdd070a7c49fb1243eb1bec2ec5f6d7afc1a`, `KCFC Redevelopment CI` run #770, conclusion **success**. All 33 validation/build/security steps passed, including the new pre-registration email-verification migration guard.
+Latest validated code/CI head before this documentation-only refresh: `9c1afa6e05f37d5cd85c5536da68896f5c7282bc`, `KCFC Redevelopment CI` run **#803**, conclusion **SUCCESS**. All 35 validation/build/security steps passed.
 
-The onboarding regression fixed on that validated head ensures a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise the migration respects Firebase Auth `emailVerified` or an already-true pending value.
+The validated staging isolation work establishes:
+
+- explicit `VITE_FIREBASE_*` client configuration takes precedence over the committed compatibility file;
+- explicit `FIREBASE_*` server configuration takes precedence over the committed compatibility file;
+- `VITE_KCFC_RUNTIME_ENV=staging` fails closed unless explicit staging client Firebase configuration exists;
+- `KCFC_RUNTIME_ENV=staging` fails closed unless explicit staging server Firebase configuration exists;
+- client and server staging project IDs must differ from the committed production/default project ID;
+- `npm run staging:preflight` requires matching client/server Firebase project and database targets;
+- staging preflight requires explicit matching client/server VAPID public keys plus a server private key;
+- staging preflight requires all external connector flags OFF and the Core-status staging executor OFF;
+- the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets.
+
+The onboarding regression previously fixed remains covered: a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 
 Every later code/dependency change still requires a fresh green run before it is treated as validated evidence. Documentation-only evidence refreshes do not substitute for code CI.
 
@@ -90,6 +104,22 @@ Still isolated in Advanced Legacy Tools:
 
 No destructive legacy control should be moved into a routine workspace without a separately reviewed governed workflow and staging evidence.
 
+## Staging/runtime isolation position
+
+The canonical staging runtime boundary is documented in `staging-firebase-isolation-contract-2026-09-11.md`.
+
+Before any browser or physical-device QA begins against an actual staging deployment:
+
+1. configure `VITE_KCFC_RUNTIME_ENV=staging` and `KCFC_RUNTIME_ENV=staging`;
+2. configure explicit client/server Firebase values for the same isolated staging project/database;
+3. ensure that project differs from the committed production/default project;
+4. configure explicit staging VAPID keys;
+5. keep all external connectors OFF;
+6. keep the Core-status staging executor OFF unless a separately reviewed isolated test specifically requires it;
+7. run `npm run staging:preflight` and retain the PASS output as staging evidence.
+
+Automated proof of the preflight logic is complete. **Actual staging-environment preflight evidence is still required.**
+
 ## Staging/device QA package
 
 The canonical device acceptance procedure is documented in `staging-device-qa-package-2026-09-11.md`, with evidence classes in `staging-readiness-evidence-map-2026-09-11.md`.
@@ -97,23 +127,34 @@ The canonical device acceptance procedure is documented in `staging-device-qa-pa
 It uses this sequence:
 
 1. automated CI/contracts;
-2. browser responsive/mobile emulation;
-3. Android Emulator where useful;
-4. physical iPhone acceptance;
-5. physical Android tablet acceptance;
-6. preferably an additional KCFC member Android phone for representative real-world Android coverage.
+2. actual isolated staging preflight;
+3. browser responsive/mobile emulation;
+4. Android Emulator where useful;
+5. physical iPhone acceptance;
+6. physical Android tablet acceptance;
+7. optional supplemental KCFC member Android phone coverage.
 
 Every notification test separately records:
 
 - transport acceptance;
-- actual OS presentation (banner/lock screen/sound/vibration); and
-- durable KCFC Inbox persistence.
+- actual OS presentation (banner/lock screen/sound/vibration);
+- durable KCFC Inbox persistence; and
+- notification tap/deep-link result.
 
 No emulator result may be represented as physical-device evidence.
 
 ## Staging/device evidence still required
 
-Automated contracts are not a substitute for real-device staging QA.
+Automated contracts are not a substitute for empirical staging/device QA.
+
+### Environment preflight
+
+- actual staging project/database identifiers recorded;
+- actual `npm run staging:preflight` PASS retained;
+- client/server target parity confirmed;
+- staging VAPID configuration confirmed;
+- connectors OFF and Core executor OFF confirmed;
+- synthetic test accounts/device registrations only.
 
 ### iPhone / iOS PWA
 
@@ -138,7 +179,7 @@ Automated contracts are not a substitute for real-device staging QA.
 
 ### Multi-device
 
-- two valid registered devices for one synthetic member;
+- physical iPhone + Android tablet for one synthetic member;
 - one stale endpoint plus a valid endpoint;
 - transport evidence correlated to durable KCFC Inbox without treating provider acceptance as proof of user-visible delivery.
 
@@ -173,16 +214,17 @@ Provider/environment backup evidence and exact production deployment-artifact ro
 
 ## Production-readiness blockers still open
 
-1. Representative staging/device QA, especially real iOS/Android notification behavior.
-2. Supported parent remediation or continued bounded disposition for the remaining optional Storage-path `uuid` / `gaxios` findings.
-3. Any further leadership decomposition only where it reduces routine LegacyAdmin use without weakening destructive-action isolation.
-4. Provider/environment backup evidence plus exact deployment-artifact rollback evidence before a production request.
-5. Explicit user approval for production merge/deploy and every separately gated production-sensitive action.
+1. Actual isolated staging environment configured and passing `npm run staging:preflight`.
+2. Representative browser/device QA, especially real iOS/Android notification behavior.
+3. Supported parent remediation or continued bounded disposition for the remaining optional Storage-path `uuid` / `gaxios` findings.
+4. Any further leadership decomposition only where it reduces routine LegacyAdmin use without weakening destructive-action isolation.
+5. Provider/environment backup evidence plus exact deployment-artifact rollback evidence before a production request.
+6. Explicit user approval for production merge/deploy and every separately gated production-sensitive action.
 
 ## Explicitly prohibited without approval
 
 - merging/deploying to production;
-- destructive schema/data migration;
+- destructive schema/data migration or restore;
 - bulk mutation of users;
 - deleting/recreating Firebase Auth users;
 - production Core-status execution;
