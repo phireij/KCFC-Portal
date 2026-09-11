@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import './verify-staging-app-url-boundary.ts';
 
 const env = fs.readFileSync('.env.example', 'utf8');
 const preflight = fs.readFileSync('scripts/staging-preflight.mjs', 'utf8');
@@ -23,6 +24,9 @@ if (env.includes('VITE_WEB_PUSH_VAPID_PRIVATE_KEY=')) {
 }
 
 const requiredPreflightMarkers = [
+  "required('APP_URL')",
+  "appUrl.protocol !== 'https:'",
+  'APP_URL must not target the production KCFC Portal hostname',
   "required('VITE_FCM_VAPID_KEY')",
   'process.env.WEB_PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY',
   'process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY',
@@ -31,7 +35,7 @@ const requiredPreflightMarkers = [
 
 for (const marker of requiredPreflightMarkers) {
   if (!preflight.includes(marker)) {
-    throw new Error(`Staging preflight VAPID contract missing marker: ${marker}`);
+    throw new Error(`Staging preflight contract missing marker: ${marker}`);
   }
 }
 
