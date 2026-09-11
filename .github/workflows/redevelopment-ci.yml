@@ -114,6 +114,9 @@ jobs:
       - name: Verify Resource category history navigation
         run: npx tsx scripts/verify-resource-category-history.ts
 
+      - name: Verify Community filter history navigation
+        run: npx tsx scripts/verify-community-filter-history.ts
+
       - name: Verify push privacy logging
         run: npx tsx scripts/verify-push-privacy-logging.ts
 
