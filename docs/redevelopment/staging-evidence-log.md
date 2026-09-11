@@ -23,11 +23,12 @@ GitHub Actions workflow: `KCFC Redevelopment CI`
 
 Latest exact-head run before this documentation refresh:
 
-- validated head: `98c1901cabc6414c7b9e017570dbd27c68d4c6ec`
-- run: **#774 / id 34562112607**
+- validated head: `967894f0eecbd53c80cffbc9b5e3461390217c98`
+- run: **#845 / id 34567540510**
 - conclusion: **SUCCESS**
+- validation/build/security steps: **39 passed**
 
-The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration safety and email-verification migration, Core-status safeguards, Firebase Admin Storage non-use, accessibility/mobile navigation, delivery/notification diagnostics, privacy-safe device QA snapshots, caller-bound self-test push isolation, production build/bundle reporting, connector defaults OFF and provider-secret browser guards.
+The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration safety and email-verification migration, Core-status safeguards, Firebase Admin Storage non-use, client/server staging Firebase isolation, same-origin Web Push worker boundaries, push privacy logging, PWA theme/install metadata, modern iPhone/iPadOS platform detection, synthetic staging preflight, accessibility/mobile navigation, delivery/notification diagnostics, privacy-safe device QA snapshots, caller-bound self-test push isolation, production build/bundle reporting, connector defaults OFF and provider-secret browser guards.
 
 Result: **PASS — exact intended code head validated.**
 
@@ -61,6 +62,9 @@ Permanent automated contracts now cover:
 - prohibition on caller-selected arbitrary recipients/member enumeration;
 - stale/invalid registration diagnostics;
 - KCFC Inbox persistence as durable truth independent of OS presentation.
+- browser diagnostics do not log the VAPID public key, PushSubscription object or FCM token values.
+- install and Notification Health share the same modern iPhone/iPadOS detector.
+- physical acceptance uses the canonical notification evidence template with separate transport, OS presentation, Inbox and tap/deep-link outcomes.
 
 Result: **PASS in CI.**
 
@@ -79,7 +83,7 @@ The migration path from a pending pre-registration to the real Firebase UID is p
 - an already-true pending verification state is preserved;
 - bootstrap-admin behavior remains an explicit exception rather than a general promotion path.
 
-Result: **PASS in CI #774.**
+Result: **PASS in CI #845.**
 
 Empirical staging still must test first authentication while unverified and the later verified transition using a synthetic member.
 

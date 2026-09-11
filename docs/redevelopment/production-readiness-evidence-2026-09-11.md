@@ -26,6 +26,9 @@ Permanent `KCFC Redevelopment CI` validates:
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
+- same-origin, Firebase-project-agnostic Web Push service-worker boundary;
+- browser push privacy logging guard preventing VAPID key, PushSubscription and FCM token values from being logged;
+- canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + notification health;
 - synthetic execution of the staging preflight contract;
 - leadership accessibility;
 - mobile navigation contract;
@@ -34,7 +37,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code/CI head before this documentation-only refresh: `9c1afa6e05f37d5cd85c5536da68896f5c7282bc`, `KCFC Redevelopment CI` run **#803**, conclusion **SUCCESS**. All 35 validation/build/security steps passed.
+Latest validated exact-head checkpoint before this documentation-only refresh: `967894f0eecbd53c80cffbc9b5e3461390217c98`, `KCFC Redevelopment CI` run **#845** / id `34567540510`, conclusion **SUCCESS**. All 39 validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -140,6 +143,8 @@ Every notification test separately records:
 - actual OS presentation (banner/lock screen/sound/vibration);
 - durable KCFC Inbox persistence; and
 - notification tap/deep-link result.
+
+The canonical `notification-acceptance-evidence-template-2026-09-11.md` requires those signals to be recorded independently before a case can be classified PASS; ambiguous outcomes remain INVESTIGATE.
 
 No emulator result may be represented as physical-device evidence.
 
