@@ -12,8 +12,7 @@ const required = [
   'focused={focusedAnnouncementId === announcement.id}',
   "id={announcement.id ? `announcement-${announcement.id}` : undefined}",
   "focused && 'bg-blue-50/60 ring-2 ring-inset ring-blue-400",
-  "{focused && <span className=",
-  'Opened from alert',
+  'tabIndex={focused ? -1 : undefined}',
 ];
 
 for (const marker of required) {
