@@ -120,10 +120,4 @@ if old2 not in source:
     raise SystemExit('registration storage block not found')
 source = source.replace(old2, new2, 1)
 
-old3 = "...(!result.success && 'error' in result && result.error ? { detail: result.error } : {}),"
-new3 = "...(!result.success && 'error' in result ? { detail: result.error } : {}),"
-if old3 not in source:
-    raise SystemExit('Web Push result narrowing block not found')
-source = source.replace(old3, new3, 1)
-
 path.write_text(source)
