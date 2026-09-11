@@ -101,7 +101,9 @@ jobs:
         run: npx tsx scripts/verify-firebase-runtime-isolation.ts
 
       - name: Verify health runtime identity boundary
-        run: npx tsx scripts/verify-health-runtime-identity.ts
+        run: |
+          npx tsx scripts/verify-health-runtime-identity.ts
+          node scripts/verify-staging-runtime-evidence.mjs
 
       - name: Verify staging Web Push runtime boundary
         run: npx tsx scripts/verify-staging-webpush-runtime.ts
