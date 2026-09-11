@@ -21,21 +21,27 @@ const required = [
   'const safeEmail = escapeHtml(email);',
   'const safeSubject = escapeHtml(subject || "KCFC Portal Inquiry");',
   'const safeMessage = escapeHtml(message).replace(/\\n/g, "<br />");',
+  'alertSent: emailSent',
+  'alertSent: { booleanValue: emailSent }',
 ];
 for (const marker of required) {
   if (!source.includes(marker)) throw new Error(`Public contact boundary missing marker: ${marker}`);
 }
 
-for (const forbidden of ['upload.any()', 'extracted: { name, email, subject, message }']) {
+for (const forbidden of [
+  'upload.any()',
+  'extracted: { name, email, subject, message }',
+  'alertSent: true',
+  'alertSent: { booleanValue: true }',
+]) {
   if (route.includes(forbidden)) throw new Error(`Public contact boundary regression: ${forbidden}`);
 }
 
-if (route.includes('alertSent: true')) {
-  throw new Error('Public contact persistence must not claim an alert was sent unconditionally.');
+if ((route.split('alertSent: emailSent').length - 1) !== 1) {
+  throw new Error('Expected direct Firestore public-contact persistence to use emailSent exactly once.');
 }
-const alertStateCount = route.split('alertSent: emailSent').length - 1;
-if (alertStateCount !== 2) {
-  throw new Error(`Expected both public-contact persistence paths to use emailSent; found ${alertStateCount}.`);
+if ((route.split('alertSent: { booleanValue: emailSent }').length - 1) !== 1) {
+  throw new Error('Expected REST public-contact persistence to use emailSent exactly once.');
 }
 
 for (const marker of ['>${name}</td>', '>${subject || "KCFC Portal Inquiry"}</td>', '"${message}"']) {
