@@ -25,6 +25,7 @@ Use synthetic staging identities with no production member data:
 | AUTH-01 | STG_REGULAR | Email/password sign-in | Existing UID/profile loads; no account recreation |
 | AUTH-02 | STG_PENDING | Sign in | Pending state shown; protected member workflows blocked as designed |
 | AUTH-03 | STG_DISABLED | Sign in | Disabled account cannot use protected Portal |
+| AUTH-04 | STG_PENDING | First Login/Google profile migration with email still unverified | Real Firebase UID is preserved, but profile email-verification remains false unless Firebase Auth/pending evidence says otherwise |
 | NAV-01 | STG_REGULAR | Phone-width navigation | Exactly Home / Schedule / Community / Updates / More; no horizontal scrolling |
 | NAV-02 | STG_REGULAR | Open More | Resources, Inbox, Profile visible; leadership/accounting only when authorized |
 | NAV-03 | STG_LECTOR | Open `/duties?view=mine` directly | My Ministry is selected and the URL remains shareable/reload-safe |
@@ -68,6 +69,7 @@ Use synthetic staging identities with no production member data:
 | ADMIN-06 | STG_ADMIN | Open focused Website Inquiry reply composer | Recipient is locked to the inquiry sender; opening/editing the composer sends nothing automatically |
 | ADMIN-07 | STG_ADMIN | Attempt individual inquiry reply in isolated staging/sink only | Send requires explicit button + confirmation; successful send preserves the inquiry and marks unread → read; no bulk recipients or deletion occurs |
 | ADMIN-08 | STG_ADMIN | Inspect routine Member Administration and Website Inquiry surfaces | Account disabling, member deletion, credential purge and Core-status mutation controls are absent from the routine focused surfaces |
+| ADMIN-09 | STG_ADMIN | Open `/admin?view=inquiries`, `/admin?view=broadcast`, `/admin?view=members`, and `/admin?view=advanced`; then use Back/Forward | Authorized workspace follows the `view` query and browser history; invalid values fall back to Overview; unauthorized users remain denied |
 
 ## PWA / notification tests
 

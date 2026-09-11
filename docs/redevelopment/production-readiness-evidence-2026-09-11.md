@@ -22,7 +22,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - communication policy and communication batches;
 - liturgical creator/diff/publication plans;
 - leadership broadcast planning/accessibility;
-- member governance, pre-registration safety, pre-registration email-verification migration and account-status classification;
+- member governance, pre-registration safety, pre-registration email-verification migration, Login email-verification migration safety and account-status classification;
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
@@ -39,7 +39,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - browser push privacy logging guard preventing VAPID key, PushSubscription and FCM token values from being logged;
 - canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + notification health;
 - synthetic execution of the staging preflight contract;
-- leadership accessibility;
+- leadership accessibility and URL-backed Leadership workspace history navigation;
 - mobile navigation contract;
 - Schedule URL/history navigation and Home roster-publication privacy boundary;
 - delivery diagnostics, current-device notification health, privacy-safe device QA snapshots and self-test recipient isolation;
@@ -47,7 +47,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code checkpoint: `470cad404e112c3a4b0afe3fd76a8257ac049a44`, `KCFC Redevelopment CI` run **#1043** / id `34576876886`, conclusion **SUCCESS**. All **51** validation/build/security steps passed.
+Latest validated code checkpoint: `3e37e3e9aed6d4cd9577711e3c7c828e2b845d96`, `KCFC Redevelopment CI` run **#1071** / id `34578065249`, conclusion **SUCCESS**. All **53** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -63,7 +63,7 @@ The validated staging isolation work establishes:
 - the staging badge guard fails closed: default/production runtime has no staging badge;
 - the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets.
 
-The onboarding regression previously fixed remains covered: a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
+Email-verification migration is now guarded in both authenticated bootstrap migration and the Login/Google profile creation path: a pending profile or newly created profile cannot be marked email-verified by an unconditional fallback. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 
 Notification/navigation now has permanent automated boundaries: notification records retain their history; Inbox links are constrained to authorized same-origin Portal destinations; query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation; notification-linked Updates can focus/highlight the intended authorized update; availability notification links can focus/highlight the intended member request or expanded leader request; Inbox filters are URL-backed; Resource categories and Community Directory member/ministry filters are URL-backed; and authorized Updates scope can restore Published versus All + drafts through browser history while preserving a focused announcement `id`. Free-text search remains intentionally local on Resources, Community and Updates so typing does not create one browser-history entry per keystroke.
 

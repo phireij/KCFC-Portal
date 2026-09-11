@@ -27,12 +27,13 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] Synthetic staging preflight requires explicit matching client/server VAPID public keys and a server private key rather than relying on inherited/local fallback material.
 - [x] Synthetic staging preflight verifies external connectors OFF and Core-status staging executor OFF.
 - [x] Staging app shell renders an explicit `Staging • Test environment` badge only for `VITE_KCFC_RUNTIME_ENV=staging`; default/production runtime renders no staging badge.
-- [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, and Updates scope history are covered by permanent automated guards.
+- [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, Updates scope history, and Leadership workspace URL/history navigation are covered by permanent automated guards.
+- [x] Login/Google profile creation preserves real email-verification state; forced-true verification fallbacks are prohibited by CI.
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: code head `470cad404e112c3a4b0afe3fd76a8257ac049a44`, `KCFC Redevelopment CI` run **#1043** / id `34576876886`, conclusion **SUCCESS**, with all **51** validation/build/security steps green. This includes staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus + Published/All scope history, Inbox deep-link/history/filter navigation, Resources category history, Community member-type/ministry history, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: code head `3e37e3e9aed6d4cd9577711e3c7c828e2b845d96`, `KCFC Redevelopment CI` run **#1071** / id `34578065249`, conclusion **SUCCESS**, with all **53** validation/build/security steps green. This includes Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
@@ -74,6 +75,7 @@ Verify:
 - [ ] role-based create/edit/delete actions remain constrained,
 - [ ] pre-registered pending member remains email-unverified until Firebase Auth reports verified,
 - [ ] pending profile migrates to the real Firebase UID without Auth user recreation.
+- [ ] Login/Google profile creation does not set `isEmailVerified=true` unless bootstrap-admin exception, Firebase Auth verification, or a previously true pending verification state justifies it.
 
 ## Gate D — Mobile member experience
 
