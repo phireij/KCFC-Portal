@@ -24,16 +24,10 @@ jobs:
           from pathlib import Path
           p = Path('src/pages/Dashboard.tsx')
           s = p.read_text()
-          old = '''          label="My next assignment"
-          value={nextAssignment ? formatDate(nextAssignment.parsedDate, nextAssignment.dateValue, true) : 'Nothing scheduled'}
-          body={nextAssignment ? `${nextAssignment.role} • ${nextAssignment.title}` : 'No upcoming published service assignment.'}
-          path="/duties"'''
-          new = '''          label="My next assignment"
-          value={nextAssignment ? formatDate(nextAssignment.parsedDate, nextAssignment.dateValue, true) : 'Nothing scheduled'}
-          body={nextAssignment ? `${nextAssignment.role} • ${nextAssignment.title}` : 'No upcoming published service assignment.'}
-          path="/duties?view=mine"'''
+          old = '          path="/duties"\n          accent={Boolean(nextAssignment)}'
+          new = '          path="/duties?view=mine"\n          accent={Boolean(nextAssignment)}'
           if s.count(old) != 1:
-              raise SystemExit(f'Home next-assignment block count={s.count(old)}')
+              raise SystemExit(f'Home next-assignment path marker count={s.count(old)}')
           p.write_text(s.replace(old, new))
           PY
           npx tsx scripts/verify-schedule-view-history.ts
