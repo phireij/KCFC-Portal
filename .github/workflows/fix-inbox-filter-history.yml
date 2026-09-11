@@ -1,0 +1,61 @@
+name: One-shot Inbox filter history fix
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/fix-inbox-filter-history.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Patch Inbox filter URL history
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/pages/Inbox.tsx')
+          s = p.read_text()
+
+          old_state = "  const [selected, setSelected] = useState<NotificationType | null>(null);\n  const [tab, setTab] = useState<Tab>('all');\n  const [search, setSearch] = useState('');"
+          new_state = "  const [selected, setSelected] = useState<NotificationType | null>(null);\n  const tabParam = searchParams.get('tab');\n  const tab: Tab = tabs.includes(tabParam as Tab) ? (tabParam as Tab) : 'all';\n  const [search, setSearch] = useState('');"
+          if s.count(old_state) != 1:
+              raise SystemExit(f'Inbox tab state marker count={s.count(old_state)}')
+          s = s.replace(old_state, new_state)
+
+          marker = "  const setMessageInUrl = (id?: string) => {\n    setSearchParams((current) => {\n      const next = new URLSearchParams(current);\n      next.delete('noteId');\n      if (id) next.set('id', id);\n      else next.delete('id');\n      return next;\n    });\n  };"
+          replacement = marker + "\n\n  const setInboxTab = (nextTab: Tab) => {\n    setSearchParams((current) => {\n      const next = new URLSearchParams(current);\n      if (nextTab === 'all') next.delete('tab');\n      else next.set('tab', nextTab);\n      return next;\n    });\n  };"
+          if s.count(marker) != 1:
+              raise SystemExit(f'Inbox URL helper marker count={s.count(marker)}')
+          s = s.replace(marker, replacement)
+
+          old_click = "onClick={() => setTab(item)}"
+          new_click = "onClick={() => setInboxTab(item)}"
+          if s.count(old_click) != 1:
+              raise SystemExit(f'Inbox tab click marker count={s.count(old_click)}')
+          s = s.replace(old_click, new_click)
+          p.write_text(s)
+
+          verifier = Path('scripts/verify-inbox-filter-history.ts')
+          verifier.write_text("""import fs from 'node:fs';\n\nconst source = fs.readFileSync('src/pages/Inbox.tsx', 'utf8');\nconst required = [\n  \"const tabParam = searchParams.get('tab');\",\n  \"tabs.includes(tabParam as Tab) ? (tabParam as Tab) : 'all'\",\n  \"const setInboxTab = (nextTab: Tab) =>\",\n  \"if (nextTab === 'all') next.delete('tab');\",\n  \"else next.set('tab', nextTab);\",\n  \"onClick={() => setInboxTab(item)}\",\n  \"const next = new URLSearchParams(current);\",\n];\nfor (const marker of required) {\n  if (!source.includes(marker)) throw new Error(`Missing Inbox URL-history marker: ${marker}`);\n}\nif (source.includes(\"const [tab, setTab] = useState<Tab>('all')\")) {\n  throw new Error('Inbox filter must not regress to local-only tab state');\n}\nif (!source.includes(\"if (id) next.set('id', id);\")) {\n  throw new Error('Inbox message id deep-link preservation marker missing');\n}\nconsole.log('Inbox filter URL/history navigation: PASS');\n""")
+          PY
+          npx tsx scripts/verify-inbox-filter-history.ts
+          git diff --check
+          git diff -- src/pages/Inbox.tsx scripts/verify-inbox-filter-history.ts
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/Inbox.tsx scripts/verify-inbox-filter-history.ts
+          git commit -m 'fix: make Inbox filters URL-backed'
+          git push origin HEAD:redesign/mobile-first-v2
