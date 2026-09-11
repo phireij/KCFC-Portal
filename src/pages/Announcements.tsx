@@ -100,7 +100,7 @@ const connectedProvidersFor = (apps?: ConnectedCommunicationApp[]) =>
 
 export default function Announcements() {
   const { profile, user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const focusedAnnouncementId = searchParams.get('id');
   const [announcements, setAnnouncements] = useState<ExtendedAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,13 +108,23 @@ export default function Announcements() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [queryText, setQueryText] = useState('');
-  const [scope, setScope] = useState<'published' | 'all'>('published');
+  const requestedScope = searchParams.get('scope');
   const [form, setForm] = useState<FormState>(emptyForm);
 
   const canCreate = (profile?.roles || []).some((role) =>
     ['admin', 'president', 'vice_president', 'spiritual_director', 'secretary', 'pro'].includes(role),
   );
   const canEditOthers = (profile?.roles || []).some((role) => ['admin', 'president'].includes(role));
+  const scope: 'published' | 'all' = canCreate && requestedScope === 'all' ? 'all' : 'published';
+
+  const setScopeFilter = (nextScope: 'published' | 'all') => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextScope === 'all') next.set('scope', 'all');
+      else next.delete('scope');
+      return next;
+    });
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
@@ -319,7 +329,7 @@ export default function Announcements() {
         <div className="border-b border-slate-100 p-4 sm:p-5 dark:border-white/10">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div><h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Community updates</h2><p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Browse published notices, schedules, reminders and community news.</p></div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center"><div className="relative"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Search updates…" className="min-h-11 min-w-[230px] rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-[12px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>{canCreate && <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-white/5"><ScopeButton active={scope === 'published'} onClick={() => setScope('published')} label="Published" /><ScopeButton active={scope === 'all'} onClick={() => setScope('all')} label="All + drafts" /></div>}</div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center"><div className="relative"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Search updates…" className="min-h-11 min-w-[230px] rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-[12px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>{canCreate && <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-white/5"><ScopeButton active={scope === 'published'} onClick={() => setScopeFilter('published')} label="Published" /><ScopeButton active={scope === 'all'} onClick={() => setScopeFilter('all')} label="All + drafts" /></div>}</div>
           </div>
         </div>
 
