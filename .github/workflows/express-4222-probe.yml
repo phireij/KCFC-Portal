@@ -1,0 +1,98 @@
+name: KCFC Express 4.22.2 Probe
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/express-4222-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install current lockfile
+        run: npm ci
+
+      - name: Resolve supported Express 4.22.2 candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install express@^4.22.2 --save-exact
+          echo '### Candidate dependency tree' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          npm ls express qs --all >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record candidate runtime audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > /tmp/kcfc-express-probe-audit.json
+          audit_status=$?
+          set -e
+          node scripts/report-npm-audit.mjs /tmp/kcfc-express-probe-audit.json "$GITHUB_STEP_SUMMARY" "$audit_status"
+
+      - name: Typecheck candidate
+        run: npm run lint
+
+      - name: Verify redevelopment contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tsx scripts/verify-communication-policy.ts
+          npx tsx scripts/verify-communication-batches.ts
+          npx tsx scripts/verify-liturgical-creator-plans.ts
+          npx tsx scripts/verify-liturgical-assignment-diff.ts
+          npx tsx scripts/verify-liturgical-publication-plan.ts
+          npx tsx scripts/verify-broadcast-creator-plan.ts
+          npx tsx scripts/verify-broadcast-composer-accessibility.ts
+          npx tsx scripts/verify-member-governance.ts
+          npx tsx scripts/verify-member-pre-registration.ts
+          npx tsx scripts/verify-member-account-status.ts
+          npx tsx scripts/verify-core-status-transition.ts
+          npx tsx scripts/verify-core-status-mutation-plan.ts
+          npx tsx scripts/verify-core-status-staging-executor.ts
+          npx tsx scripts/verify-core-status-executor-isolation.ts
+          npx tsx scripts/verify-leadership-accessibility.ts
+          npx tsx scripts/verify-mobile-navigation-contract.ts
+          npx tsx scripts/verify-delivery-diagnostics.ts
+          npx tsx scripts/verify-current-device-notification-health.ts
+
+      - name: Build candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/kcfc-express-probe-build.log
+          if grep -q 'dynamically imported by .*fcmClient' /tmp/kcfc-express-probe-build.log; then
+            echo 'Redundant fcmClient dynamic-import warning returned.' >&2
+            exit 1
+          fi
+          if grep -q 'import.meta.*not available with the "cjs" output format' /tmp/kcfc-express-probe-build.log; then
+            echo 'CJS import.meta build warning returned.' >&2
+            exit 1
+          fi
+          node scripts/report-build-assets.mjs dist
+
+      - name: Upload candidate package files
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-4222-candidate-package-files
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
+          retention-days: 1
