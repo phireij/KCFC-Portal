@@ -1,0 +1,29 @@
+name: Apply Admin workspace history
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/apply-admin-workspace-history.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - run: python3 scripts/patch-admin-workspace-history.py
+      - run: npx tsx scripts/verify-admin-workspace-history.ts
+      - run: git diff --check
+      - run: |
+          rm scripts/patch-admin-workspace-history.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/Admin.tsx scripts/patch-admin-workspace-history.py
+          git commit -m 'fix: preserve Leadership workspace in URL history'
+          git push origin HEAD:redesign/mobile-first-v2
