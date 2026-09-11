@@ -23,24 +23,31 @@ The permanent `KCFC Redevelopment CI` validates:
 - liturgical creator/diff/publication plans;
 - leadership broadcast planning and accessibility;
 - member governance and account-status classification;
+- safe member pre-registration identity/default-state contract;
 - Core-status transition/mutation planning;
 - staging-only Core-status executor safeguards and isolation;
 - leadership accessibility contracts;
 - mobile navigation contract;
 - delivery diagnostics and current-device notification health contracts;
 - production build;
+- raw + gzip JavaScript asset-size reporting after the production build;
 - resolved-build-warning regression guards;
 - connector defaults OFF;
 - provider-secret browser exposure guard.
 
-The last fully verified pre-increment branch head was green. Every new readiness increment must obtain a fresh full CI result before being treated as accepted evidence.
+Full redevelopment CI remained green through the focused leadership, bundle-reporting, staging-matrix and advisory-disposition increments. The advisory-disposition head completed PR CI run **#718** successfully before the isolated Express remediation probe was introduced.
+
+Every new code/dependency increment must still obtain a fresh full CI result before being treated as accepted evidence.
 
 ## Current dependency position
 
-- Runtime audit: 0 critical, 0 high, 3 moderate, 1 low.
-- `esbuild` under the `tsx` development-tooling path now has an explicit low-production-exposure disposition.
-- `qs`, `uuid`, and `gaxios` remain open pending exact parent/advisory reachability evidence.
+- Runtime audit baseline before the active Express probe: 0 critical, 0 high, 3 moderate, 1 low.
+- `esbuild` under the `tsx` development-tooling path has an explicit low-production-exposure disposition.
+- `qs` is now advisory-mapped: the locked 6.14.2 copy is inside the affected ranges for `GHSA-4mjr-xmp4-gh2g` / `CVE-2026-82417` and `GHSA-x5fp-wj9c-mxmx` / `CVE-2026-82562`; the separate nested 6.16.0 copy is already outside both ranges.
+- `uuid` 9.0.1 is inside `GHSA-w5hq-g745-h8pq` / `CVE-2026-41907`; the advisory is specific to v3/v5/v6 caller-provided output-buffer behavior, so parent/API reachability remains open.
+- `gaxios` exists in multiple installed versions and parent paths; remediation remains parent-family based instead of using a speculative global override.
 - Forced audit fixes and speculative overrides remain prohibited.
+- A one-time isolated **Express 4.22.2** probe is active on the redevelopment branch to determine whether a supported parent update resolves the affected `qs` copy while preserving all KCFC contracts and production build behavior. No candidate package file is accepted until the probe and subsequent normal CI are green.
 
 See: `residual-dependency-disposition-2026-09-11.md`.
 
@@ -52,17 +59,25 @@ Established prior measurement:
 - after route lazy-loading: approximately 1.32 MB / 357.1 KB gzip;
 - route pages such as Admin, Duties, Polls, Accounting, Profile and Inbox load separately.
 
-Current increment adds explicit shared-vendor boundaries for Firebase, charting/D3, and Motion without raising `chunkSizeWarningLimit`. Acceptance requires a fresh green production build. The goal is to reduce concentration in the application shell and improve cacheability, not to hide Vite warnings.
+Validated bundle increment:
+
+- explicit shared-vendor boundaries now separate Firebase, charting/D3, and Motion;
+- the normal Vite 500 KiB warning remains enabled rather than being hidden through `chunkSizeWarningLimit` changes;
+- permanent CI now records raw + gzip size for every generated JavaScript asset, total JavaScript weight and the standard Vite application entry where identifiable;
+- the build asset reporting step itself is green in the full redevelopment CI.
+
+GitHub's currently available connector surface confirms the reporting step passed but does not expose the rendered `GITHUB_STEP_SUMMARY` asset table directly. No unverified size figures are copied into this evidence register.
 
 ## Leadership decomposition position
 
 Focused routine workflows now exist for:
 
 - Leadership overview;
-- Website inquiries;
+- Website inquiries, including individual explicit-send email replies with the recipient locked to the inquiry sender;
 - Member communications;
+- safe member pre-registration that writes only unverified pending Firestore profiles and leaves Firebase Auth untouched;
 - Member approval;
-- Roles & ministries;
+- Roles & ministries with pre-save change summary and UID-preservation messaging;
 - Member account-status overview;
 - Core-status preview/planning.
 
@@ -72,8 +87,10 @@ Still isolated in Advanced Legacy Tools:
 - account disablement;
 - profile/member removal;
 - credential purge;
-- legacy Gmail inquiry reply path;
+- legacy compatibility versions of pre-registration and inquiry reply while focused replacements finish staging validation;
 - other low-frequency/destructive compatibility controls.
+
+Focused inquiry reply does not auto-send, does not permit changing the inquiry recipient, and does not delete the source inquiry. No live inquiry-reply QA email was sent by redevelopment work.
 
 No destructive legacy control should be moved into a routine workspace until it has a separately reviewed governed workflow and staging evidence.
 
@@ -85,7 +102,8 @@ Automated contract tests are not substitutes for device QA. Before production ap
 - Add to Home Screen flow;
 - notification permission from explicit interaction;
 - Web Push registration and repair;
-- notification sound/banner behavior as allowed by iOS settings;
+- background/locked-device notification behavior;
+- transport result recorded separately from OS-controlled banner/sound/vibration behavior, including Focus/mute scenarios;
 - test notification deep link;
 - safe-area behavior for bottom navigation and More sheet;
 - Inbox list → detail navigation;
@@ -95,12 +113,21 @@ Automated contract tests are not substitutes for device QA. Before production ap
 - native/manual install path;
 - permission + device registration;
 - stale-registration repair;
+- background/locked-device delivery and notification-channel behavior;
 - push deep link;
 - mobile navigation, Schedule, Directory and Inbox regression.
 
+### Multi-device notification reliability
+- two valid registered devices for one synthetic member;
+- one stale/expired endpoint alongside a valid endpoint;
+- delivery evidence correlated to the durable Inbox record without equating provider acceptance with user-visible delivery.
+
 ### Desktop
 - leadership tab keyboard navigation;
-- focused member workflows;
+- focused member pre-registration using synthetic staging data only;
+- focused individual inquiry reply using a staging/sink recipient only;
+- governed role/ministry change preview + save;
+- confirmation that destructive account/Core controls are absent from focused routine surfaces;
 - accounting compatibility surface;
 - Schedule/roster publication visibility rules;
 - Inbox desktop split view;
@@ -108,10 +135,10 @@ Automated contract tests are not substitutes for device QA. Before production ap
 
 ## Production-readiness blockers still open
 
-1. Fresh CI acceptance for the latest branch head after the bundle/disposition increment.
-2. Exact owner/advisory reachability closure for `qs`, `uuid`, and `gaxios`.
-3. Representative staging/device QA evidence.
-4. Remaining leadership decomposition only where it reduces routine use of LegacyAdmin without weakening destructive-action isolation.
+1. Complete and disposition the isolated Express 4.22.2 parent-remediation probe; if accepted, rerun normal CI on the actual package/lockfile change.
+2. Parent/API reachability or supported remediation closure for the remaining `uuid` / `gaxios` moderate chain after `qs` disposition.
+3. Representative staging/device QA evidence, especially real iOS/Android notification behavior.
+4. Any further leadership decomposition only where it reduces routine use of LegacyAdmin without weakening destructive-action isolation.
 5. Backup/rollback evidence before any production request.
 6. Explicit user approval for production merge/deploy and every separately gated production-sensitive action.
 
