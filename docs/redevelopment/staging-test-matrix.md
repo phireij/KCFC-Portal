@@ -39,6 +39,8 @@ Use synthetic staging identities with no production member data:
 | AVAIL-02 | STG_LECTOR | Submit multiple available dates | Latest response is saved and shown correctly |
 | AVAIL-03 | STG_USHER | Revise open request | Latest response replaces prior state in leader progress/matrix |
 | AVAIL-04 | STG_LEADER | Close request | Member edits stop; matrix/assignment planning remains available |
+| AVAIL-05 | STG_LECTOR | Open availability notification linking to `/polls?id=<pollId>` | My availability opens and the intended request scrolls into view with visible/programmatic focus |
+| AVAIL-06 | STG_LEADER | Open completion notification linking to `/polls?id=<pollId>&leader=1` | Leader view opens, the intended request expands, scrolls into view, and receives visible/programmatic focus |
 | ASSIGN-01 | STG_LEADER | Build roster | Candidate choices respect ministry membership + submitted availability |
 | ASSIGN-02 | STG_LEADER | Publish complete roster | Roster becomes member-visible and assigned members receive Inbox notifications |
 | ASSIGN-03 | STG_LEADER | Edit published roster | Roster returns to unpublished/review state until deliberately republished |
@@ -83,6 +85,7 @@ Use synthetic staging identities with no production member data:
 | PWA-DEEP-01 | Installed supported device with Portal already open at `/duties?view=all` | Tap notification targeting `/duties?view=mine` | Existing KCFC window navigates to the full target URL and My Ministry is visible; query state is not lost |
 | PWA-DEEP-02 | Supported device | Tap a test notification with malformed or cross-origin destination data | Portal refuses the external target and opens/focuses the same-origin KCFC Inbox fallback |
 | PWA-DEEP-03 | Installed supported device | Tap an update notification targeting `/announcements?id=<announcementId>` | Updates opens and the intended authorized update is scrolled into view and visibly/programmatically focused |
+| PWA-DEEP-04 | Installed supported device | Tap member `/polls?id=<pollId>` and leader `/polls?id=<pollId>&leader=1` availability notifications | Correct availability mode opens; the intended request is brought into view and focused, with leader completion links expanding the matching request |
 
 ### Notification reliability interpretation
 
@@ -107,7 +110,7 @@ A missing sound by itself is not sufficient to classify Web Push transport as fa
 ## Accessibility / resilience tests
 
 | ID | Scenario | Expected result |
-| --- | --- | --- |
+| --- | --- |
 | A11Y-01 | Keyboard-only desktop navigation | Visible focus; all primary actions reachable |
 | A11Y-02 | 200% browser zoom / large reading size | Primary navigation and critical actions remain usable |
 | A11Y-03 | Phone safe-area / small viewport | No critical button is hidden behind bottom navigation |
