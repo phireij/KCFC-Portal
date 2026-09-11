@@ -27,12 +27,12 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] Synthetic staging preflight requires explicit matching client/server VAPID public keys and a server private key rather than relying on inherited/local fallback material.
 - [x] Synthetic staging preflight verifies external connectors OFF and Core-status staging executor OFF.
 - [x] Staging app shell renders an explicit `Staging • Test environment` badge only for `VITE_KCFC_RUNTIME_ENV=staging`; default/production runtime renders no staging badge.
-- [x] Notification-linked Updates, Inbox filters/history, and member/leader availability-request deep links are covered by permanent automated navigation/focus guards.
+- [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, and Updates scope history are covered by permanent automated guards.
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: code head `97f9b8f4baf05f1aae7d1d7d3a1a6e763050fa19`, `KCFC Redevelopment CI` run **#1001** / id `34575327421`, conclusion **SUCCESS**, with all **48** validation/build/security steps green. This includes staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus, Inbox deep-link/history/filter navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: code head `470cad404e112c3a4b0afe3fd76a8257ac049a44`, `KCFC Redevelopment CI` run **#1043** / id `34576876886`, conclusion **SUCCESS**, with all **51** validation/build/security steps green. This includes staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus + Published/All scope history, Inbox deep-link/history/filter navigation, Resources category history, Community member-type/ministry history, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
@@ -92,12 +92,15 @@ Validate on representative widths and real devices where possible:
 - [ ] Upcoming and History views are readable.
 - [ ] Published assignment highlighting makes the member's own role obvious.
 - [ ] Community Directory search/filter is comfortable on phone.
+- [ ] Community `type` + repeated `ministry` filters survive reload/share and browser/mobile Back/Forward; free-text search remains local.
 - [ ] Updates cards/editor are readable on phone.
+- [ ] Authorized Updates Published ↔ All + drafts scope survives reload/Back/Forward and does not reveal drafts to unauthorized members; any focused `?id=` is preserved.
 - [ ] Inbox list → detail flow works without desktop-style squeezing.
 - [ ] Inbox `?tab=` filters restore correctly on reload and Back/Forward while preserving selected-message state.
 - [ ] Availability notification links focus/highlight the intended request; leader completion links open leader mode and expand/focus the intended request.
 - [ ] Profile and notification setup remain usable at normal and large text sizes.
 - [ ] Resources remain usable on mobile.
+- [ ] Resource `?category=` selection survives reload/share and browser/mobile Back/Forward; free-text search remains local.
 - [ ] Dark mode remains readable where supported.
 
 ## Gate E — Notification / PWA acceptance
