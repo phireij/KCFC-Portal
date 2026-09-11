@@ -24,11 +24,11 @@ Branch-only change `1250ea8e460e64899f897680236e77de553160cb` now:
 - preserves every destructive/low-frequency control in the existing protected legacy surface rather than moving those controls into routine workspaces; and
 - extends the existing Leadership workspace verifier so an eager `LegacyAdmin` import is a regression failure.
 
-The bounded implementation helper validated the targeted Leadership contract, TypeScript and a production build before committing the branch change, then removed itself. The normal branch now contains only the permanent read-only redevelopment CI workflow.
+The bounded implementation helper validated the targeted Leadership contract, TypeScript and a production build before committing the branch change, then removed itself. The normal branch contains only the permanent read-only redevelopment CI workflow at normal checkpoints.
 
 The bot-authored code commit produced a GitHub Actions `action_required` record with zero jobs rather than an ordinary permanent-CI execution. That record is **not** counted as release validation. A normal documentation checkpoint then triggered the permanent workflow against the same code state.
 
-### Permanent validation and measured result
+### First-stage permanent validation and measured result
 
 `KCFC Redevelopment CI` run **#1592** / id `34621542523` completed **SUCCESS** on checkpoint head `d5785717887260a561005a6d6d7f7473a9cf8d2b`, with all **58** named validation/build/security checks green. The retained build-manifest artifact is `kcfc-build-manifest-d5785717887260a561005a6d6d7f7473a9cf8d2b`.
 
@@ -39,7 +39,7 @@ Compared with the clean pre-change manifest on `147d5eed2d0acda2abeb1d29ab131914
 - on-demand `LegacyAdmin` chunk: **65,972 bytes (64.4 KiB)**;
 - JavaScript asset count: **49 → 51** because the advanced compatibility surface is now independently loadable;
 - total JavaScript raw size: **2,329,069 → 2,331,337 bytes** (approximately +2.2 KiB), so this is intentionally a route-loading improvement rather than a total-weight claim; and
-- standard main entry remains effectively unchanged at about **332.1 KiB raw**.
+- standard main entry remained effectively unchanged at about **332.1 KiB raw**.
 
 The preserved legacy surface therefore no longer increases the routine Leadership route payload for leaders who do not open Advanced tools.
 
@@ -62,9 +62,30 @@ Branch-only code change `e2cf55b7e200dedb7e2619a53a9906c23b143134` now defers:
 
 The existing permanent Leadership verifier was strengthened rather than adding a new CI step: it now requires all eight non-default lazy boundaries and fails if any of those components regress to an eager import.
 
-The bounded one-shot optimizer on parent `7e8495094a893f2b07d159f15572b0150012f02b` completed **SUCCESS**, including the targeted Leadership contract, TypeScript, production build, and a guard requiring the routine `Admin` chunk to be below **90,000 raw bytes**. It then committed `e2cf55b7...` and removed itself. The normal branch again contains only the permanent read-only redevelopment CI workflow.
+The bounded one-shot optimizer on parent `7e8495094a893f2b07d159f15572b0150012f02b` completed **SUCCESS**, including the targeted Leadership contract, TypeScript, production build, and a guard requiring the routine `Admin` chunk to be below **90,000 raw bytes**. It then committed `e2cf55b7...` and removed itself.
 
-As with the earlier bot-authored optimization, the bot-triggered permanent workflow record is not treated as release evidence. This checkpoint provides the normal branch event required for the permanent 58-check suite to validate the exact current code state and retain a fresh build manifest. Exact post-split asset measurements are recorded only after that ordinary CI succeeds.
+### Second-stage permanent validation and measured result
+
+`KCFC Redevelopment CI` run **#1601** / id `34622296845` completed **SUCCESS** on checkpoint head `6ca51eab3dc3a579ebbcc38a64a56b18f5377c75`, with all **58** named validation/build/security checks green. The retained build-manifest artifact is `kcfc-build-manifest-6ca51eab3dc3a579ebbcc38a64a56b18f5377c75`.
+
+Measured against the first-stage and original baselines:
+
+- routine `Admin` route chunk: **110,127 bytes (107.6 KiB) → 18,406 bytes (18.0 KiB)**;
+- second-stage reduction: **91,721 bytes / 83.3%**;
+- total reduction from the original **174,006-byte (169.9 KiB)** Leadership chunk: **155,600 bytes / 89.4%**;
+- deferred `BroadcastTool`: **30,909 bytes**;
+- deferred `LeadershipInquiries`: **14,494 bytes**;
+- deferred `MemberRoleEditor`: **13,212 bytes**;
+- deferred `CoreStatusPlanner`: **10,166 bytes**;
+- deferred `MemberAccountOverview`: **7,521 bytes**;
+- deferred `MemberApprovalQueue`: **7,441 bytes**;
+- deferred `MemberPreRegistration`: **6,285 bytes**;
+- deferred `LegacyAdmin`: **66,055 bytes**;
+- JavaScript asset count: **63** after decomposing the focused workspaces into on-demand chunks;
+- total JavaScript raw size: **2,335,708 bytes**, only **6,639 bytes / 0.29%** above the original 2,329,069-byte baseline; and
+- standard main entry remains effectively unchanged at **340,134 bytes (332.2 KiB)**, while `vendor-firebase` remains **838,741 bytes (819.1 KiB)**.
+
+This is therefore a meaningful default Leadership loading reduction without pretending that total application code disappeared: the non-default workspaces remain available, role-gated and URL-addressable, but are fetched when selected rather than on every Leadership overview visit.
 
 ## Dependency disposition re-check
 
