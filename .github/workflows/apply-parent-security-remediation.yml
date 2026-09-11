@@ -1,0 +1,54 @@
+name: Apply KCFC Parent Security Remediation
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/apply-parent-security-remediation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Upgrade compatible parent dependency families
+        run: |
+          npm install --save firebase@12.19.0 @google/genai@1.52.0
+          npm install --save-dev autoprefixer@10.5.6 @tailwindcss/vite@4.3.3 tailwindcss@4.3.3
+      - name: Validate TypeScript and production build
+        run: |
+          npm run lint
+          npm run build
+      - name: Show runtime security delta
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev
+          exit 0
+      - name: Commit validated parent upgrades
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'phireij'
+          git config user.email 'phireij@gmail.com'
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No dependency file changes to commit.'
+            exit 0
+          fi
+          git commit -m 'security: update firebase genai and build parent families'
+          git push origin HEAD:redesign/mobile-first-v2
