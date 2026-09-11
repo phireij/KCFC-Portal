@@ -60,9 +60,10 @@ Permanent `KCFC Redevelopment CI` validates:
 - production build and resolved-warning guards;
 - raw + gzip JavaScript asset-size reporting;
 - complete build-artifact identity manifest generation/verification using the release-candidate source SHA plus SHA-256 and byte size for every `dist` file;
+- 30-day GitHub Actions retention of the verified non-secret build manifest as repository-side release evidence;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`, `KCFC Redevelopment CI` run **#1433** / id `34595526457`, conclusion **SUCCESS**. All **57** validation/build/security steps passed, including staging runtime-evidence validation and complete build-artifact manifest/hash coverage.
+Latest validated clean branch checkpoint: `49c34b9833b7dc2036a0e1bab948689608108ed4`, `KCFC Redevelopment CI` run **#1443** / id `34595996778`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed, including staging runtime-evidence validation, complete build-artifact manifest/hash coverage, and retention of the verified manifest as a GitHub Actions artifact.
 
 The validated staging isolation work establishes:
 
@@ -264,7 +265,7 @@ The plan establishes:
 - post-rollback non-destructive smoke verification;
 - a strict separation between readiness documentation and actual production backup/restore execution.
 
-Repository-side build identity is now captured by `build-artifact-identity-2026-09-11.md` and the verified `dist/kcfc-build-manifest.json` contract. Provider/environment backup evidence and exact production deployment-artifact rollback/redeployability evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those provider artifacts/backups already exist.
+Repository-side build identity is now captured by `build-artifact-identity-2026-09-11.md` and the verified `dist/kcfc-build-manifest.json` contract. CI #1443 retained manifest artifact `kcfc-build-manifest-49c34b9833b7dc2036a0e1bab948689608108ed4` through 2026-10-11; this is repository evidence only, not provider deployment evidence. Provider/environment backup evidence and exact production deployment-artifact rollback/redeployability evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those provider artifacts/backups already exist.
 
 ## Production-readiness blockers still open
 

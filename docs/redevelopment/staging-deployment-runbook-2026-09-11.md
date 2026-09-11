@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize creation o
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Latest validated staging/readiness checkpoint: `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`, with `KCFC Redevelopment CI` run **#1433** / id `34595526457` completing successfully with all **57** named validation/build/security steps green. This includes the synthetic staging runtime-evidence validator and complete build-artifact manifest/hash verification.
+Latest validated staging/readiness checkpoint: `49c34b9833b7dc2036a0e1bab948689608108ed4`, with `KCFC Redevelopment CI` run **#1443** / id `34595996778` completing successfully with all **58** named validation/build/security steps green. This includes the synthetic staging runtime-evidence validator, complete build-artifact manifest/hash verification, and retention of the non-secret verified manifest as a GitHub Actions artifact.
 
 ## Non-negotiable isolation rules
 

@@ -47,15 +47,16 @@ These can be treated as repository evidence when the exact intended branch head 
 - Authenticated self-test push recipient boundary.
 - Production bundle build-warning guards and asset-size reporting.
 - Build-artifact manifest generation/verification tied to the intended source SHA, with SHA-256/byte-size verification and complete `dist` file coverage.
+- 30-day GitHub Actions retention of the verified non-secret build manifest as repository-side release evidence.
 - External connector defaults OFF.
 - Browser-exposed provider-secret guard.
 
 Latest fully validated code/docs checkpoint before this map refresh:
 
-- head `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`
-- `KCFC Redevelopment CI` run **#1433** / id `34595526457`
+- head `49c34b9833b7dc2036a0e1bab948689608108ed4`
+- `KCFC Redevelopment CI` run **#1443** / id `34595996778`
 - conclusion: **SUCCESS**
-- all **57** named validation/build/security steps completed successfully, including staging runtime-evidence validation and complete build-artifact manifest/hash coverage.
+- all **58** named validation/build/security steps completed successfully, including staging runtime-evidence validation, complete build-artifact manifest/hash coverage and manifest retention.
 
 Later documentation-only readiness synchronization does not convert any empirical item below into a PASS. Any later code/dependency change requires a fresh green run before that later code head is considered validated.
 

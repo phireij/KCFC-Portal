@@ -28,6 +28,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] `npm run staging:preflight` is regression-tested in CI with a synthetic isolated staging environment.
 - [x] `npm run staging:evidence -- <health-json>` is regression-tested to reject production hostnames, runtime/project/database mismatches, and unexpected health-response fields.
 - [x] CI generates and verifies a complete build-artifact manifest containing the intended source SHA plus SHA-256/size for every `dist` file.
+- [x] CI retains only the non-secret verified build manifest as a 30-day GitHub Actions artifact for repository-side release evidence.
 - [x] Synthetic staging preflight requires explicit matching client/server VAPID public keys and a server private key rather than relying on inherited/local fallback material.
 - [x] Staging preflight requires an explicit HTTPS `APP_URL` and rejects the production Portal hostname; server startup enforces the same boundary.
 - [x] Admin mass-email broadcast uses simulation-only behavior in staging even when SMTP credentials are present.
@@ -44,7 +45,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: head `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`, `KCFC Redevelopment CI` run **#1433** / id `34595526457`, conclusion **SUCCESS**, with all **57** named validation/build/security steps green. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, and complete build-artifact manifest/hash coverage. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
+Latest exact-head automated evidence before this checklist update: head `49c34b9833b7dc2036a0e1bab948689608108ed4`, `KCFC Redevelopment CI` run **#1443** / id `34595996778`, conclusion **SUCCESS**, with all **58** named validation/build/security steps green. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, complete build-artifact manifest/hash coverage, and 30-day retention of the non-secret verified manifest. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
 
 ## Gate B — Data compatibility
 

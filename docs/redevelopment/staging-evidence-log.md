@@ -23,10 +23,10 @@ GitHub Actions workflow: `KCFC Redevelopment CI`
 
 Latest exact-head run before this documentation refresh:
 
-- validated head: `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`
-- run: **#1433 / id 34595526457**
+- validated head: `49c34b9833b7dc2036a0e1bab948689608108ed4`
+- run: **#1443 / id 34595996778**
 - conclusion: **SUCCESS**
-- named validation/build/security steps: **57 passed**
+- named validation/build/security steps: **58 passed**
 
 The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration and email-verification safety, Core-status safeguards, Firebase Admin Storage non-use, client/server staging Firebase isolation, synthetic staging preflight plus runtime-health evidence validation, notification/privacy/service-worker/PWA contracts, accessibility/mobile navigation, delivery/device QA guards, production build/bundle reporting, complete build-artifact manifest/hash coverage, connector defaults OFF and provider-secret browser guards.
 
@@ -122,6 +122,14 @@ No destructive control is considered staging-approved until representative autho
 Earlier measured route-splitting improvement remains approximately 2.31 MB / 603.5 KB gzip to 1.32 MB / 357.1 KB gzip for the main client chunk before later vendor separation. No unverified post-vendor-split figure is claimed here.
 
 Result: **PASS — build/reporting controls present.**
+
+## Evidence E-010 — Retained repository build-manifest artifact
+
+CI #1443 retained the verified non-secret manifest produced for source head `49c34b9833b7dc2036a0e1bab948689608108ed4` as GitHub Actions artifact `kcfc-build-manifest-49c34b9833b7dc2036a0e1bab948689608108ed4`. Artifact id: `10262082863`; archive digest: `sha256:54701b07d5658dbc9045fe4ffa77fbfd6cc8acba986fcc6fe09283b4a306089d`; expiration: `2026-10-11T11:51:53Z`.
+
+This proves repository-side evidence retention only. It does not prove a provider deployment/revision, provider image digest, or redeployable last-known-good provider artifact.
+
+Result: **PASS — repository manifest evidence retained; provider rollback evidence remains OPEN.**
 
 ## Evidence E-009 — Specification/documentation QA
 
