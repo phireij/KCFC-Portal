@@ -86,6 +86,27 @@ Still isolated in Advanced Legacy Tools:
 
 No destructive legacy control should be moved into a routine workspace without a separately reviewed governed workflow and staging evidence.
 
+## Staging/device QA package
+
+The canonical device acceptance procedure is now documented in `staging-device-qa-package-2026-09-11.md`.
+
+It uses this sequence:
+
+1. automated CI/contracts;
+2. browser responsive/mobile emulation;
+3. Android Emulator where useful;
+4. physical iPhone acceptance;
+5. physical Android tablet acceptance;
+6. preferably an additional KCFC member Android phone for representative real-world Android coverage.
+
+Every notification test separately records:
+
+- transport acceptance;
+- actual OS presentation (banner/lock screen/sound/vibration); and
+- durable KCFC Inbox persistence.
+
+No emulator result may be represented as physical-device evidence.
+
 ## Staging/device evidence still required
 
 Automated contracts are not a substitute for real-device staging QA.
@@ -129,12 +150,28 @@ Automated contracts are not a substitute for real-device staging QA.
 - Inbox split view;
 - unauthorized-role denial.
 
+## Backup / rollback readiness
+
+The canonical rollback requirements are now documented in `backup-rollback-plan-2026-09-11.md`.
+
+The plan establishes:
+
+- Firebase UID preservation and no Auth recreation;
+- application/version rollback as the preferred first response;
+- destructive data restoration only as a separately reviewed and explicitly approved last resort;
+- required release/build/CI/environment evidence before production approval;
+- notification-specific rollback checks;
+- post-rollback non-destructive smoke verification;
+- a strict separation between readiness documentation and actual production backup/restore execution.
+
+Provider/environment backup evidence and exact production deployment-artifact rollback evidence are still required before any production request.
+
 ## Production-readiness blockers still open
 
 1. Representative staging/device QA, especially real iOS/Android notification behavior.
 2. Supported parent remediation or continued bounded disposition for the remaining optional Storage-path `uuid` / `gaxios` findings.
 3. Any further leadership decomposition only where it reduces routine LegacyAdmin use without weakening destructive-action isolation.
-4. Backup/rollback evidence before a production request.
+4. Provider/environment backup evidence plus exact deployment-artifact rollback evidence before a production request.
 5. Explicit user approval for production merge/deploy and every separately gated production-sensitive action.
 
 ## Explicitly prohibited without approval
