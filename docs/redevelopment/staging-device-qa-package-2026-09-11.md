@@ -10,11 +10,12 @@
 Use the lowest-risk, highest-coverage sequence:
 
 1. Automated CI/contracts.
-2. Browser responsive/mobile emulation for representative iPhone and Android phone/tablet widths.
-3. Android Emulator where it adds coverage.
-4. Physical iPhone acceptance.
-5. Physical Android tablet acceptance.
-6. Optional supplemental Android phone acceptance from a KCFC member when one becomes available.
+2. Actual isolated staging preflight.
+3. Browser responsive/mobile emulation for representative iPhone and Android phone/tablet widths.
+4. Android Emulator where it adds coverage.
+5. Physical iPhone acceptance.
+6. Physical Android tablet acceptance.
+7. Optional supplemental Android phone acceptance from a KCFC member when one becomes available.
 
 A Mac/iOS Simulator is **not required** for the planned KCFC acceptance path. Browser/mobile emulation covers layout and logic first; the physical iPhone provides the iOS/PWA/Web Push evidence that browser emulation cannot prove.
 
@@ -23,6 +24,7 @@ Physical-device QA is intentionally narrow: it verifies behavior that browsers/e
 ## Environment rules
 
 - Use an isolated staging environment and staging-only/synthetic accounts.
+- Run and retain `npm run staging:preflight` PASS before browser/device QA.
 - Do not use production member data for test-only mutations.
 - Do not send mass test notifications.
 - Test messages must target only the selected staging tester/device registrations.
@@ -55,6 +57,9 @@ Before asking the physical tester to participate, verify at representative iPhon
 - Search/filter reset and no-results recovery.
 - Community Directory privacy presentation and scanability.
 - Updates and Inbox list/detail behavior.
+- Direct `/announcements?id=<announcementId>` focus/highlight of the intended visible authorized update.
+- Inbox direct `?tab=` filter URLs, reload persistence and browser Back/Forward restoration.
+- Inbox message `?id=` deep-link preservation while changing filters where appropriate.
 - Profile/notification setup at normal and large text sizes.
 - Resource Library mobile behavior.
 - Dark-mode readability where supported.
@@ -63,8 +68,8 @@ Before asking the physical tester to participate, verify at representative iPhon
 - Device Registration/Repair UI.
 - Notification Health diagnostics.
 - Send Test control is clearly staging/test scoped.
-- Inbox persistence and unread/read behavior.
-- Notification deep-link destination handling, including query-specific navigation when a different Schedule view is already open and same-origin fallback for malformed/external targets.
+- Inbox persistence, message history and unread/read behavior.
+- Notification deep-link destination handling, including query-specific Schedule navigation, notification-linked Updates focus, and same-origin fallback for malformed/external targets.
 - Stale endpoint repair behavior in controlled test data.
 - No automatic broadcast/reply behavior.
 
@@ -102,6 +107,10 @@ Run these cases:
 - Repeat one controlled test with Focus/Silent conditions noted.
 - Do not treat suppressed sound as transport failure when system settings explain the suppression.
 
+### IOS-05 — Navigation recovery
+- From the installed PWA, switch Inbox filters and use Back/Forward to confirm URL-backed filter restoration.
+- Tap one authorized update notification and confirm the intended update is visibly/programmatically focused.
+
 ## Physical Android tablet acceptance
 
 The Android tablet is the planned first physical Android baseline. It is sufficient to validate the Android/Chromium PWA notification path even though it does not represent every Android phone manufacturer.
@@ -138,6 +147,7 @@ Run these cases:
 
 ### AND-05 — Tablet layout sanity
 - In both portrait and landscape, confirm the installed PWA remains usable and does not expose desktop-only leadership actions to an unauthorized test member.
+- Confirm Inbox filter Back/Forward and an authorized update-notification focus path remain usable.
 - This is a supplemental layout check; phone-sized responsive behavior remains covered in browser/Android emulation.
 
 ## Multi-device acceptance
@@ -182,6 +192,7 @@ A representative device passes when:
 - expected OS presentation occurs when device settings allow it;
 - KCFC Inbox persistence succeeds;
 - notification tap/deep-link opens the intended destination;
+- Inbox/Updates navigation state behaves correctly under direct links and Back/Forward;
 - notification registration remains healthy or the repair path works;
 - no unrelated member receives the test;
 - no production data/action is touched.
