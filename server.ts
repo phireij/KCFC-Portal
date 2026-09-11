@@ -1744,7 +1744,7 @@ async function startServer() {
       // Send standard FCM notifications if we have real tokens
       if (realTokens.length > 0) {
         const messagingAdmin = getMessagingAdmin(appAdmin);
-        logMessage(`[FCM TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${realTokens.length} tokens...`);
+        logMessage(`[FCM TEST PUSH] Dispatching caller-bound test notification to ${realTokens.length} registered device token(s)...`);
 
         try {
           const fcmResponse = await messagingAdmin.sendEachForMulticast({
@@ -1819,7 +1819,7 @@ async function startServer() {
       let webPushSuccessCount = 0;
       let webPushFailureCount = 0;
       if (Array.isArray(callerWebPushSubs) && callerWebPushSubs.length > 0) {
-        logMessage(`[WEBPUSH TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${callerWebPushSubs.length} subscriptions...`);
+        logMessage(`[WEBPUSH TEST PUSH] Dispatching caller-bound test notification to ${callerWebPushSubs.length} registered subscription(s)...`);
         const updatedSubs = [...callerWebPushSubs];
         let needsUpdate = false;
 
