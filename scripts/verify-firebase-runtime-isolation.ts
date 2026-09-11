@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 
-const firebaseSource = readFileSync('src/lib/firebase.ts', 'utf8');
+const clientSource = readFileSync('src/lib/firebase.ts', 'utf8');
+const serverSource = readFileSync('server.ts', 'utf8');
 const envExample = readFileSync('.env.example', 'utf8');
 
-const requiredSourceFragments = [
+const requiredClientFragments = [
   "const runtimeEnvironment = String(metaEnv.VITE_KCFC_RUNTIME_ENV || 'production')",
   "if (runtimeEnvironment === 'staging')",
   "if (!hasEnvConfig)",
@@ -15,20 +16,44 @@ const requiredSourceFragments = [
   ': (hasFileConfig ? { ...firebaseConfigFromFile } : {})',
 ];
 
-for (const fragment of requiredSourceFragments) {
-  if (!firebaseSource.includes(fragment)) {
-    throw new Error(`Firebase runtime isolation contract missing source fragment: ${fragment}`);
+for (const fragment of requiredClientFragments) {
+  if (!clientSource.includes(fragment)) {
+    throw new Error(`Client Firebase runtime isolation contract missing source fragment: ${fragment}`);
   }
 }
 
-if (firebaseSource.includes('const firebaseConfig = hasFileConfig ?')) {
-  throw new Error('Committed Firebase file must not take precedence over explicit runtime environment configuration.');
+if (clientSource.includes('const firebaseConfig = hasFileConfig ?')) {
+  throw new Error('Client committed Firebase file must not take precedence over explicit runtime environment configuration.');
+}
+
+const requiredServerFragments = [
+  'const runtimeEnvironment = String(process.env.KCFC_RUNTIME_ENV || "production")',
+  'const serverEnvConfig = hasServerEnvConfig ? {',
+  'if (runtimeEnvironment === "staging")',
+  'KCFC_RUNTIME_ENV=staging requires explicit FIREBASE_* staging configuration.',
+  'server staging Firebase projectId must differ from the committed production/default projectId.',
+  'const firebaseConfig: any = serverEnvConfig',
+  '? { ...serverEnvConfig }',
+  ': (hasFileConfig ? { ...firebaseConfigFromFile } : {})',
+];
+
+for (const fragment of requiredServerFragments) {
+  if (!serverSource.includes(fragment)) {
+    throw new Error(`Server Firebase runtime isolation contract missing source fragment: ${fragment}`);
+  }
+}
+
+if (serverSource.includes('const firebaseConfig = hasFileConfig ?')) {
+  throw new Error('Server committed Firebase file must not take precedence over explicit runtime environment configuration.');
 }
 
 const requiredEnvFragments = [
   'VITE_KCFC_RUNTIME_ENV=production',
+  'KCFC_RUNTIME_ENV=production',
   'VITE_FIREBASE_API_KEY=',
   'VITE_FIREBASE_PROJECT_ID=',
+  'FIREBASE_API_KEY=',
+  'FIREBASE_PROJECT_ID=',
   'Staging must use an isolated Firebase project',
 ];
 
@@ -38,4 +63,4 @@ for (const fragment of requiredEnvFragments) {
   }
 }
 
-console.log('Firebase runtime isolation contract verified.');
+console.log('Client + server Firebase runtime isolation contract verified.');
