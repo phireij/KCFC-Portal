@@ -65,10 +65,10 @@ if route_anchor not in server:
     raise SystemExit('FCM route anchor not found')
 server = server.replace(route_anchor, route + route_anchor, 1)
 
-old_import = 'import { doc, updateDoc, arrayUnion } from "firebase/firestore";\nimport { app, db, auth } from "./firebase";'
-new_import = 'import { app, auth } from "./firebase";'
+old_import = 'import { doc, updateDoc, arrayUnion } from "firebase/firestore";'
+new_import = 'import { doc, updateDoc } from "firebase/firestore";'
 if old_import not in client:
-    raise SystemExit('FCM client import block not found')
+    raise SystemExit('FCM client Firestore import not found')
 client = client.replace(old_import, new_import, 1)
 
 old_block = '''    if (token) {
