@@ -41,6 +41,8 @@ Every notification test records four independent outcomes:
 
 Do not mark a push as failed solely because sound is absent. On iOS in particular, audible presentation is controlled by device/system settings.
 
+Use `docs/redevelopment/notification-acceptance-evidence-template-2026-09-11.md` as the canonical record for every browser/emulator/physical notification case. A case may be marked `PASS` only under the template's four-signal rule; otherwise use `FAIL` or `INVESTIGATE` as defined there.
+
 ## Browser/emulation pass
 
 Before asking the physical tester to participate, verify at representative iPhone, Android-phone and Android-tablet viewport sizes:
@@ -156,7 +158,7 @@ An additional Android phone can later be added as supplemental manufacturer/form
 
 ## Tester evidence form
 
-Record for every physical device:
+For notification cases, use the canonical template at `docs/redevelopment/notification-acceptance-evidence-template-2026-09-11.md`. For quick device inventory, record:
 
 | Field | Result |
 | --- | --- |
@@ -166,16 +168,11 @@ Record for every physical device:
 | Browser/version | |
 | Installed PWA? | Yes / No |
 | Notification permission | Granted / Denied / Other |
-| App state | Foreground / Background / Locked |
-| Transport accepted | Yes / No / Unknown |
-| Banner/lock-screen shown | Yes / No |
-| Sound | Yes / No / Suppressed by settings / Unknown |
-| Vibration/haptics | Yes / No / Not applicable / Unknown |
-| KCFC Inbox entry | Yes / No |
-| Tap opens correct destination | Yes / No / Not tested |
 | Screenshot/video captured | Yes / No |
-| Result | PASS / FAIL / INVESTIGATE |
+| Evidence template ID(s) | |
 | Notes | |
+
+Do not use this quick inventory table by itself to declare a notification case PASS.
 
 ## Acceptance interpretation
 
