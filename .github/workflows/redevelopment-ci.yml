@@ -149,6 +149,7 @@ jobs:
 
       - name: Exercise staging preflight with synthetic isolated environment
         env:
+          APP_URL: https://kcfc-staging-ci.example.invalid
           VITE_KCFC_RUNTIME_ENV: staging
           KCFC_RUNTIME_ENV: staging
           VITE_FIREBASE_API_KEY: synthetic-client-key
