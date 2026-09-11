@@ -1,0 +1,49 @@
+name: One-shot Home My Ministry link fix
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/fix-home-my-ministry-link.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Patch Home My Ministry link
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/pages/Dashboard.tsx')
+          s = p.read_text()
+          old = '''          label="My next assignment"
+          value={nextAssignment ? formatDate(nextAssignment.parsedDate, nextAssignment.dateValue, true) : 'Nothing scheduled'}
+          body={nextAssignment ? `${nextAssignment.role} • ${nextAssignment.title}` : 'No upcoming published service assignment.'}
+          path="/duties"'''
+          new = '''          label="My next assignment"
+          value={nextAssignment ? formatDate(nextAssignment.parsedDate, nextAssignment.dateValue, true) : 'Nothing scheduled'}
+          body={nextAssignment ? `${nextAssignment.role} • ${nextAssignment.title}` : 'No upcoming published service assignment.'}
+          path="/duties?view=mine"'''
+          if s.count(old) != 1:
+              raise SystemExit(f'Home next-assignment block count={s.count(old)}')
+          p.write_text(s.replace(old, new))
+          PY
+          npx tsx scripts/verify-schedule-view-history.ts
+          git diff --check
+          git diff -- src/pages/Dashboard.tsx
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/Dashboard.tsx
+          git commit -m 'fix: open My Ministry from next assignment card'
+          git push origin HEAD:redesign/mobile-first-v2
