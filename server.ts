@@ -29,9 +29,11 @@ try {
   }
 }
 
+const runtimeEnvironment = String(process.env.KCFC_RUNTIME_ENV || "production").trim().toLowerCase();
 const hasServerEnvConfig = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID);
 const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
-const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasServerEnvConfig ? {
+const committedProjectId = String(firebaseConfigFromFile?.projectId || "").trim();
+const serverEnvConfig = hasServerEnvConfig ? {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
   projectId: process.env.FIREBASE_PROJECT_ID,
@@ -39,18 +41,23 @@ const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasServe
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.FIREBASE_APP_ID,
   firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)" ? process.env.FIREBASE_DATABASE_ID : undefined,
-} : {});
+} : null;
 
-// Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
-// If the environment variable is set to "(default)", it should not overwrite our custom database ID
-if (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)") {
-  firebaseConfig.firestoreDatabaseId = process.env.FIREBASE_DATABASE_ID;
-} else if (firebaseConfig.firestoreDatabaseId === "(default)") {
-  if (hasFileConfig && firebaseConfigFromFile.firestoreDatabaseId && firebaseConfigFromFile.firestoreDatabaseId !== "(default)") {
-    firebaseConfig.firestoreDatabaseId = firebaseConfigFromFile.firestoreDatabaseId;
-  } else {
-    delete firebaseConfig.firestoreDatabaseId;
+if (runtimeEnvironment === "staging") {
+  if (!serverEnvConfig) {
+    throw new Error("KCFC staging safety guard: KCFC_RUNTIME_ENV=staging requires explicit FIREBASE_* staging configuration. Refusing to fall back to the committed Firebase project.");
   }
+  if (String(serverEnvConfig.projectId || "").trim() === committedProjectId) {
+    throw new Error("KCFC staging safety guard: server staging Firebase projectId must differ from the committed production/default projectId.");
+  }
+}
+
+const firebaseConfig: any = serverEnvConfig
+  ? { ...serverEnvConfig }
+  : (hasFileConfig ? { ...firebaseConfigFromFile } : {});
+
+if (process.env.FIREBASE_DATABASE_ID === "(default)") {
+  delete firebaseConfig.firestoreDatabaseId;
 }
 
 // Unified server diagnostic logger
