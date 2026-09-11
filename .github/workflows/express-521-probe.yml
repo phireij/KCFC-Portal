@@ -1,0 +1,128 @@
+name: KCFC Express 5.2.1 Probe
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/express-521-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install current lockfile
+        run: npm ci
+
+      - name: Resolve Express 5 candidate and compatibility patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install express@5.2.1 --save-exact
+          npm install --save-dev @types/express@5.0.6 --save-exact
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('server.ts')
+          source = path.read_text()
+          old = "app.get('*', (req, res) => {"
+          new = "app.get('/{*splat}', (req, res) => {"
+          if old not in source:
+              raise SystemExit('Expected Express 4 SPA wildcard route was not found')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          echo '### Candidate dependency tree' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          npm ls express qs @types/express --all >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record candidate runtime audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > /tmp/kcfc-express5-probe-audit.json
+          audit_status=$?
+          set -e
+          node scripts/report-npm-audit.mjs /tmp/kcfc-express5-probe-audit.json "$GITHUB_STEP_SUMMARY" "$audit_status"
+
+      - name: Typecheck candidate
+        run: npm run lint
+
+      - name: Verify redevelopment contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tsx scripts/verify-communication-policy.ts
+          npx tsx scripts/verify-communication-batches.ts
+          npx tsx scripts/verify-liturgical-creator-plans.ts
+          npx tsx scripts/verify-liturgical-assignment-diff.ts
+          npx tsx scripts/verify-liturgical-publication-plan.ts
+          npx tsx scripts/verify-broadcast-creator-plan.ts
+          npx tsx scripts/verify-broadcast-composer-accessibility.ts
+          npx tsx scripts/verify-member-governance.ts
+          npx tsx scripts/verify-member-pre-registration.ts
+          npx tsx scripts/verify-member-account-status.ts
+          npx tsx scripts/verify-core-status-transition.ts
+          npx tsx scripts/verify-core-status-mutation-plan.ts
+          npx tsx scripts/verify-core-status-staging-executor.ts
+          npx tsx scripts/verify-core-status-executor-isolation.ts
+          npx tsx scripts/verify-leadership-accessibility.ts
+          npx tsx scripts/verify-mobile-navigation-contract.ts
+          npx tsx scripts/verify-delivery-diagnostics.ts
+          npx tsx scripts/verify-current-device-notification-health.ts
+
+      - name: Build candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/kcfc-express5-probe-build.log
+          if grep -q 'dynamically imported by .*fcmClient' /tmp/kcfc-express5-probe-build.log; then
+            echo 'Redundant fcmClient dynamic-import warning returned.' >&2
+            exit 1
+          fi
+          if grep -q 'import.meta.*not available with the "cjs" output format' /tmp/kcfc-express5-probe-build.log; then
+            echo 'CJS import.meta build warning returned.' >&2
+            exit 1
+          fi
+          node scripts/report-build-assets.mjs dist
+
+      - name: Smoke production server routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=4173 NODE_ENV=production timeout 20s node dist/server.cjs > /tmp/kcfc-express5-server.log 2>&1 &
+          pid=$!
+          cleanup() { kill "$pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:4173/api/health > /tmp/kcfc-health.json; then
+              break
+            fi
+            sleep 0.5
+          done
+          cat /tmp/kcfc-health.json
+          curl --fail --silent http://127.0.0.1:4173/nonexistent-spa-route > /tmp/kcfc-spa.html
+          grep -qi '<!doctype html' /tmp/kcfc-spa.html
+
+      - name: Upload candidate files
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-521-candidate-files
+          path: |
+            package.json
+            package-lock.json
+            server.ts
+          if-no-files-found: error
+          retention-days: 1
