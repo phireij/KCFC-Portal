@@ -40,7 +40,7 @@ export const getGmailAccessToken = (): Promise<string> => {
             tokenExpiry = Date.now() + (response.expires_in * 1000) - 60000; // Buffer
             resolve(response.access_token);
           } else {
-            reject(new Error('Failed to get Gmail access token: ' + (response.error || 'Unknown error')));
+            reject(new Error('Failed to get Gmail access token: ' + (response.error || 'Unknown error'));
           }
         },
       });
@@ -59,6 +59,17 @@ const base64url = (str: string) => {
 };
 
 export const sendGmail = async (to: string, subject: string, body: string) => {
+  const runtimeEnvironment = ((import.meta as any).env.VITE_KCFC_RUNTIME_ENV || 'production').trim().toLowerCase();
+  if (runtimeEnvironment === 'staging') {
+    console.info('KCFC staging email simulation: client-side Gmail and SMTP fallback delivery are suppressed.');
+    return {
+      success: true,
+      simulated: true,
+      transport: 'none',
+      message: 'Staging email delivery suppressed.',
+    };
+  }
+
   try {
     const token = await getGmailAccessToken();
     
