@@ -2220,7 +2220,7 @@ async function startServer() {
       subject = subjectField.value.trim();
     }
 
-    logMessage(`[INBOUND CONTACT] Extracted fields => name: "${name}", email: "${email}", subject: "${subject}", message: "${message.substring(0, 100)}..."`);
+    logMessage(`[INBOUND CONTACT] Parsed inquiry fields: name=${name ? "present" : "missing"}, email=${email ? "present" : "missing"}, subject=${subject ? "present" : "missing"}, messageLength=${message.length}`);
 
     if (!name || !email || !message) {
       logMessage(`[INBOUND CONTACT ERROR] Validation failed. Missing name, email, or message.`);
@@ -2334,7 +2334,7 @@ async function startServer() {
             }
           };
 
-          logMessage(`[INBOUND CONTACT] POSTing to REST endpoint: ${firestoreUrl}`);
+          logMessage(`[INBOUND CONTACT] Attempting Firestore REST fallback write.`);
           const fsResponse = await fetch(firestoreUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2355,7 +2355,7 @@ async function startServer() {
         }
       }
 
-      res.json({ success: true, emailSent, firestoreWritten, errorDetails: errorDetails || undefined });
+      res.json({ success: true, emailSent, firestoreWritten });
     } catch (err: any) {
       logMessage(`[ERROR] Public contact endpoint execution failed: ${err.message}`);
       res.status(500).json({ error: err.message || "Failed to process contact inquiry" });
