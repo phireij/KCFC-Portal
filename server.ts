@@ -275,6 +275,44 @@ function isDeliverableFcmToken(token: unknown): token is string {
   );
 }
 
+const MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER = 8;
+const MAX_WEB_PUSH_ENDPOINT_LENGTH = 2048;
+const MAX_WEB_PUSH_KEY_LENGTH = 512;
+
+function normalizeWebPushSubscription(input: any) {
+  if (!input || typeof input !== "object") return null;
+
+  const endpoint = typeof input.endpoint === "string" ? input.endpoint.trim() : "";
+  if (!endpoint || endpoint.length > MAX_WEB_PUSH_ENDPOINT_LENGTH) return null;
+
+  try {
+    const endpointUrl = new URL(endpoint);
+    if (endpointUrl.protocol !== "https:") return null;
+  } catch {
+    return null;
+  }
+
+  const keys = input.keys;
+  const p256dh = typeof keys?.p256dh === "string" ? keys.p256dh.trim() : "";
+  const auth = typeof keys?.auth === "string" ? keys.auth.trim() : "";
+  if (!p256dh || !auth || p256dh.length > MAX_WEB_PUSH_KEY_LENGTH || auth.length > MAX_WEB_PUSH_KEY_LENGTH) {
+    return null;
+  }
+
+  let expirationTime: number | null = null;
+  if (input.expirationTime !== null && input.expirationTime !== undefined) {
+    const candidate = Number(input.expirationTime);
+    if (!Number.isFinite(candidate) || candidate < 0) return null;
+    expirationTime = candidate;
+  }
+
+  return {
+    endpoint,
+    expirationTime,
+    keys: { p256dh, auth },
+  };
+}
+
 // Helpers for Firestore REST API fallback (for robust database reads when Admin SDK encounters permission denied)
 function parseRESTValue(valObj: any): any {
   if (!valObj) return null;
@@ -507,9 +545,10 @@ async function startServer() {
 
     const token = authHeader.split("Bearer ")[1];
     const { subscription } = req.body;
+    const normalizedSubscription = normalizeWebPushSubscription(subscription);
 
-    if (!subscription || !subscription.endpoint) {
-      res.status(400).json({ error: "Missing required subscription data" });
+    if (!normalizedSubscription) {
+      res.status(400).json({ error: "Invalid Web Push subscription data" });
       return;
     }
 
@@ -523,17 +562,18 @@ async function startServer() {
 
       let webPushSubscriptions: any[] = [];
       if (userDoc.exists) {
-        webPushSubscriptions = userDoc.data()?.webPushSubscriptions || [];
+        const existingSubscriptions = userDoc.data()?.webPushSubscriptions;
+        webPushSubscriptions = Array.isArray(existingSubscriptions) ? existingSubscriptions : [];
       }
 
-      // Filter out existing subscription with same endpoint to avoid duplicates
-      webPushSubscriptions = webPushSubscriptions.filter(
-        (sub: any) => sub.endpoint !== subscription.endpoint
-      );
+      // Replace the same endpoint instead of accumulating duplicates, and keep a bounded
+      // set of the most recent other devices so stale registrations cannot grow forever.
+      webPushSubscriptions = webPushSubscriptions
+        .filter((sub: any) => sub && typeof sub.endpoint === "string" && sub.endpoint !== normalizedSubscription.endpoint)
+        .slice(-(MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER - 1));
 
-      // Add new subscription
       webPushSubscriptions.push({
-        ...subscription,
+        ...normalizedSubscription,
         registeredAt: new Date().toISOString()
       });
 
