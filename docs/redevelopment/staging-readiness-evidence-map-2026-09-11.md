@@ -15,12 +15,13 @@ This map prevents those categories from being conflated.
 
 ### A — Automated / source-contract evidence
 
-These can be treated as repository evidence when the exact branch head has a green `KCFC Redevelopment CI` run:
+These can be treated as repository evidence when the exact intended branch head has a green `KCFC Redevelopment CI` run:
 
 - TypeScript validation.
 - Production build success.
 - Runtime dependency audit visibility.
 - Communication policy and batch planning contracts.
+- Broadcast recipient integrity and notification/onboarding diagnostic privacy contracts.
 - Liturgical creator, assignment-diff and publication-plan contracts.
 - Leadership broadcast creator and accessibility contracts.
 - Member-governance and safe pre-registration contracts.
@@ -30,10 +31,14 @@ These can be treated as repository evidence when the exact branch head has a gre
 - Staging Core-status executor isolation and disabled-by-default guard.
 - Firebase Admin Storage non-use boundary.
 - Client/server staging Firebase fail-closed isolation.
+- Non-secret `/api/health` runtime identity boundary.
+- Synthetic `staging:evidence` validation that compares a saved health payload to the protected staging runtime/project/database and rejects production Portal hostnames, target mismatches and unexpected response fields.
 - Same-origin, Firebase-project-agnostic Web Push service-worker boundary.
-- Push privacy logging guard: VAPID public key, PushSubscription object and FCM token values are not written to browser logs.
+- Push privacy logging guards: browser/server diagnostics do not expose VAPID key values, PushSubscription endpoints, FCM token values, caller UID/email, verification links or authored broadcast previews.
 - Canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + Notification Health.
 - Synthetic execution of `npm run staging:preflight` with isolated values.
+- Staging environment badge and environment-template contracts.
+- Schedule, Inbox, Updates, Resources, Community and Leadership URL/history/deep-link contracts.
 - Leadership accessibility contracts.
 - Five-item mobile navigation contract and mobile target/safe-area guards.
 - Delivery diagnostics contracts.
@@ -41,17 +46,18 @@ These can be treated as repository evidence when the exact branch head has a gre
 - Privacy-safe device-QA snapshot contract.
 - Authenticated self-test push recipient boundary.
 - Production bundle build-warning guards and asset-size reporting.
+- Build-artifact manifest generation/verification tied to the intended source SHA, with SHA-256/byte-size verification and complete `dist` file coverage.
 - External connector defaults OFF.
 - Browser-exposed provider-secret guard.
 
-Latest fully validated evidence before this document update:
+Latest fully validated code/docs checkpoint before this map refresh:
 
-- head `9eafd9363e0a7be770b283ef3d801c2edd3bb222`
-- `KCFC Redevelopment CI` run **#850** / id `34570190923`
-- conclusion: **success**
-- all **39** validation/build/security steps completed successfully, including Firebase runtime isolation, Web Push worker boundary, push privacy logging, PWA theme/install metadata, shared iPhone/iPadOS platform detection and synthetic staging preflight.
+- head `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`
+- `KCFC Redevelopment CI` run **#1433** / id `34595526457`
+- conclusion: **SUCCESS**
+- all **57** named validation/build/security steps completed successfully, including staging runtime-evidence validation and complete build-artifact manifest/hash coverage.
 
-Any later code or CI change requires a fresh green run before that later head is considered validated.
+Later documentation-only readiness synchronization does not convert any empirical item below into a PASS. Any later code/dependency change requires a fresh green run before that later code head is considered validated.
 
 ## B — Source-review evidence
 
@@ -66,6 +72,7 @@ The following are supported by current implementation review but still require s
 - External connectors are optional and feature-gated OFF by default.
 - Production startup uses `node dist/server.cjs`; development tooling is not the production start path.
 - No destructive schema migration is required by the current redevelopment design.
+- Repository-side `kcfc-build-manifest.json` proves what the repository build produced, but does not prove which provider artifact was deployed or whether an earlier provider artifact remains redeployable.
 
 These statements are architecture/source facts, not proof that historical production records have already passed staging regression.
 
@@ -92,6 +99,15 @@ Browser emulation may prove layout, logic and many permission-flow states. It mu
 ## D — Isolated staging evidence still required
 
 Use synthetic staging accounts/data only.
+
+Before workflow QA begins, retain:
+
+- real `npm run staging:preflight` PASS output;
+- real `/api/health` JSON from the non-production staging hostname;
+- real `npm run staging:evidence -- <health-json>` PASS output;
+- visible `Staging • Test environment` badge evidence;
+- staging-only Firebase Admin/runtime identity confirmation; and
+- confirmation that no production data or credentials appear.
 
 ### Authentication / authorization
 
@@ -162,14 +178,16 @@ Sound alone is not a transport verdict. Focus/Silent/OS notification settings mu
 
 ## F — Backup / rollback evidence still required before production request
 
-The branch currently contains a rollback **plan**, not executed production backup evidence.
+The branch currently contains a rollback **plan** and repository build-identity evidence, not executed production backup/provider rollback evidence.
 
 Before requesting production merge/deploy approval, record:
 
 - exact current production commit/deployment identifier;
 - timestamped Firestore export/backup evidence using the approved production procedure;
 - confirmation that Firebase Auth accounts are not being recreated or destructively migrated;
-- deployable prior application artifact/version or otherwise proven application rollback path;
+- validated release-candidate build manifest/source SHA;
+- deployable prior **provider** application artifact/version or otherwise proven provider rollback path;
+- provider artifact/revision/digest correlation for the intended release where available;
 - connector flags confirmed OFF/returnable to OFF;
 - public website publishing/sync confirmed OFF unless separately approved;
 - post-deploy smoke-test owner/checklist;
@@ -193,10 +211,11 @@ The remaining moderate `uuid` / older `gaxios` findings are within Firebase Admi
 Do not request production approval until all of the following are true:
 
 - latest intended branch head has green redevelopment CI;
+- actual isolated staging preflight/runtime-evidence/badge evidence is retained;
 - browser/responsive regression evidence is recorded;
 - isolated staging role/data/workflow regression is recorded;
 - representative physical-device notification acceptance is recorded;
-- backup/rollback evidence is recorded;
+- provider backup/rollback evidence is recorded;
 - remaining dependency findings retain an explicit accepted disposition or are remediated;
 - production approval is explicitly granted by the user.
 
