@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import './verify-staging-email-broadcast-isolation.ts';
 import { buildCommunicationRoutingPlan } from '../src/lib/communicationRouting';
 import { buildNotificationRecord } from '../src/lib/notificationRecord';
 import { isProfileEligibleForAudience } from '../src/lib/communicationAudience';
