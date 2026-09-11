@@ -7,6 +7,7 @@ const forbidden = [
   'console.log(subscription?.endpoint)',
   'console.error(subscription?.endpoint)',
   'logMessage(subscription?.endpoint)',
+  'Dispatching test notification to user ${callerProfile.email || callerUid}',
 ];
 
 for (const marker of forbidden) {
@@ -19,6 +20,8 @@ const required = [
   'await webpush.sendNotification(subscription, payload, options);',
   'console.error(`[WEBPUSH SEND ERROR] Failed to deliver Web Push notification:`, err.message);',
   'if (err.statusCode === 410 || err.statusCode === 404)',
+  'logMessage(`[FCM TEST PUSH] Dispatching caller-bound test notification to ${realTokens.length} registered device token(s)...`);',
+  'logMessage(`[WEBPUSH TEST PUSH] Dispatching caller-bound test notification to ${callerWebPushSubs.length} registered subscription(s)...`);',
 ];
 
 for (const marker of required) {
