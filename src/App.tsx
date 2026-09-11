@@ -6,7 +6,7 @@ import { auth, db } from './lib/firebase';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
 import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
-import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites } from './lib/fcmClient';
+import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites, observeForegroundMessages } from './lib/fcmClient';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -339,7 +339,7 @@ export default function App() {
 
     let activeCleanup: (() => void) | null = null;
 
-    import('./lib/fcmClient').then(async ({ observeForegroundMessages }) => {
+    const initializeForegroundMessaging = async () => {
       // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
       await preloadVapidKeyFromServer();
 
@@ -366,7 +366,9 @@ export default function App() {
       if (unsubscribeMessages) {
         activeCleanup = unsubscribeMessages;
       }
-    }).catch(err => {
+    };
+
+    initializeForegroundMessaging().catch(err => {
       console.warn("FCM: Client initialization deferred or unsupported in this sandboxed frame:", err);
     });
 

@@ -1,7 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
 import { readFileSync, appendFileSync, writeFileSync, existsSync } from "fs";
 import { initializeApp, getApps, getApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -13,9 +12,8 @@ import webpush from "web-push";
 import { initializeDeliveryDiagnostics, recordDeliveryOutcome } from "./src/lib/deliveryDiagnostics";
 import { buildPwaDeliveryEvidence, type PwaTransportAttempt } from "./src/lib/pwaDeliveryEvidence";
 
-const hasImportMeta = typeof import.meta !== "undefined" && "url" in import.meta;
-const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== "undefined" ? __filename : "");
-const currentDirname = hasImportMeta ? path.dirname(currentFilename) : (typeof __dirname !== "undefined" ? __dirname : "");
+// The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().
+const currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 
 // Load Firebase configuration safely to prevent startup crashes
 let firebaseConfigFromFile: any = {};
