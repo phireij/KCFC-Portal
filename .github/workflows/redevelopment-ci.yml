@@ -96,6 +96,9 @@ jobs:
       - name: Verify PWA theme contract
         run: npx tsx scripts/verify-pwa-theme-contract.ts
 
+      - name: Verify install PWA platform detection
+        run: npx tsx scripts/verify-install-pwa-platform-detection.ts
+
       - name: Exercise staging preflight with synthetic isolated environment
         env:
           VITE_KCFC_RUNTIME_ENV: staging
