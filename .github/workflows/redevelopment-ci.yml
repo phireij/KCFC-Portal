@@ -63,6 +63,9 @@ jobs:
       - name: Verify member governance rules
         run: npx tsx scripts/verify-member-governance.ts
 
+      - name: Verify member pre-registration safety
+        run: npx tsx scripts/verify-member-pre-registration.ts
+
       - name: Verify member account status summary
         run: npx tsx scripts/verify-member-account-status.ts
 
