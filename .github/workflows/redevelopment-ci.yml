@@ -81,6 +81,9 @@ jobs:
       - name: Verify Core status executor isolation
         run: npx tsx scripts/verify-core-status-executor-isolation.ts
 
+      - name: Verify Firebase Admin Storage boundary
+        run: npx tsx scripts/verify-firebase-admin-storage-boundary.ts
+
       - name: Verify leadership accessibility contracts
         run: npx tsx scripts/verify-leadership-accessibility.ts
 
