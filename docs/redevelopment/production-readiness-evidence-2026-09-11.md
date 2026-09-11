@@ -27,9 +27,11 @@ Permanent `KCFC Redevelopment CI` validates:
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
 - non-secret `/api/health` runtime identity (runtime + Firebase project + Firestore database only);
-- staging Web Push runtime fail-closed enforcement requiring explicit server VAPID public/private keys before any cache/Firestore/generated-key fallback;
+- staging Web Push runtime fail-closed enforcement requiring explicit server VAPID public/private keys before any cache/Firestore/generated-key fallback, and re-throwing staging initialization errors before in-memory fallback key generation;
 - staging application URL isolation: explicit HTTPS `APP_URL` is required and production Portal hostnames are rejected by both preflight and server startup;
 - staging admin mass-email broadcasts are simulation-only even when SMTP credentials are present;
+- staging public-inquiry notification and authorized inquiry-alert SMTP are suppressed/simulated so QA cannot notify the production KCFC mailbox;
+- inquiry diagnostics do not persist submitted name/email/message content or Firestore REST URLs containing API-key query parameters, and public inquiry responses do not return internal backend error detail;
 - staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
@@ -52,7 +54,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code checkpoint: `879f7188f4ecf3ff1fb16409d0e10fc1350bb0ba`, `KCFC Redevelopment CI` run **#1186** / id `34582465638`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
+Latest validated clean branch checkpoint: `8f8979b75d46d20d883876bcbd0d9ebedcc06a5a`, `KCFC Redevelopment CI` run **#1231** / id `34585740307`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -68,7 +70,7 @@ The validated staging isolation work establishes:
 - the staging badge guard fails closed: default/production runtime has no staging badge;
 - the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets;
 - `/api/health` exposes only status/time plus runtime, Firebase project ID and Firestore database ID so operators can prove the deployed target without exposing API keys, VAPID material, tokens, credentials or app identifiers;
-- when `KCFC_RUNTIME_ENV=staging`, the server now refuses to start Web Push with missing explicit server VAPID keys instead of falling through to cached, Firestore, or generated credentials;
+- when `KCFC_RUNTIME_ENV=staging`, the server refuses missing explicit server VAPID keys and also re-throws later Web Push initialization errors before any in-memory fallback key generation;
 - staging preflight and server startup require an explicit HTTPS `APP_URL` whose hostname is not the production KCFC Portal, preventing generated staging links from silently targeting production;
 - the admin broadcast-email route cannot enter real SMTP delivery while `KCFC_RUNTIME_ENV=staging`; it remains simulation-only even if SMTP credentials are inherited.
 

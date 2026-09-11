@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize creation o
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Latest validated staging-contract checkpoint: `879f7188f4ecf3ff1fb16409d0e10fc1350bb0ba`, with `KCFC Redevelopment CI` run **#1186** / id `34582465638` completing successfully with all **57** validation/build/security steps green.
+Latest validated staging-contract checkpoint: `8f8979b75d46d20d883876bcbd0d9ebedcc06a5a`, with `KCFC Redevelopment CI` run **#1231** / id `34585740307` completing successfully with all **57** validation/build/security steps green.
 
 ## Non-negotiable isolation rules
 
@@ -92,7 +92,7 @@ WEB_PUSH_VAPID_PUBLIC_KEY=<same staging public key>
 WEB_PUSH_VAPID_PRIVATE_KEY=<staging private key, server-only>
 ```
 
-The browser public key and server public key must match. The private key must never use a `VITE_*` name or otherwise enter the browser bundle. When `KCFC_RUNTIME_ENV=staging`, the server itself fails closed if either explicit server VAPID key is missing; it must not fall through to cached, Firestore, or generated VAPID material.
+The browser public key and server public key must match. The private key must never use a `VITE_*` name or otherwise enter the browser bundle. When `KCFC_RUNTIME_ENV=staging`, the server itself fails closed if either explicit server VAPID key is missing. If Web Push initialization later fails for any reason, staging re-throws that error before the in-memory generated-key fallback; staging must never continue with cached, Firestore, or generated VAPID material.
 
 ### Safety gates
 
@@ -112,7 +112,7 @@ VITE_KCFC_VIBER_CONNECTOR_ENABLED=false
 
 Provider credentials for LINE, Telegram, WhatsApp or Viber are not needed for baseline staging QA and should remain absent.
 
-For baseline staging, the admin mass-email broadcast endpoint remains simulation-only even if SMTP credentials are present. This prevents an inherited SMTP configuration from turning a staging broadcast test into live outbound mail. Single-account email verification/inquiry flows remain separate empirical QA cases and must use synthetic/test recipients under the applicable approval boundary.
+For baseline staging, the admin mass-email broadcast endpoint remains simulation-only even if SMTP credentials are present. Public-inquiry notification email and the authorized inquiry-alert SMTP endpoint are also suppressed/simulated in staging, so inquiry QA cannot notify the production KCFC mailbox. Inquiry records may still be persisted in the isolated staging Firestore project for workflow testing. Any separately tested reply/verification email flow must use synthetic/test recipients under the applicable approval boundary.
 
 ## Pre-deployment gate
 
