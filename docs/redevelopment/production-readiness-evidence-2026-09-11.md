@@ -27,8 +27,10 @@ Permanent `KCFC Redevelopment CI` validates:
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
+- notification-linked Updates deep-link focus;
 - Inbox deep-link boundary, including same-origin route enforcement;
 - Inbox message-history preservation for notification records;
+- Inbox URL-backed filter/history navigation while preserving message deep-link state;
 - browser push privacy logging guard preventing VAPID key, PushSubscription and FCM token values from being logged;
 - canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + notification health;
 - synthetic execution of the staging preflight contract;
@@ -40,7 +42,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated exact-head checkpoint: `609c2af7274d10b2e130f21ea46899a10b001068`, `KCFC Redevelopment CI` run **#934** / id `34572845014`, conclusion **SUCCESS**. All **44** validation/build/security steps passed.
+Latest validated code checkpoint: `f95fee6461a7a7317099c39f8a9fcc7d0132d3e4`, `KCFC Redevelopment CI` run **#952** / id `34573730223`, conclusion **SUCCESS**. All **46** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -56,7 +58,7 @@ The validated staging isolation work establishes:
 
 The onboarding regression previously fixed remains covered: a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 
-Notification/Inbox navigation now also has permanent automated boundaries: notification records retain their history, Inbox links are constrained to authorized same-origin Portal destinations, and query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation.
+Notification/navigation now has permanent automated boundaries: notification records retain their history; Inbox links are constrained to authorized same-origin Portal destinations; query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation; notification-linked Updates can focus/highlight the intended authorized update; and Inbox filters are URL-backed so reload/Back/Forward can restore the intended filter while preserving selected-message query state.
 
 Every later code/dependency change still requires a fresh green run before it is treated as validated evidence. Documentation-only evidence refreshes do not substitute for code CI.
 
@@ -68,7 +70,7 @@ Current runtime audit: **0 critical, 0 high, 2 moderate, 1 low**.
 - The Express migration was validated through TypeScript, all KCFC contracts, production build, actual server startup, `/api/health`, SPA fallback routing, and ordinary redevelopment CI after commit.
 - `uuid` moderate and the affected older `gaxios` copy remain under Firebase Admin's optional `@google-cloud/storage` chain.
 - KCFC source currently does not import `firebase-admin/storage`, directly import `@google-cloud/storage`, or call `getStorage()`.
-- Permanent CI now guards that Storage boundary so future activation cannot silently change the reachability assumption.
+- Permanent CI guards that Storage boundary so future activation cannot silently change the reachability assumption.
 - The remaining findings stay visible and should be removed through supported Firebase Admin / Google Cloud parent updates when available and compatible; forced overrides remain prohibited.
 - `esbuild` low remains documented as development/tooling exposure because production starts with `node dist/server.cjs`.
 
@@ -149,6 +151,8 @@ Every notification test separately records:
 - durable KCFC Inbox persistence; and
 - notification tap/deep-link result.
 
+The browser/device matrix now explicitly covers Schedule and Inbox history restoration, notification-linked Updates focus, same-origin notification fallback, and Inbox durability/message-history behavior.
+
 The canonical `notification-acceptance-evidence-template-2026-09-11.md` requires those signals to be recorded independently before a case can be classified PASS; ambiguous outcomes remain INVESTIGATE.
 
 No emulator result may be represented as physical-device evidence.
@@ -173,9 +177,9 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - Web Push registration/repair;
 - background and locked-device delivery;
 - transport evidence separated from OS banner/sound/vibration behavior, including Focus/mute cases;
-- push deep link, including query-specific Schedule targets;
+- push deep links, including query-specific Schedule and notification-linked Updates targets;
 - safe-area navigation and More sheet;
-- Inbox list → detail and message-history retention;
+- Inbox list → detail, filter-history and message-history retention;
 - Schedule All ↔ My Ministry with Back/Forward restoration.
 
 ### Android / Chromium
@@ -184,9 +188,9 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - permission and registration;
 - stale endpoint repair;
 - background/locked notification and notification-channel behavior;
-- push deep link, including query-specific Schedule targets;
+- push deep links, including query-specific Schedule and Updates targets;
 - navigation, Schedule, Directory and Inbox regression;
-- Inbox message-history retention.
+- Inbox filter/history and message-history retention.
 
 ### Multi-device
 
@@ -204,7 +208,8 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - destructive controls absent from focused routine surfaces;
 - accounting compatibility;
 - Schedule/roster visibility rules;
-- Inbox split view and message-history behavior;
+- Inbox split view, filter history and message-history behavior;
+- notification-linked Updates focus;
 - unauthorized-role denial.
 
 ## Backup / rollback readiness
