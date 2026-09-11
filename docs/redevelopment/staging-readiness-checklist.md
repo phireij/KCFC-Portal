@@ -6,6 +6,7 @@ Executable scenario companion: `staging-test-matrix.md`.
 Runtime-isolation companion: `staging-firebase-isolation-contract-2026-09-11.md`.
 Deployment-runbook companion: `staging-deployment-runbook-2026-09-11.md`.
 Runtime-evidence companion: `staging-runtime-evidence-capture-2026-09-11.md`.
+Current continuation/evidence checkpoint: `2026-09-12-continuation-checkpoint.md`.
 
 ## Purpose
 
@@ -13,7 +14,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 
 ## Gate A — Repository and build
 
-- [ ] Redevelopment branch is current with intended `main` baseline.
+- [x] Redevelopment branch remains based on the intended production `main` baseline; production `main` was still `653cc7229600fd7baff17a21a21f12d267b66d2b` at the latest validated continuation checkpoint.
 - [ ] Draft PR contains only reviewed redevelopment changes.
 - [x] TypeScript validation passes on the current validated redevelopment checkpoint.
 - [x] Production build passes on the current validated redevelopment checkpoint.
@@ -45,7 +46,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: head `8ea202c552d88712ffe34b53e7697caa40b6d6b2`, `KCFC Redevelopment CI` run **#1459** / id `34596788624`, conclusion **SUCCESS**, with all **58** named validation/build/security steps green. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, complete build-artifact manifest/hash coverage, and 30-day retention of the non-secret verified manifest. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
+Latest fully validated code/config evidence: head `6ca51eab3dc3a579ebbcc38a64a56b18f5377c75`, `KCFC Redevelopment CI` run **#1601** / id `34622296845`, conclusion **SUCCESS**, with all **58** named validation/build/security steps green. The retained build manifest is `kcfc-build-manifest-6ca51eab3dc3a579ebbcc38a64a56b18f5377c75`. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, complete build-artifact manifest/hash coverage, Leadership lazy-boundary regression protection, and retention of the non-secret verified manifest. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
 
 ## Gate B — Data compatibility
 
@@ -161,16 +162,18 @@ Use the companion `staging-device-qa-package-2026-09-11.md` and canonical `notif
 
 ## Gate G — Dependency/build disposition
 
-Current production audit position at this checkpoint remains:
+Current production audit position at the latest validated checkpoint is:
 
 - 0 critical;
 - 0 high;
 - 2 moderate (`uuid`, older `gaxios` under Firebase Admin optional Storage path);
-- 1 low (`esbuild` under development/tooling path).
+- 0 low.
 
-- [ ] Firebase Admin Storage non-use boundary remains green.
-- [ ] No unsupported forced leaf override has been introduced.
-- [ ] Standard Vite chunk-size warning remains visible; warning threshold has not been raised to hide Firebase size.
+The former tooling-only `esbuild` low finding is closed through the validated supported tooling-parent update. The remaining moderate findings stay dispositioned behind Firebase Admin's optional Storage dependency path, which KCFC source does not use.
+
+- [x] Firebase Admin Storage non-use boundary remains green in permanent CI.
+- [x] No unsupported forced leaf override has been introduced.
+- [x] Standard Vite chunk-size warning remains visible; the warning threshold has not been raised to hide Firebase size.
 - [ ] Any later supported parent-package remediation is separately validated before acceptance.
 
 ## Gate H — Backup / rollback evidence before production request
@@ -195,7 +198,7 @@ No production backup, restore, deploy or rollback execution is authorized by thi
 
 Do not request production approval until:
 
-1. latest intended branch head has green redevelopment CI;
+1. latest intended branch code/config has green redevelopment CI;
 2. actual isolated staging `staging:preflight` is retained and staging badge is visibly confirmed;
 3. browser/responsive regression evidence is recorded;
 4. role/data/workflow staging regression is recorded;
