@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "staging:preflight": "node scripts/staging-preflight.mjs"
+    "staging:preflight": "node scripts/staging-preflight.mjs",
+    "staging:evidence": "node scripts/staging-runtime-evidence.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
@@ -27,7 +28,7 @@
     "multer": "^2.3.0",
     "nodemailer": "^10.0.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.2.15",
     "react-router-dom": "^7.18.3",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
