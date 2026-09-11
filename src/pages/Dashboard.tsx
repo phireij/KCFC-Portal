@@ -398,7 +398,7 @@ export default function Dashboard() {
           label="My next assignment"
           value={nextAssignment ? formatDate(nextAssignment.parsedDate, nextAssignment.dateValue, true) : 'Nothing scheduled'}
           body={nextAssignment ? `${nextAssignment.role} • ${nextAssignment.title}` : 'No upcoming published service assignment.'}
-          path="/duties"
+          path="/duties?view=mine"
           accent={Boolean(nextAssignment)}
         />
         <HomeStatusCard
