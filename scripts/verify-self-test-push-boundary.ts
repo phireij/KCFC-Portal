@@ -20,4 +20,8 @@ assert.doesNotMatch(route, /const\s*\{[^}]*\b(?:target|targetUid|targetToken|use
 assert.doesNotMatch(route, /\btargetToken\b/, 'Self-test push must never accept a caller-supplied push token.');
 assert.match(route, /const savedTokens = callerProfile\.fcmTokens \|\| \[\]/, 'Self-test FCM tokens must come from the authenticated caller profile.');
 
+assert.match(route, /success:\s*false,[\s\S]*transportAccepted:\s*false,[\s\S]*inboxFallback:\s*true/, 'Inbox fallback must not be reported as native push success.');
+assert.match(route, /Native push transport was not confirmed\. A fallback notification was stored in the KCFC Inbox instead\./, 'Fallback response must clearly distinguish Inbox persistence from native push acceptance.');
+assert.doesNotMatch(route, /successCount:\s*realTokens\.length/, 'Fallback must not fabricate FCM transport success counts.');
+
 console.log('Self-test push recipient-boundary verification passed.');

@@ -1902,12 +1902,13 @@ async function startServer() {
         });
 
         res.json({
-          success: true,
-          isSandboxSimulated: true,
-          message: "A live fallback notification has been dispatched to your In-App Notification Center and native browser alerts.",
+          success: false,
+          transportAccepted: false,
+          inboxFallback: true,
+          message: "Native push transport was not confirmed. A fallback notification was stored in the KCFC Inbox instead.",
           totalTokens: realTokens.length,
-          successCount: realTokens.length,
-          failureCount: 0,
+          successCount,
+          failureCount,
           webPushSuccessCount,
           webPushFailureCount
         });
