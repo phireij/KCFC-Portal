@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize creation o
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Latest validated staging-contract checkpoint: `716e920ba685dfab8f9148513847c4f5fc59d517`, with `KCFC Redevelopment CI` run **#1247** / id `34586303040` completing successfully with all **57** validation/build/security steps green.
+Latest validated staging/readiness checkpoint: `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`, with `KCFC Redevelopment CI` run **#1433** / id `34595526457` completing successfully with all **57** named validation/build/security steps green. This includes the synthetic staging runtime-evidence validator and complete build-artifact manifest/hash verification.
 
 ## Non-negotiable isolation rules
 
@@ -157,7 +157,7 @@ After the service starts, verify:
 GET /api/health
 ```
 
-Expected application-level result: HTTP success containing `status: "ok"`, a timestamp, `runtime: "staging"`, the expected isolated `firebaseProjectId`, and the expected `firestoreDatabaseId` (or `(default)`). The response must not contain API keys, VAPID material, tokens, credentials, auth domains, sender IDs, or app IDs.
+Expected application-level result: HTTP success containing `status: "ok"`, a timestamp, `runtime: "staging"`, the expected isolated `firebaseProjectId`, and the expected `firestoreDatabaseId` (or `(default)`). The response must not contain API keys, VAPID material, tokens, credentials, auth domains, sender IDs, or app IDs. Follow `staging-runtime-evidence-capture-2026-09-11.md` and run `npm run staging:evidence -- <saved-health-json>` so the captured payload is compared mechanically with the protected staging environment instead of being accepted by visual inspection alone.
 
 A matching health response proves the running server selected the intended runtime/project/database identifiers. It does **not** prove Firebase Admin credential scope, notification delivery, authorization, or device acceptance; those require the steps below.
 
@@ -243,7 +243,7 @@ Create a dated evidence entry containing only non-secret information:
 - Firestore database ID;
 - deployment/revision identifier;
 - `staging:preflight` PASS output with secrets excluded;
-- `/api/health` result;
+- `/api/health` result plus `npm run staging:evidence` PASS output;
 - screenshot showing the staging badge;
 - browser/device matrix results;
 - defects discovered and remediation commits; and
@@ -275,7 +275,7 @@ The staging environment gate may be marked complete only when all of the followi
 - staging-only Admin authentication/identity confirmed;
 - approved non-production HTTPS `APP_URL` confirmed and generated links checked against the staging origin;
 - staging badge visibly confirmed;
-- `/api/health` successful and reporting the expected staging runtime/project/database identifiers with no secret fields;
+- `/api/health` successful and `npm run staging:evidence` PASS confirming the expected staging runtime/project/database identifiers with no unexpected fields;
 - connectors OFF;
 - Core-status executor OFF; and
 - no production data/credentials observed.

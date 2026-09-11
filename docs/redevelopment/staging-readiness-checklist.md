@@ -5,6 +5,7 @@ Status: active redevelopment checklist. Passing this checklist does **not** auth
 Executable scenario companion: `staging-test-matrix.md`.
 Runtime-isolation companion: `staging-firebase-isolation-contract-2026-09-11.md`.
 Deployment-runbook companion: `staging-deployment-runbook-2026-09-11.md`.
+Runtime-evidence companion: `staging-runtime-evidence-capture-2026-09-11.md`.
 
 ## Purpose
 
@@ -25,6 +26,8 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] Client and server staging Firebase selection fail closed unless explicit isolated staging environment configuration is supplied.
 - [x] Staging client/server Firebase project IDs must match each other and differ from the committed production/default project ID.
 - [x] `npm run staging:preflight` is regression-tested in CI with a synthetic isolated staging environment.
+- [x] `npm run staging:evidence -- <health-json>` is regression-tested to reject production hostnames, runtime/project/database mismatches, and unexpected health-response fields.
+- [x] CI generates and verifies a complete build-artifact manifest containing the intended source SHA plus SHA-256/size for every `dist` file.
 - [x] Synthetic staging preflight requires explicit matching client/server VAPID public keys and a server private key rather than relying on inherited/local fallback material.
 - [x] Staging preflight requires an explicit HTTPS `APP_URL` and rejects the production Portal hostname; server startup enforces the same boundary.
 - [x] Admin mass-email broadcast uses simulation-only behavior in staging even when SMTP credentials are present.
@@ -36,11 +39,12 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Real staging `APP_URL` is HTTPS, uses the approved non-production hostname, and generated staging links never point to production.
 - [ ] Running `/api/health` shows `runtime=staging` and the expected isolated Firebase project/database IDs; no secret fields are present.
+- [ ] Saved real-staging `/api/health` JSON passes `npm run staging:evidence -- <health-json>` against the protected staging environment.
 - [ ] Staging server starts only with explicit `WEB_PUSH_VAPID_PUBLIC_KEY` + `WEB_PUSH_VAPID_PRIVATE_KEY`; missing keys fail closed before fallback initialization.
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: code head `879f7188f4ecf3ff1fb16409d0e10fc1350bb0ba`, `KCFC Redevelopment CI` run **#1186** / id `34582465638`, conclusion **SUCCESS**, with all **57** validation/build/security steps green. This includes staging environment-template parity, Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: head `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`, `KCFC Redevelopment CI` run **#1433** / id `34595526457`, conclusion **SUCCESS**, with all **57** named validation/build/security steps green. This includes staging preflight plus runtime-evidence validation, notification/privacy contracts, navigation/history guards, governance/build safeguards, and complete build-artifact manifest/hash coverage. Automated evidence does not mark the unchecked real staging/browser/device items below as passed.
 
 ## Gate B — Data compatibility
 
@@ -177,7 +181,8 @@ Before requesting production deployment approval, record:
 - [ ] Exact current production commit/deployment identifier.
 - [ ] Timestamped Firestore export/backup evidence using the approved production procedure.
 - [ ] Confirmation that Firebase Auth users will not be recreated/destructively migrated.
-- [ ] Deployable prior application artifact/version or otherwise proven application rollback path.
+- [ ] Repository build manifest/source SHA is retained for the release candidate.
+- [ ] Deployable prior provider application artifact/version or otherwise proven provider rollback path.
 - [ ] Connector flags confirmed OFF/returnable to OFF.
 - [ ] Public website publishing/sync confirmed OFF unless separately approved.
 - [ ] Post-deploy smoke-test owner/checklist.

@@ -32,6 +32,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
 - non-secret `/api/health` runtime identity (runtime + Firebase project + Firestore database only);
+- synthetic staging runtime-evidence validation that compares a saved health payload to the protected staging runtime/project/database and rejects production hostnames or unexpected response fields;
 - staging Web Push runtime fail-closed enforcement requiring explicit server VAPID public/private keys before any cache/Firestore/generated-key fallback, and re-throwing staging initialization errors before in-memory fallback key generation;
 - staging application URL isolation: explicit HTTPS `APP_URL` is required and production Portal hostnames are rejected by both preflight and server startup;
 - staging admin mass-email broadcasts are simulation-only even when SMTP credentials are present;
@@ -58,9 +59,10 @@ Permanent `KCFC Redevelopment CI` validates:
 - delivery diagnostics, current-device notification health, privacy-safe device QA snapshots and self-test recipient isolation;
 - production build and resolved-warning guards;
 - raw + gzip JavaScript asset-size reporting;
+- complete build-artifact identity manifest generation/verification using the release-candidate source SHA plus SHA-256 and byte size for every `dist` file;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `59c288f5ad9e847c490c5fef087ba2f4c684bed6`, `KCFC Redevelopment CI` run **#1404** / id `34593487571`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
+Latest validated clean branch checkpoint: `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`, `KCFC Redevelopment CI` run **#1433** / id `34595526457`, conclusion **SUCCESS**. All **57** validation/build/security steps passed, including staging runtime-evidence validation and complete build-artifact manifest/hash coverage.
 
 The validated staging isolation work establishes:
 
@@ -76,6 +78,7 @@ The validated staging isolation work establishes:
 - the staging badge guard fails closed: default/production runtime has no staging badge;
 - the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets;
 - `/api/health` exposes only status/time plus runtime, Firebase project ID and Firestore database ID so operators can prove the deployed target without exposing API keys, VAPID material, tokens, credentials or app identifiers;
+- `npm run staging:evidence -- <health-json>` validates a captured health payload against the protected staging environment and rejects unexpected fields, wrong runtime/project/database, or a production Portal hostname;
 - when `KCFC_RUNTIME_ENV=staging`, the server refuses missing explicit server VAPID keys and also re-throws later Web Push initialization errors before any in-memory fallback key generation;
 - staging preflight and server startup require an explicit HTTPS `APP_URL` whose hostname is not the production KCFC Portal, preventing generated staging links from silently targeting production;
 - baseline staging routes for broadcast email, inquiry notification/alert email and custom verification email cannot enter real SMTP delivery while `KCFC_RUNTIME_ENV=staging`.
@@ -140,7 +143,7 @@ No destructive legacy control should be moved into a routine workspace without a
 
 ## Staging/runtime isolation position
 
-The canonical staging runtime boundary is documented in `staging-firebase-isolation-contract-2026-09-11.md`. The provider-neutral execution procedure is `staging-deployment-runbook-2026-09-11.md`; it prepares isolated staging evidence but does not authorize external resource creation or deployment.
+The canonical staging runtime boundary is documented in `staging-firebase-isolation-contract-2026-09-11.md`. The provider-neutral execution procedure is `staging-deployment-runbook-2026-09-11.md`, with the exact health/preflight capture flow in `staging-runtime-evidence-capture-2026-09-11.md`; these prepare isolated staging evidence but do not authorize external resource creation or deployment.
 
 Before any browser or physical-device QA begins against an actual staging deployment:
 
@@ -261,7 +264,7 @@ The plan establishes:
 - post-rollback non-destructive smoke verification;
 - a strict separation between readiness documentation and actual production backup/restore execution.
 
-Provider/environment backup evidence and exact production deployment-artifact rollback evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those production artifacts/backups already exist.
+Repository-side build identity is now captured by `build-artifact-identity-2026-09-11.md` and the verified `dist/kcfc-build-manifest.json` contract. Provider/environment backup evidence and exact production deployment-artifact rollback/redeployability evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those provider artifacts/backups already exist.
 
 ## Production-readiness blockers still open
 

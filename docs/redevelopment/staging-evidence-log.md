@@ -23,12 +23,12 @@ GitHub Actions workflow: `KCFC Redevelopment CI`
 
 Latest exact-head run before this documentation refresh:
 
-- validated head: `967894f0eecbd53c80cffbc9b5e3461390217c98`
-- run: **#845 / id 34567540510**
+- validated head: `02ffe54fae82f4dd69a76ee5fb88ee5f907f0b6c`
+- run: **#1433 / id 34595526457**
 - conclusion: **SUCCESS**
-- validation/build/security steps: **39 passed**
+- named validation/build/security steps: **57 passed**
 
-The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration safety and email-verification migration, Core-status safeguards, Firebase Admin Storage non-use, client/server staging Firebase isolation, same-origin Web Push worker boundaries, push privacy logging, PWA theme/install metadata, modern iPhone/iPadOS platform detection, synthetic staging preflight, accessibility/mobile navigation, delivery/notification diagnostics, privacy-safe device QA snapshots, caller-bound self-test push isolation, production build/bundle reporting, connector defaults OFF and provider-secret browser guards.
+The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration and email-verification safety, Core-status safeguards, Firebase Admin Storage non-use, client/server staging Firebase isolation, synthetic staging preflight plus runtime-health evidence validation, notification/privacy/service-worker/PWA contracts, accessibility/mobile navigation, delivery/device QA guards, production build/bundle reporting, complete build-artifact manifest/hash coverage, connector defaults OFF and provider-secret browser guards.
 
 Result: **PASS — exact intended code head validated.**
 
@@ -83,7 +83,7 @@ The migration path from a pending pre-registration to the real Firebase UID is p
 - an already-true pending verification state is preserved;
 - bootstrap-admin behavior remains an explicit exception rather than a general promotion path.
 
-Result: **PASS in CI #845.**
+Result: **PASS in CI #1433.**
 
 Empirical staging still must test first authentication while unverified and the later verified transition using a synthetic member.
 
@@ -116,6 +116,7 @@ No destructive control is considered staging-approved until representative autho
 - Firebase, Recharts/D3 and Motion have explicit vendor boundaries.
 - Normal Vite chunk-size warnings remain enabled.
 - CI records raw + gzip JavaScript asset sizes and total JS weight.
+- CI generates and verifies a complete `dist` artifact manifest tied to the intended source SHA with SHA-256/size for every build file.
 - Production starts with `node dist/server.cjs`.
 
 Earlier measured route-splitting improvement remains approximately 2.31 MB / 603.5 KB gzip to 1.32 MB / 357.1 KB gzip for the main client chunk before later vendor separation. No unverified post-vendor-split figure is claimed here.
@@ -124,7 +125,7 @@ Result: **PASS — build/reporting controls present.**
 
 ## Evidence E-009 — Specification/documentation QA
 
-Specification v4 remains the working redevelopment baseline for Communications + Schedule + Staging Safeguards. The staging device QA package, staging readiness evidence map, production readiness register, dependency disposition and backup/rollback plan are maintained alongside implementation.
+Specification v4 remains the working redevelopment baseline for Communications + Schedule + Staging Safeguards. The staging device QA package, staging readiness evidence map, production readiness register, dependency disposition and backup/rollback plan are maintained alongside implementation. The repository now also includes `staging-runtime-evidence-capture-2026-09-11.md` and `build-artifact-identity-2026-09-11.md` for reproducible staging-target and build-identity evidence.
 
 Result: **PASS — readiness documentation present.**
 
