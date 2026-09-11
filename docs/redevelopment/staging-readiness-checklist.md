@@ -13,8 +13,8 @@ The KCFC Portal already has registered members and operational records. Redevelo
 
 - [ ] Redevelopment branch is current with intended `main` baseline.
 - [ ] Draft PR contains only reviewed redevelopment changes.
-- [x] TypeScript validation passes on validated head `9c1afa6e05f37d5cd85c5536da68896f5c7282bc`.
-- [x] Production build passes on validated head `9c1afa6e05f37d5cd85c5536da68896f5c7282bc`.
+- [x] TypeScript validation passes on the current validated redevelopment checkpoint.
+- [x] Production build passes on the current validated redevelopment checkpoint.
 - [x] Runtime dependency audit snapshot is recorded by CI.
 - [x] Runtime dependency audit has no critical/high findings after validated compatible remediation.
 - [x] Remaining moderate/low dependency findings have documented exposure/disposition notes.
@@ -29,7 +29,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: branch head `1b4d60853361e1a0b9b362c510c1d85c1130011f`, `KCFC Redevelopment CI` run **#905** / id `34571875380`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: branch head `3e6df1b8a832d23e69f11b93edb4a624e027b5cc`, `KCFC Redevelopment CI` run **#912** / id `34572080316`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
@@ -79,6 +79,8 @@ Validate on representative widths and real devices where possible:
 - [ ] Home is understandable without horizontal scrolling.
 - [ ] Bottom navigation has exactly Home / Schedule / Community / Updates / More.
 - [ ] More sheet is usable with safe-area insets.
+- [ ] Home “My next assignment” opens `/duties?view=mine` directly.
+- [ ] Explicit-publication assignments do not appear on Home before `rosterPublished=true`.
 - [ ] Schedule can switch All Schedule ↔ My Ministry quickly.
 - [ ] Direct `/duties?view=all|mine|manage` URLs open the matching Schedule subview.
 - [ ] Browser/mobile Back and Forward restore the previous Schedule subview rather than resetting local-only state.
@@ -88,158 +90,90 @@ Validate on representative widths and real devices where possible:
 - [ ] Community Directory search/filter is comfortable on phone.
 - [ ] Updates cards/editor are readable on phone.
 - [ ] Inbox list → detail flow works without desktop-style squeezing.
-- [ ] Profile preferences remain usable with large text.
-- [ ] Resource Library cards and add-resource sheet work on phone.
-- [ ] Install KCFC panel uses the navy/royal-blue system rather than legacy olive styling.
+- [ ] Profile and notification setup remain usable at normal and large text sizes.
+- [ ] Resources remain usable on mobile.
+- [ ] Dark mode remains readable where supported.
 
-## Gate E — Liturgical availability and assignment workflow
+## Gate E — Notification / PWA acceptance
 
-- [ ] Authorized leader can create a multi-Mass availability request.
-- [ ] Eligible ministry members receive the request in KCFC Inbox.
-- [ ] Member can select all available Masses.
-- [ ] Member can save and revise while request is open.
-- [ ] Member can explicitly indicate unavailable for all listed dates.
-- [ ] Leader sees response progress.
-- [ ] Availability matrix accurately reflects latest member responses.
-- [ ] Assignment candidates are constrained by ministry + submitted availability.
-- [ ] Duplicate role assignment checks work.
-- [ ] Closing/reopening availability behaves correctly.
-- [ ] Final roster is invisible before explicit publication for new cycles.
-- [ ] Publishing creates assigned-member Inbox notifications.
-- [ ] Editing a published assignment unpublishes the roster until reviewed again.
-- [ ] My Ministry deep link opens the correct personal schedule view.
+Use the companion `staging-device-qa-package-2026-09-11.md` and canonical `notification-acceptance-evidence-template-2026-09-11.md`.
 
-## Gate F — Notification / PWA reliability
+### Browser/emulation
 
-### Preflight before any device notification QA
-
-- [ ] Actual isolated staging environment passes `npm run staging:preflight`.
-- [ ] Client and server report the same non-production Firebase project/database target.
-- [ ] Explicit staging VAPID public/private keys are configured and the browser public key matches the server public key.
-- [ ] External connector flags are OFF.
-- [ ] Core-status staging executor is OFF unless a separately reviewed isolated test specifically requires it.
-- [ ] Only synthetic/test device registrations are present for the targeted QA account.
-
-### iOS/iPadOS
-
-- [ ] Safari Share → Add to Home Screen guidance is clear.
-- [ ] Notification enable action is unavailable before required install state.
-- [ ] Permission request occurs from explicit member interaction.
-- [ ] Device registration succeeds.
-- [ ] Notification Health shows installed state, permission and endpoint count correctly.
-- [ ] Test notification can be sent to the authenticated staging tester only.
+- [ ] Install/help guidance is correct for supported/unsupported browser states.
+- [ ] Notification Health reflects permission/install/service-worker/current-endpoint state.
+- [ ] Device registration/repair flow is understandable.
+- [ ] Send Test remains clearly test-scoped and caller-bound.
 - [ ] Test notification opens the intended Portal deep link where applicable, including query-specific routes such as `/duties?view=mine`.
+- [ ] When `/duties?view=all` is already open, tapping a `/duties?view=mine` notification navigates the existing KCFC window to My Ministry rather than merely focusing the wrong query state.
 - [ ] Malformed/cross-origin notification destinations fail closed to same-origin KCFC Inbox.
-- [ ] Background/locked presentation is observed separately from transport acceptance and Inbox persistence.
+- [ ] Durable Inbox record remains independent of OS notification presentation.
+- [ ] No automatic broadcast or inquiry-reply send occurs merely by opening a composer/page.
 
-### Android / Chromium
+### Physical baseline
 
-- [ ] Native install prompt works where supported.
-- [ ] Manual browser-menu install fallback is understandable.
-- [ ] Notification permission can be enabled.
-- [ ] Device registration succeeds.
-- [ ] Test notification can be sent to the authenticated staging tester only.
-- [ ] Repair / refresh registration works after a stale registration scenario.
-- [ ] Background/locked presentation is observed separately from transport acceptance and Inbox persistence.
+- [ ] Physical iPhone: foreground test recorded.
+- [ ] Physical iPhone: background test recorded.
+- [ ] Physical iPhone: locked-device test recorded.
+- [ ] Physical iPhone: Focus/Silent conditions recorded where relevant.
+- [ ] Physical Android tablet: foreground/background/locked baseline recorded.
+- [ ] Optional supplemental Android phone evidence recorded when available.
+- [ ] For every notification case, record separately: transport acceptance, OS presentation, Inbox persistence, and tap/deep-link result.
+- [ ] Missing sound alone is not treated as Web Push transport failure.
+- [ ] Provider acceptance alone is not treated as proof the user saw/heard the notification.
 
-### General
+## Gate F — Leadership / operational safety
 
-- [x] Automated self-test push recipient boundary is caller-bound and CI-guarded.
-- [x] Privacy-safe device QA snapshot contract is CI-guarded.
-- [ ] Installation and notification-registration responsibilities are separated in observed staging behavior.
-- [ ] Multiple devices per member are supported in isolated staging.
-- [ ] Expired/invalid endpoints do not break message creation in isolated staging.
-- [ ] Inbox message remains available when push presentation fails.
-- [ ] Browser/OS sound and vibration are treated as best-effort rather than guaranteed.
+- [ ] Focused Website Inquiry reply remains locked to the inquiry sender.
+- [ ] Reply requires explicit send + confirmation; opening/editing sends nothing automatically.
+- [ ] Focused Member Administration preserves Firebase UID for role/ministry edits.
+- [ ] Routine focused admin surfaces do not expose destructive account deletion/credential purge/Core mutation controls.
+- [ ] Actual destructive controls remain isolated in Advanced legacy tools.
+- [ ] External connector flags remain OFF.
+- [ ] Core-status staging executor is server-only, route-isolated and disabled by default.
 
-## Gate G — Communications
+## Gate G — Dependency/build disposition
 
-- [ ] KCFC Inbox is created first for operational messages in staging.
-- [ ] PWA is treated as primary alert channel.
-- [ ] Email partner preference is respected where email routing is used.
-- [ ] Announcement / availability / assignment notification preference is respected.
-- [ ] Urgent-notice policy is documented and not abused for routine posts.
-- [ ] Routing metadata remains backward-compatible with old notification records.
-- [ ] Canonical source/provider types compile and include duty/source semantics.
-- [ ] LINE / Telegram / WhatsApp / Viber are visibly optional.
-- [ ] External provider toggles cannot send unless secure account link exists.
-- [x] Browser UI feature flags expose no provider credential under CI guard.
-- [x] All external connector feature flags remain disabled by default before approval.
+Current production audit position at this checkpoint remains:
 
-## Gate H — Resources
+- 0 critical;
+- 0 high;
+- 2 moderate (`uuid`, older `gaxios` under Firebase Admin optional Storage path);
+- 1 low (`esbuild` under development/tooling path).
 
-- [ ] Existing resource links open correctly.
-- [ ] Search works by title/description/ministry/type.
-- [ ] Ministry filters work.
-- [ ] Authorized leader can add a resource.
-- [ ] Unauthorized member cannot add/delete resources.
-- [ ] Delete confirmation works.
-- [ ] No resource becomes public automatically.
+- [ ] Firebase Admin Storage non-use boundary remains green.
+- [ ] No unsupported forced leaf override has been introduced.
+- [ ] Standard Vite chunk-size warning remains visible; warning threshold has not been raised to hide Firebase size.
+- [ ] Any later supported parent-package remediation is separately validated before acceptance.
 
-## Gate I — Accounting
+## Gate H — Backup / rollback evidence before production request
 
-The first redevelopment cutover preserves the existing accounting engine.
+The branch contains a rollback plan, not executed production backup evidence.
 
-- [ ] Existing ledger loads.
-- [ ] Income/expense totals match production baseline export/sample.
-- [ ] Existing categories load.
-- [ ] Treasurer can create/edit transactions.
-- [ ] Auditor/President approval logic remains correct.
-- [ ] Receipt handling remains unchanged.
-- [ ] CSV export works.
-- [ ] Unauthorized user cannot access Accounting.
-- [ ] No test transaction is written to production.
+Before requesting production deployment approval, record:
 
-## Gate J — Admin
+- [ ] Exact current production commit/deployment identifier.
+- [ ] Timestamped Firestore export/backup evidence using the approved production procedure.
+- [ ] Confirmation that Firebase Auth users will not be recreated/destructively migrated.
+- [ ] Deployable prior application artifact/version or otherwise proven application rollback path.
+- [ ] Connector flags confirmed OFF/returnable to OFF.
+- [ ] Public website publishing/sync confirmed OFF unless separately approved.
+- [ ] Post-deploy smoke-test owner/checklist.
+- [ ] Explicit rollback criteria.
 
-The first redevelopment cutover preserves the existing admin engine while routine workflows move to focused leadership surfaces.
+No production backup, restore, deploy or rollback execution is authorized by this checklist.
 
-- [ ] Pending member approvals load.
-- [ ] Existing member roles/ministries load.
-- [ ] Leadership ordering/permissions are unchanged.
-- [ ] Existing broadcasts remain available only to authorized roles.
-- [ ] Website inquiries continue to load.
-- [ ] Focused pre-registration uses synthetic staging members only.
-- [ ] Focused inquiry reply targets a staging/sink recipient only.
-- [ ] Destructive controls remain absent from focused routine surfaces.
-- [ ] No production user is deleted or disabled during QA.
-- [ ] No mass production broadcast is sent during QA.
+## Production request minimum
 
-## Gate K — Accessibility and resilience
+Do not request production approval until:
 
-- [ ] Keyboard focus is visible.
-- [ ] Core actions meet minimum touch target guidance.
-- [ ] Body text remains readable at normal size.
-- [ ] Larger configured reading sizes do not make primary navigation unusable.
-- [ ] Form labels remain associated and understandable.
-- [ ] Empty states explain recovery actions.
-- [ ] Loading and error states do not strand users.
-- [ ] Dark mode remains legible.
-- [ ] WCAG AA contrast is targeted for essential content/actions.
+1. latest intended branch head has green redevelopment CI;
+2. actual isolated staging `staging:preflight` is retained;
+3. browser/responsive regression evidence is recorded;
+4. role/data/workflow staging regression is recorded;
+5. physical iPhone + Android notification acceptance is recorded;
+6. backup/rollback evidence is recorded;
+7. remaining dependency findings have accepted/remediated disposition; and
+8. the user explicitly grants production approval.
 
-## Gate L — Backup and rollback before production request
-
-Before any production merge/deploy approval is requested:
-
-- [ ] Export/backup current Firestore data through the approved production procedure.
-- [ ] Record current production commit / deployment identifier.
-- [ ] Confirm Firebase Auth users are not part of a destructive migration.
-- [ ] Confirm rollback path to prior production build/artifact.
-- [ ] Confirm connector feature flags can remain/return OFF.
-- [ ] Confirm public website sync remains OFF unless separately approved.
-- [ ] Prepare smoke-test owner/checklist for immediately after deployment.
-
-## Explicit production approval required
-
-Even when every checkbox above is green, the following remain approval-gated:
-
-- merge to production `main` when it triggers/feeds production release,
-- production deployment/cutover,
-- destructive migration or restore,
-- bulk user mutation,
-- Firebase Auth user deletion/recreation,
-- production Core-status mutation,
-- staging executor use against any non-isolated environment,
-- live external connector activation,
-- mass outbound messaging test,
-- public website publishing cutover.
+Even after these gates are satisfied, merge/deploy and other production-affecting actions remain separate explicit approval decisions.
