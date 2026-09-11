@@ -66,7 +66,7 @@ const safeInboxDestination = (link: string) => {
 export default function Inbox() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<NotificationType | null>(null);
@@ -89,11 +89,19 @@ export default function Inbox() {
 
   useEffect(() => {
     const id = searchParams.get('id') || searchParams.get('noteId');
-    if (!id || notifications.length === 0) return;
+    if (!id) {
+      setSelected(null);
+      setMobileDetail(false);
+      return;
+    }
+    if (notifications.length === 0) return;
     const target = notifications.find((item) => item.id === id);
     if (target) {
       setSelected(target);
       setMobileDetail(true);
+    } else {
+      setSelected(null);
+      setMobileDetail(false);
     }
   }, [notifications, searchParams]);
 
@@ -130,18 +138,32 @@ export default function Inbox() {
     await updateDoc(doc(db, 'notifications', item.id), { status: item.status === 'unread' ? 'read' : 'unread' });
   };
 
-  const removeMessage = async (item: NotificationType) => {
-    if (!item.id || !window.confirm('Delete this message from your KCFC Inbox?')) return;
-    await deleteDoc(doc(db, 'notifications', item.id));
-    if (selected?.id === item.id) {
-      setSelected(null);
-      setMobileDetail(false);
-    }
+  const setMessageInUrl = (id?: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('noteId');
+      if (id) next.set('id', id);
+      else next.delete('id');
+      return next;
+    });
   };
 
   const openMessage = (item: NotificationType) => {
     setSelected(item);
     setMobileDetail(true);
+    setMessageInUrl(item.id);
+  };
+
+  const closeMessage = () => {
+    setSelected(null);
+    setMobileDetail(false);
+    setMessageInUrl();
+  };
+
+  const removeMessage = async (item: NotificationType) => {
+    if (!item.id || !window.confirm('Delete this message from your KCFC Inbox?')) return;
+    await deleteDoc(doc(db, 'notifications', item.id));
+    if (selected?.id === item.id) closeMessage();
   };
 
   const followMessage = () => {
@@ -200,7 +222,7 @@ export default function Inbox() {
           ) : (
             <article className="flex h-full min-h-[520px] flex-col">
               <div className="flex items-center gap-2 border-b border-slate-100 p-3 dark:border-white/10 lg:hidden">
-                <button type="button" aria-label="Back to Inbox" onClick={() => setMobileDetail(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7F9FC] text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:bg-white/5 dark:text-slate-300"><ArrowLeft className="h-5 w-5" /></button>
+                <button type="button" aria-label="Back to Inbox" onClick={closeMessage} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7F9FC] text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:bg-white/5 dark:text-slate-300"><ArrowLeft className="h-5 w-5" /></button>
                 <span className="text-[12px] font-bold text-slate-500 dark:text-slate-400">Back to Inbox</span>
               </div>
               <div className="flex-1 p-5 sm:p-7">
