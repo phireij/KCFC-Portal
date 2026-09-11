@@ -22,17 +22,21 @@ Permanent `KCFC Redevelopment CI` validates:
 - communication policy and communication batches;
 - liturgical creator/diff/publication plans;
 - leadership broadcast planning/accessibility;
-- member governance, pre-registration safety and account-status classification;
+- member governance, pre-registration safety, pre-registration email-verification migration and account-status classification;
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
 - leadership accessibility;
 - mobile navigation contract;
-- delivery diagnostics and current-device notification health;
+- delivery diagnostics, current-device notification health, privacy-safe device QA snapshots and self-test recipient isolation;
 - production build and resolved-warning guards;
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-The full redevelopment CI was green on the accepted Express 5.2.1 branch state and again on the latest branch increments. Every later code/dependency change still requires a fresh green run before it is treated as validated evidence.
+Latest validated code/CI head before this documentation-only refresh: `93e2cdd070a7c49fb1243eb1bec2ec5f6d7afc1a`, `KCFC Redevelopment CI` run #770, conclusion **success**. All 33 validation/build/security steps passed, including the new pre-registration email-verification migration guard.
+
+The onboarding regression fixed on that validated head ensures a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise the migration respects Firebase Auth `emailVerified` or an already-true pending value.
+
+Every later code/dependency change still requires a fresh green run before it is treated as validated evidence. Documentation-only evidence refreshes do not substitute for code CI.
 
 ## Dependency position
 
@@ -88,7 +92,7 @@ No destructive legacy control should be moved into a routine workspace without a
 
 ## Staging/device QA package
 
-The canonical device acceptance procedure is now documented in `staging-device-qa-package-2026-09-11.md`.
+The canonical device acceptance procedure is documented in `staging-device-qa-package-2026-09-11.md`, with evidence classes in `staging-readiness-evidence-map-2026-09-11.md`.
 
 It uses this sequence:
 
@@ -142,6 +146,7 @@ Automated contracts are not a substitute for real-device staging QA.
 
 - keyboard navigation;
 - synthetic pre-registration;
+- pending pre-registered member first authentication while email remains unverified, then post-verification transition without UID recreation;
 - individual inquiry reply to staging/sink recipient only;
 - governed role/ministry change preview + save;
 - destructive controls absent from focused routine surfaces;
@@ -152,7 +157,7 @@ Automated contracts are not a substitute for real-device staging QA.
 
 ## Backup / rollback readiness
 
-The canonical rollback requirements are now documented in `backup-rollback-plan-2026-09-11.md`.
+The canonical rollback requirements are documented in `backup-rollback-plan-2026-09-11.md`.
 
 The plan establishes:
 
