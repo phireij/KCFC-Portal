@@ -6,18 +6,41 @@ Status: production-readiness evidence only. This record does **not** authorize a
 
 ## Purpose
 
-The current runtime audit has already been reduced to four residual entries with no critical or high runtime finding. This record separates findings that can be dispositioned from findings that still need package-owner/advisory reachability evidence before production approval.
+The current runtime audit has already been reduced to four residual package entries with no critical or high runtime finding. This record maps the remaining moderate findings to their current public advisories and the installed copies we can identify, without treating package presence alone as proof of exploitability.
 
 No `npm audit fix --force`, speculative package override, or production dependency rewrite is authorized by this document.
 
 ## Current residual set
 
-| Package | Audit severity | Locked-tree evidence | Disposition |
+| Package | Audit severity | Locked-tree / advisory evidence | Disposition |
 | --- | --- | --- | --- |
-| `qs` | moderate | Lockfile contains top-level/transitive `qs` 6.14.2 and a nested `body-parser` copy at 6.16.0. The normal non-forced `npm audit fix --omit=dev` did not alter the locked tree. | **OPEN — map the advisory to the affected installed copy and runtime call path.** Do not override solely to clear the audit count. |
-| `uuid` | moderate | Lockfile resolves `uuid` 9.0.1 as an optional transitive dependency. The parent dependency block using it also depends on proxy support and `node-fetch` 2.x, placing it in a server/cloud-support path rather than the browser application shell. | **OPEN — identify the exact parent package/advisory path before remediation.** Prefer a supported parent-package fix when available. |
-| `gaxios` | moderate | Lockfile contains `gaxios` 7.1.4 plus an optional `@google-cloud/storage` nested copy at 6.7.1. `gtoken` 8.0.0 depends on `gaxios` ^7.0.0. | **OPEN — map the advisory to the affected copy and owning Google Cloud/auth path.** Avoid isolated override until compatibility is proven. |
+| `qs` | moderate | The lockfile contains `qs` **6.14.2** plus a nested `body-parser` copy at **6.16.0**. `GHSA-4mjr-xmp4-gh2g` / `CVE-2026-82417` affects `qs >=2.2.5 <=6.15.3`; `GHSA-x5fp-wj9c-mxmx` / `CVE-2026-82562` affects `qs >=6.14.2 <=6.15.3`. Both are patched in 6.16.0. | **OPEN, NARROWED — the 6.14.2 copy is inside the affected ranges; the nested 6.16.0 copy is outside them.** Map the 6.14.2 owner/call path and use a supported parent update rather than a blanket override. |
+| `uuid` | moderate | Lockfile resolves `uuid` **9.0.1** as an optional transitive dependency. `GHSA-w5hq-g745-h8pq` / `CVE-2026-41907` affects versions `<11.1.1` and specifically concerns the `v3`/`v5`/`v6` APIs when caller-provided output buffers/offsets are used. | **OPEN, NARROWED — installed version is affected, but KCFC reachability depends on the owning Google Cloud/gaxios path invoking the vulnerable buffer-output APIs.** Prefer a supported parent-package fix. |
+| `gaxios` | moderate | Lockfile contains `gaxios` **7.1.4** plus an optional `@google-cloud/storage` nested copy at **6.7.1**. The older Google Cloud path is also where the transitive `uuid` 9.x family appears. | **OPEN — evaluate together with the owning Google Cloud/Auth/Storage parent.** Do not independently force `gaxios` or `uuid` across parent compatibility boundaries. |
 | `esbuild` | low | Reported through the `tsx` development-tooling chain. `tsx` is a development dependency; production start executes `node dist/server.cjs`. | **PRODUCTION EXPOSURE LOW / TOOLING-ONLY PATH.** Keep visible in the full dependency audit and update through supported tooling versions when compatible. |
+
+## Advisory-specific interpretation
+
+### `qs` 6.14.2
+
+Two current reviewed advisories now make the installed-copy distinction important:
+
+1. `GHSA-4mjr-xmp4-gh2g` / `CVE-2026-82417` — denial of service involving attacker-controlled `constructor.isBuffer` during an affected `qs.parse(...)` → `qs.stringify(...)` style flow. Patched in `qs` 6.16.0.
+2. `GHSA-x5fp-wj9c-mxmx` / `CVE-2026-82562` — array-limit bypass when comma parsing and bracket-array syntax are combined. Patched in `qs` 6.16.0.
+
+The KCFC lockfile's `qs` 6.14.2 copy falls inside both affected ranges, while the nested 6.16.0 copy is already patched for both. This means a global statement that “qs is patched” would be incorrect, but a global override is also not justified without validating the owner package.
+
+KCFC does not currently document use of `comma: true`, `plainObjects: true`, or an explicit application-level `qs.stringify` round trip. That reduces evidence for those exact exploit preconditions but is **not** enough to close the finding because Express/body-parser query/form parsing remains part of the server request boundary. The supported parent chain should therefore be upgraded/probed rather than relying on configuration assumptions.
+
+### `uuid` 9.0.1
+
+`GHSA-w5hq-g745-h8pq` / `CVE-2026-41907` is narrower than a generic UUID-generation flaw. The vulnerable behavior is in the `v3`, `v5`, and `v6` API methods when an external output buffer and offset are supplied; ordinary UUID APIs such as `v4` are not the affected path described by the advisory.
+
+The installed `uuid` 9.0.1 version is inside the affected range, but it is optional/transitive rather than a KCFC direct dependency. Production disposition therefore depends on whether the owning Google Cloud/gaxios path can exercise those specific buffer-writing methods with attacker-influenced buffer/offset inputs. Until that owner/API reachability is proven or the parent dependency is upgraded, the finding remains open.
+
+### `gaxios`
+
+The lockfile contains two material versions rather than one homogeneous package state. The older nested `gaxios` 6.7.1 copy belongs to an optional `@google-cloud/storage` path, while a newer 7.1.4 copy is also installed for current Google auth support. Because the residual audit output groups findings by package and npm can report transitive paths together, the correct remediation unit is the owning Google Cloud/Auth/Storage package family, not an isolated leaf override.
 
 ## Exposure boundary
 
@@ -33,13 +56,13 @@ This does **not** remove the finding from audit visibility. It documents why it 
 
 ### Runtime moderate findings
 
-The lockfile narrows the package/version investigation but does not by itself establish advisory reachability:
+Current classification is now:
 
-- `qs`: at least two installed copies are present (`6.14.2` and nested `6.16.0`), so the audit advisory must be matched to the affected copy before disposition.
-- `uuid`: installed at `9.0.1` as an optional transitive dependency in a server/cloud-support chain; the exact owner still needs to be named from the audit/owner tree before closure.
-- `gaxios`: both `7.1.4` and an optional `@google-cloud/storage` nested `6.7.1` copy exist; the audit finding must be mapped to the affected version/parent path.
+- `qs`: **affected installed copy confirmed**; exact server owner/call-path remediation still open.
+- `uuid`: **affected installed version confirmed**; vulnerable API reachability through the optional cloud path still open.
+- `gaxios`: **multiple installed copies confirmed**; remediation must be evaluated at the supported parent-package family level.
 
-Until that advisory-specific mapping is complete:
+Until parent/remediation validation is complete:
 
 - no forced audit fix;
 - no speculative `overrides` entry;
@@ -62,5 +85,13 @@ For each remaining runtime finding, record:
 
 - Critical/high runtime dependency gate: **CLEAR at the current measured branch state.**
 - Low `esbuild`/`tsx` production-exposure disposition: **DOCUMENTED as tooling-only / low production exposure.**
-- Moderate runtime dependency gate (`qs`, `uuid`, `gaxios`): **OPEN pending advisory-to-installed-copy and owner/reachability evidence.**
+- `qs` moderate gate: **OPEN, but affected copy/advisories are now identified.**
+- `uuid` moderate gate: **OPEN, but affected version and vulnerable API family are now identified.**
+- `gaxios` moderate gate: **OPEN pending parent-family remediation/reachability evidence.**
 - Production merge/deployment: **STILL REQUIRES EXPLICIT USER APPROVAL even after all dependency findings are dispositioned.**
+
+## Public advisory references
+
+- GitHub Advisory Database: `GHSA-4mjr-xmp4-gh2g` (`CVE-2026-82417`), patched in `qs` 6.16.0.
+- GitHub Advisory Database: `GHSA-x5fp-wj9c-mxmx` (`CVE-2026-82562`), patched in `qs` 6.16.0.
+- GitHub Advisory Database: `GHSA-w5hq-g745-h8pq` (`CVE-2026-41907`), patched in supported `uuid` lines beginning at 11.1.1 / 12.0.1 / 13.0.1.
