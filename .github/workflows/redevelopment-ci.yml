@@ -96,6 +96,9 @@ jobs:
       - name: Verify Updates deep-link focus
         run: npx tsx scripts/verify-announcement-deep-link-focus.ts
 
+      - name: Verify availability deep-link focus
+        run: npx tsx scripts/verify-availability-deep-link-focus.ts
+
       - name: Verify Inbox deep-link boundary
         run: npx tsx scripts/verify-inbox-deep-link-boundary.ts
 
