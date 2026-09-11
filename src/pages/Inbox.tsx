@@ -53,6 +53,16 @@ const deliveryTone = (status: NotificationDelivery['status']) => {
   return 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300';
 };
 
+const safeInboxDestination = (link: string) => {
+  try {
+    const target = new URL(link, window.location.origin);
+    if (target.origin !== window.location.origin) return '/inbox';
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return '/inbox';
+  }
+};
+
 export default function Inbox() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -135,7 +145,7 @@ export default function Inbox() {
   };
 
   const followMessage = () => {
-    if (selected?.link) navigate(selected.link);
+    if (selected?.link) navigate(safeInboxDestination(selected.link));
   };
 
   return (
