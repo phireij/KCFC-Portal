@@ -28,7 +28,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Apply only non-breaking npm audit remediation
-        run: npm audit fix --omit=dev
+        shell: bash
+        run: |
+          set +e
+          npm audit fix --omit=dev
+          audit_status=$?
+          set -e
+          echo "npm audit fix exit status: ${audit_status}; continuing because remaining unresolved findings intentionally keep npm non-zero."
       - name: Validate TypeScript and production build
         run: |
           npm run lint
