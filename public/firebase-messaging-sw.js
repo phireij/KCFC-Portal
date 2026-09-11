@@ -120,15 +120,20 @@ self.addEventListener('push', function(event) {
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || '/announcements';
+  const urlToOpen = event.notification.data?.url || '/inbox';
 
-  // Resolve target URL to a fully qualified absolute URL for reliable comparison
-  let absoluteTargetUrl = urlToOpen;
-  if (urlToOpen && !urlToOpen.startsWith('http://') && !urlToOpen.startsWith('https://')) {
-    try {
-      absoluteTargetUrl = new URL(urlToOpen, self.location.origin).href;
-    } catch (_) {}
+  // Notification navigation is intentionally same-origin only. A malformed or
+  // unexpected external target fails closed to the durable KCFC Inbox.
+  let targetUrl;
+  try {
+    targetUrl = new URL(urlToOpen, self.location.origin);
+  } catch (_) {
+    targetUrl = new URL('/inbox', self.location.origin);
   }
+  if (targetUrl.origin !== self.location.origin) {
+    targetUrl = new URL('/inbox', self.location.origin);
+  }
+  const absoluteTargetUrl = targetUrl.href;
 
   // Clear app badge when notification clicked
   if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
@@ -139,25 +144,38 @@ self.addEventListener('notificationclick', function(event) {
   
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
+      // Exact URL match: focus the existing destination as-is.
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        
-        let clientUrlObj = null;
-        let targetUrlObj = null;
-        try {
-          clientUrlObj = new URL(client.url);
-          targetUrlObj = new URL(absoluteTargetUrl);
-        } catch (_) {}
-
-        if (clientUrlObj && targetUrlObj) {
-          // Robust match by pathname (e.g. /announcements matches regardless of domain origin differences or trailing slashes)
-          if (clientUrlObj.pathname === targetUrlObj.pathname && 'focus' in client) {
-            return client.focus();
-          }
-        } else if (client.url === absoluteTargetUrl && 'focus' in client) {
+        if (client.url === absoluteTargetUrl && 'focus' in client) {
           return client.focus();
         }
       }
+
+      // Reuse an existing KCFC window when possible, but NAVIGATE it to the full
+      // target URL first. This preserves query/hash deep links such as
+      // /duties?view=mine instead of merely focusing /duties?view=all.
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        try {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.origin === self.location.origin && typeof client.navigate === 'function') {
+            return client.navigate(absoluteTargetUrl).then(function(navigatedClient) {
+              if (navigatedClient && 'focus' in navigatedClient) {
+                return navigatedClient.focus();
+              }
+              if ('focus' in client) {
+                return client.focus();
+              }
+            }).catch(function() {
+              if (self.clients.openWindow) {
+                return self.clients.openWindow(absoluteTargetUrl);
+              }
+            });
+          }
+        } catch (_) {}
+      }
+
       if (self.clients.openWindow) {
         return self.clients.openWindow(absoluteTargetUrl);
       }
@@ -173,4 +191,3 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(event.request));
   }
 });
-
