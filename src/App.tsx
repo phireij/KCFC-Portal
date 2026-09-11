@@ -152,7 +152,7 @@ export default function App() {
                         photoURL: pendingData.photoURL || authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingData.displayName || 'Member')}&background=5A5A40&color=fff`,
                         roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
                         ministries: pendingData.ministries || [],
-                        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || true,
+                        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || false,
                         isVerified: isBootstrapAdmin || pendingData.isVerified || false,
                         isDisabled: pendingData.isDisabled || false,
                         createdAt: pendingData.createdAt || new Date().toISOString(),
