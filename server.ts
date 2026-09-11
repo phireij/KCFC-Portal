@@ -550,57 +550,6 @@ async function startServer() {
     }
   });
 
-  app.get("/api/public/db-diagnostics", async (req, res) => {
-    try {
-      const results: any = {
-        serverTime: new Date().toISOString(),
-        hasFileConfig,
-        hasServerEnvConfig,
-        firebaseConfigFromFileKeys: Object.keys(firebaseConfigFromFile),
-        envKeys: Object.keys(process.env).filter(k => k.startsWith("FIREBASE_") || k.startsWith("VITE_")),
-        envDatabaseId: process.env.FIREBASE_DATABASE_ID || "not set",
-        configProjectId: targetProjectId,
-        configDatabaseId: firebaseConfig.firestoreDatabaseId || "(not configured, defaulting to (default))",
-        defaultDbUsers: [],
-        namedDbUsers: [],
-        errors: {}
-      };
-
-      // 1. Query (default) database
-      try {
-        const defaultDb = getFirestore(appAdmin);
-        const snap = await defaultDb.collection("users").get();
-        results.defaultDbUsers = snap.docs.map(doc => ({
-          id: doc.id,
-          email: doc.data().email || "",
-          displayName: doc.data().displayName || "",
-          isVerified: doc.data().isVerified || false
-        }));
-      } catch (err: any) {
-        results.errors.defaultDb = err.message;
-      }
-
-      // 2. Query named database
-      const namedDbId = "ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2";
-      try {
-        const namedDb = getFirestore(appAdmin, namedDbId);
-        const snap = await namedDb.collection("users").get();
-        results.namedDbUsers = snap.docs.map(doc => ({
-          id: doc.id,
-          email: doc.data().email || "",
-          displayName: doc.data().displayName || "",
-          isVerified: doc.data().isVerified || false
-        }));
-      } catch (err: any) {
-        results.errors.namedDb = err.message;
-      }
-
-      res.json(results);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   // Secure API endpoint to delete user credentials from Firebase Authentication and cascade-clean up Firestore records
   app.post("/api/admin/delete-user", async (req, res) => {
     logMessage(`--- BEGIN OF DELETE USER BY UID REQUEST ---`);
