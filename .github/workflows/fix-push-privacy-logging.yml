@@ -1,0 +1,48 @@
+name: One-shot push privacy logging fix
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/fix-push-privacy-logging.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Remove sensitive push values from logs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/lib/fcmClient.ts')
+          s = p.read_text()
+          replacements = {
+            'console.log("WebPush: Preloaded VAPID public key from server successfully:", cleanedKey);': 'console.log("WebPush: Preloaded VAPID public key from server successfully.");',
+            'console.log("WebPush: Obtained PushSubscription successfully:", subscription);': 'console.log("WebPush: Obtained PushSubscription successfully.");',
+            'console.log("FCM: Device push token registered successfully:", token);': 'console.log("FCM: Device push token registered successfully.");',
+          }
+          for old, new in replacements.items():
+              if s.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one occurrence: {old!r}; found {s.count(old)}')
+              s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          git diff --check
+          npx tsx scripts/verify-push-privacy-logging.ts
+          git diff -- src/lib/fcmClient.ts
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/lib/fcmClient.ts
+          git commit -m 'fix: keep push credentials out of browser logs'
+          git push origin HEAD:redesign/mobile-first-v2
