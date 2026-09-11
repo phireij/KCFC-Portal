@@ -135,10 +135,10 @@ const eventMatchesMinistry = (event: ScheduleEvent, filter: MinistryFilter, user
 
 export default function Duties() {
   const { profile, user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedView = searchParams.get('view');
   const [view, setView] = useState<ScheduleView>(() => {
-    if (requestedView === 'mine') return 'mine';
+    if (requestedView === 'all' || requestedView === 'mine' || requestedView === 'manage') return requestedView;
     if (searchParams.get('tab') || searchParams.get('pollId')) return 'manage';
     return 'all';
   });
@@ -155,9 +155,27 @@ export default function Duties() {
   const isLeader = (profile?.roles || []).some((role) => leadershipRoles.includes(role));
 
   useEffect(() => {
-    if (searchParams.get('view') === 'mine') setView('mine');
-    else if (searchParams.get('tab') || searchParams.get('pollId')) setView('manage');
-  }, [searchParams]);
+    if (requestedView === 'all' || requestedView === 'mine' || requestedView === 'manage') {
+      setView(requestedView);
+    } else if (searchParams.get('tab') || searchParams.get('pollId')) {
+      setView('manage');
+    } else {
+      setView('all');
+    }
+  }, [requestedView, searchParams]);
+
+  const selectView = (nextView: ScheduleView) => {
+    setView(nextView);
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      nextParams.set('view', nextView);
+      if (nextView !== 'manage') {
+        nextParams.delete('tab');
+        nextParams.delete('pollId');
+      }
+      return nextParams;
+    });
+  };
 
   useEffect(() => {
     let pendingSources = 3;
@@ -279,7 +297,7 @@ export default function Duties() {
       </section>
 
       <section className="kcfc-surface overflow-hidden">
-        <div className="border-b border-slate-200/80 p-2 dark:border-white/10"><div className="grid grid-cols-3 gap-1 rounded-2xl bg-[#F7F9FC] p-1 dark:bg-white/5"><ViewButton active={view === 'all'} onClick={() => setView('all')} icon={CalendarDays} label="All schedule" /><ViewButton active={view === 'mine'} onClick={() => setView('mine')} icon={UserCheck} label="My ministry" /><ViewButton active={view === 'manage'} onClick={() => setView('manage')} icon={ListChecks} label={isLeader ? 'Plan & manage' : 'Availability & duties'} /></div></div>
+        <div className="border-b border-slate-200/80 p-2 dark:border-white/10"><div className="grid grid-cols-3 gap-1 rounded-2xl bg-[#F7F9FC] p-1 dark:bg-white/5"><ViewButton active={view === 'all'} onClick={() => selectView('all')} icon={CalendarDays} label="All schedule" /><ViewButton active={view === 'mine'} onClick={() => selectView('mine')} icon={UserCheck} label="My ministry" /><ViewButton active={view === 'manage'} onClick={() => selectView('manage')} icon={ListChecks} label={isLeader ? 'Plan & manage' : 'Availability & duties'} /></div></div>
 
         {view === 'all' && (
           <div>
