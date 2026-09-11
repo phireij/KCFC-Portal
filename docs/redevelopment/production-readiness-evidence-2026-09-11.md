@@ -20,6 +20,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - TypeScript;
 - production/runtime audit visibility;
 - communication policy and communication batches;
+- persistent server diagnostic privacy: authenticated caller UID/email values and failed-recipient email addresses are not persisted in routine communication diagnostics; operational counts remain;
 - liturgical creator/diff/publication plans;
 - leadership broadcast planning/accessibility;
 - member governance, pre-registration safety, pre-registration email-verification migration, Login email-verification migration safety and account-status classification;
@@ -32,7 +33,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - staging admin mass-email broadcasts are simulation-only even when SMTP credentials are present;
 - staging public-inquiry notification and authorized inquiry-alert SMTP are suppressed/simulated so QA cannot notify the production KCFC mailbox;
 - staging verification-email SMTP is suppressed even when SMTP credentials are inherited; the route returns the generated verification link for synthetic onboarding QA instead of sending mail;
-- inquiry diagnostics do not persist submitted name/email/message content or Firestore REST URLs containing API-key query parameters, and public inquiry responses do not return internal backend error detail;
+- inquiry diagnostics do not persist submitted name/email/message content or raw request headers/body/query, do not log Firestore REST URLs containing API-key query parameters, and public inquiry responses do not return internal backend error detail;
 - staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
@@ -55,7 +56,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `716e920ba685dfab8f9148513847c4f5fc59d517`, `KCFC Redevelopment CI` run **#1247** / id `34586303040`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
+Latest validated clean branch checkpoint: `3c4f5379fa89db6691d04dd1daef17eb91c4c725`, `KCFC Redevelopment CI` run **#1303** / id `34590134339`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -73,11 +74,11 @@ The validated staging isolation work establishes:
 - `/api/health` exposes only status/time plus runtime, Firebase project ID and Firestore database ID so operators can prove the deployed target without exposing API keys, VAPID material, tokens, credentials or app identifiers;
 - when `KCFC_RUNTIME_ENV=staging`, the server refuses missing explicit server VAPID keys and also re-throws later Web Push initialization errors before any in-memory fallback key generation;
 - staging preflight and server startup require an explicit HTTPS `APP_URL` whose hostname is not the production KCFC Portal, preventing generated staging links from silently targeting production;
-- the admin broadcast-email route cannot enter real SMTP delivery while `KCFC_RUNTIME_ENV=staging`; it remains simulation-only even if SMTP credentials are inherited.
+- baseline staging routes for broadcast email, inquiry notification/alert email and custom verification email cannot enter real SMTP delivery while `KCFC_RUNTIME_ENV=staging`.
 
-Email-verification migration is now guarded in both authenticated bootstrap migration and the Login/Google profile creation path: a pending profile or newly created profile cannot be marked email-verified by an unconditional fallback. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
+Email-verification migration is guarded in both authenticated bootstrap migration and the Login/Google profile creation path: a pending profile or newly created profile cannot be marked email-verified by an unconditional fallback. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 
-Notification/navigation now has permanent automated boundaries: notification records retain their history; Inbox links are constrained to authorized same-origin Portal destinations; query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation; notification-linked Updates can focus/highlight the intended authorized update; availability notification links can focus/highlight the intended member request or expanded leader request; Inbox filters are URL-backed; Resource categories and Community Directory member/ministry filters are URL-backed; and authorized Updates scope can restore Published versus All + drafts through browser history while preserving a focused announcement `id`. Free-text search remains intentionally local on Resources, Community and Updates so typing does not create one browser-history entry per keystroke.
+Notification/navigation has permanent automated boundaries: notification records retain their history; Inbox links are constrained to authorized same-origin Portal destinations; query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation; notification-linked Updates can focus/highlight the intended authorized update; availability notification links can focus/highlight the intended member request or expanded leader request; Inbox filters are URL-backed; Resource categories and Community Directory member/ministry filters are URL-backed; and authorized Updates scope can restore Published versus All + drafts through browser history while preserving a focused announcement `id`. Free-text search remains intentionally local on Resources, Community and Updates so typing does not create one browser-history entry per keystroke.
 
 Every later code/dependency change still requires a fresh green run before it is treated as validated evidence. Documentation-only evidence refreshes do not substitute for code CI.
 
@@ -171,7 +172,7 @@ Every notification test separately records:
 - durable KCFC Inbox persistence; and
 - notification tap/deep-link result.
 
-The browser/device matrix now explicitly covers Schedule and Inbox history restoration, notification-linked Updates and availability focus, Resources category history, Community Directory type/ministry history, authorized Updates scope history, same-origin notification fallback, Inbox durability/message-history behavior, and visible staging-environment identification.
+The browser/device matrix covers Schedule and Inbox history restoration, notification-linked Updates and availability focus, Resources category history, Community Directory type/ministry history, authorized Updates scope history, same-origin notification fallback, Inbox durability/message-history behavior, and visible staging-environment identification.
 
 The canonical `notification-acceptance-evidence-template-2026-09-11.md` requires those signals to be recorded independently before a case can be classified PASS; ambiguous outcomes remain INVESTIGATE.
 
