@@ -47,8 +47,14 @@ Use synthetic staging identities with no production member data:
 | RES-03 | STG_REGULAR | Attempt resource management | Add/delete controls unavailable or denied |
 | ACCT-01 | STG_TREASURER | Open Accounting | Existing preserved accounting engine loads inside new shell |
 | ACCT-02 | STG_REGULAR | Open Accounting URL | Access denied |
-| ADMIN-01 | STG_ADMIN | Open Admin | Preserved admin engine loads inside leadership shell |
+| ADMIN-01 | STG_ADMIN | Open Admin | Focused leadership workspace loads; Advanced legacy tools remain separately labelled |
 | ADMIN-02 | STG_REGULAR | Open Admin URL | Access denied |
+| ADMIN-03 | STG_ADMIN | Pre-register a synthetic member | Only one unverified `pending_*` Firestore profile is created; no Firebase Auth user, verification grant, role or ministry assignment is created |
+| ADMIN-04 | STG_ADMIN | Pre-register an email already present in users/pending queue | Duplicate is rejected before write; existing profile and Firebase UID remain unchanged |
+| ADMIN-05 | STG_ADMIN | Edit a verified member's roles/ministries | Change summary appears before save; invalid governance combinations block save; successful update preserves the existing Firebase UID |
+| ADMIN-06 | STG_ADMIN | Open focused Website Inquiry reply composer | Recipient is locked to the inquiry sender; opening/editing the composer sends nothing automatically |
+| ADMIN-07 | STG_ADMIN | Attempt individual inquiry reply in isolated staging/sink only | Send requires explicit button + confirmation; successful send preserves the inquiry and marks unread → read; no bulk recipients or deletion occurs |
+| ADMIN-08 | STG_ADMIN | Inspect routine Member Administration and Website Inquiry surfaces | Account disabling, member deletion, credential purge and Core-status mutation controls are absent from the routine focused surfaces |
 
 ## PWA / notification tests
 
