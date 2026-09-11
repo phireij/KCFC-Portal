@@ -10,6 +10,7 @@ const forbiddenMarkers = [
   'const inboundBody = JSON.stringify(req.body);',
   'const inboundQuery = JSON.stringify(req.query);',
   'Headers: ${inboundHeaders} | Body: ${inboundBody} | Query: ${inboundQuery}',
+  'res.status(500).json({ error: err.message || "Failed to process contact inquiry" });',
 ];
 
 for (const marker of forbiddenMarkers) {
@@ -24,6 +25,7 @@ const requiredMarkers = [
   '[INBOUND CONTACT] Attempting Firestore REST fallback write.',
   'res.json({ success: true, emailSent, firestoreWritten });',
   'bodyFields=${inboundBodyFieldCount} queryFields=${inboundQueryFieldCount}',
+  'res.status(500).json({ error: "Failed to process contact inquiry" });',
 ];
 
 for (const marker of requiredMarkers) {

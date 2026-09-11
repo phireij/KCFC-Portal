@@ -2357,7 +2357,7 @@ async function startServer() {
       res.json({ success: true, emailSent, firestoreWritten });
     } catch (err: any) {
       logMessage(`[ERROR] Public contact endpoint execution failed: ${err.message}`);
-      res.status(500).json({ error: err.message || "Failed to process contact inquiry" });
+      res.status(500).json({ error: "Failed to process contact inquiry" });
     }
   });
 
