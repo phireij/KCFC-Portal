@@ -8,7 +8,7 @@ import {
   Share2,
   Smartphone,
 } from 'lucide-react';
-import { isStandaloneMode } from '../lib/fcmClient';
+import { isIOSDevice, isStandaloneMode } from '../lib/fcmClient';
 import { cn } from '../lib/utils';
 
 type BeforeInstallPromptEvent = Event & {
@@ -26,7 +26,7 @@ export default function InstallPWA() {
 
   useEffect(() => {
     const userAgent = navigator.userAgent || '';
-    setIos(/iPad|iPhone|iPod/.test(userAgent));
+    setIos(isIOSDevice());
     setAndroid(/Android/i.test(userAgent));
     setStandalone(isStandaloneMode());
 
