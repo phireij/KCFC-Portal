@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../App';
 import {
   BellRing,
@@ -40,13 +41,23 @@ const workspaceItems: Array<{
 
 export default function Admin() {
   const { profile } = useAuth();
-  const [activeView, setActiveView] = useState<WorkspaceView>('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedView = searchParams.get('view');
+  const activeView: WorkspaceView = workspaceItems.some((item) => item.id === requestedView)
+    ? requestedView as WorkspaceView
+    : 'overview';
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const canAccess = (profile?.roles || []).some((role) => adminRoles.includes(role));
 
   const activateTab = (index: number, moveFocus = false) => {
     const normalizedIndex = (index + workspaceItems.length) % workspaceItems.length;
-    setActiveView(workspaceItems[normalizedIndex].id);
+    const nextView = workspaceItems[normalizedIndex].id;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextView === 'overview') next.delete('view');
+      else next.set('view', nextView);
+      return next;
+    });
     if (moveFocus) tabRefs.current[normalizedIndex]?.focus();
   };
 
