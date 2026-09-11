@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
-const source = fs.readFileSync('src/pages/Polls.tsx', 'utf8');
+const pollsSource = fs.readFileSync('src/pages/Polls.tsx', 'utf8');
+const communicationSource = fs.readFileSync('src/lib/liturgicalCommunication.ts', 'utf8');
 
 const required = [
   "const focusedPollId = searchParams.get('id');",
@@ -16,16 +17,16 @@ const required = [
 ];
 
 for (const marker of required) {
-  if (!source.includes(marker)) {
+  if (!pollsSource.includes(marker)) {
     throw new Error(`Missing availability deep-link focus marker: ${marker}`);
   }
 }
 
-if (!source.includes("link: `/polls?id=${input.pollId}`")) {
+if (!communicationSource.includes("link: `/polls?id=${input.pollId}`")) {
   throw new Error('Availability notification link contract is missing');
 }
 
-if (!source.includes("link: `/polls?id=${input.pollId}&leader=1`")) {
+if (!communicationSource.includes("link: `/polls?id=${input.pollId}&leader=1`")) {
   throw new Error('Leader availability notification link contract is missing');
 }
 
