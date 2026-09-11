@@ -27,3 +27,4 @@ jobs:
           git add src/pages/Polls.tsx scripts/patch-availability-deep-link-focus.py
           git commit -m 'fix: focus notification-linked availability request'
           git push origin HEAD:redesign/mobile-first-v2
+      # rerun after verifier source-boundary correction
