@@ -40,6 +40,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - staging verification-email SMTP is suppressed even when SMTP credentials are inherited; the route returns the generated verification link for synthetic onboarding QA instead of sending mail;
 - client-side Gmail delivery is also staging-isolated: `sendGmail()` returns a simulation result before OAuth/token/network activity and `getGmailAccessToken()` refuses staging before cached-token reuse;
 - inquiry diagnostics do not persist submitted name/email/message content or raw request headers/body/query, do not log Firestore REST URLs containing API-key query parameters, and public inquiry responses do not return internal backend error detail;
+- public contact ingestion is field-only and bounded: multipart file uploads are rejected, field count/size and inquiry lengths are constrained, email/header validation is enforced, validation responses are generic, notification HTML escapes inquiry content, and persisted `alertSent` mirrors the actual email-initiation state rather than being forced true;
 - staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
@@ -64,7 +65,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - 30-day GitHub Actions retention of the verified non-secret build manifest as repository-side release evidence;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `96dd4257137b595331c5b1346bfe31205c19e6cd`, `KCFC Redevelopment CI` run **#1535** / id `34616084222`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed. The runtime audit remains **0 critical, 0 high, 2 moderate, 0 low**; staging runtime-evidence validation, complete build-artifact manifest/hash coverage, manifest retention and staging client-email isolation all remained green.
+Latest validated clean branch checkpoint: `eb0a6bd74e5322d13eacc611a2e3eb6781773990`, `KCFC Redevelopment CI` run **#1559** / id `34617244938`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed. The runtime audit remains **0 critical, 0 high, 2 moderate, 0 low**; staging runtime-evidence validation, complete build-artifact manifest/hash coverage, manifest retention, staging client-email isolation and public-contact ingestion hardening all remained green.
 
 The validated staging isolation work establishes:
 
