@@ -45,6 +45,7 @@ jobs:
           npx tsx scripts/verify-staging-inquiry-email-isolation.ts
           npx tsx scripts/verify-inquiry-privacy-logging.ts
           npx tsx scripts/verify-staging-verification-email-isolation.ts
+          npx tsx scripts/verify-staging-client-email-isolation.ts
           npx tsx scripts/verify-server-diagnostic-privacy.ts
           npx tsx scripts/verify-broadcast-recipient-token-boundary.ts
           npx tsx scripts/verify-public-db-diagnostics-boundary.ts
