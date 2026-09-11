@@ -13,11 +13,12 @@ p.write_text(s)
 
 p = Path('docs/redevelopment/staging-readiness-checklist.md')
 s = p.read_text()
-import re
-s, n = re.subn(r'Latest validated code checkpoint: `[^`]+`, CI run \*\*#\d+\*\* / id `\d+`, all \*\*\d+\*\* validation/build/security steps green\.', 'Latest validated code checkpoint: `b67f1e8767276830c74a08850199040046441f30`, CI run **#1141** / id `34581079376`, all **57** validation/build/security steps green.', s, count=1)
-if n != 1:
+old = 'Latest exact-head automated evidence before this checklist update: code head `b4baee6cb1611cf67eacf2b570a7c3db29196549`, `KCFC Redevelopment CI` run **#1088** / id `34578756178`, conclusion **SUCCESS**, with all **54** validation/build/security steps green.'
+new = 'Latest exact-head automated evidence before this checklist update: code head `b67f1e8767276830c74a08850199040046441f30`, `KCFC Redevelopment CI` run **#1141** / id `34581079376`, conclusion **SUCCESS**, with all **57** validation/build/security steps green.'
+if old not in s:
     raise SystemExit('checklist checkpoint marker missing')
-anchor = '- [ ] Actual isolated staging environment has passed `npm run staging:preflight`.\n'
+s = s.replace(old, new)
+anchor = '- [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.\n'
 if anchor not in s:
     raise SystemExit('checklist staging marker missing')
 s = s.replace(anchor, anchor + '- [ ] Running `/api/health` shows `runtime=staging` and the expected isolated Firebase project/database IDs; no secret fields are present.\n- [ ] Staging server starts only with explicit `WEB_PUSH_VAPID_PUBLIC_KEY` + `WEB_PUSH_VAPID_PRIVATE_KEY`; missing keys fail closed before fallback initialization.\n')
