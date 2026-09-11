@@ -96,6 +96,9 @@ jobs:
       - name: Verify health runtime identity boundary
         run: npx tsx scripts/verify-health-runtime-identity.ts
 
+      - name: Verify staging Web Push runtime boundary
+        run: npx tsx scripts/verify-staging-webpush-runtime.ts
+
       - name: Verify staging environment template
         run: npx tsx scripts/verify-staging-env-template.ts
 
