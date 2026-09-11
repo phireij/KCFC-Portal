@@ -1,12 +1,19 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, normalize } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, normalize, relative, resolve } from 'node:path';
 
 const manifestPath = process.argv[2] || 'dist/kcfc-build-manifest.json';
 const distDir = process.argv[3] || 'dist';
 
 if (!existsSync(manifestPath)) {
   throw new Error(`KCFC build artifact manifest verification: missing ${manifestPath}.`);
+}
+
+function walk(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = join(directory, entry.name);
+    return entry.isDirectory() ? walk(fullPath) : [fullPath];
+  });
 }
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -61,4 +68,16 @@ if (manifest.totalBytes !== totalBytes) {
   throw new Error('KCFC build artifact manifest verification: totalBytes mismatch.');
 }
 
-console.log(`KCFC build artifact manifest verification: PASS (${manifest.fileCount} files, source ${manifest.sourceCommit})`);
+const resolvedManifest = resolve(manifestPath);
+const actualBuildFiles = walk(distDir)
+  .filter((filePath) => resolve(filePath) !== resolvedManifest)
+  .map((filePath) => relative(distDir, filePath).replaceAll('\\', '/'))
+  .sort();
+const manifestFiles = [...seen].sort();
+if (actualBuildFiles.length !== manifestFiles.length || actualBuildFiles.some((filePath, index) => filePath !== manifestFiles[index])) {
+  const omitted = actualBuildFiles.filter((filePath) => !seen.has(filePath));
+  const stale = manifestFiles.filter((filePath) => !actualBuildFiles.includes(filePath));
+  throw new Error(`KCFC build artifact manifest verification: manifest coverage mismatch. Omitted: ${omitted.join(', ') || '(none)'}; stale: ${stale.join(', ') || '(none)'}.`);
+}
+
+console.log(`KCFC build artifact manifest verification: PASS (${manifest.fileCount} files, complete coverage, source ${manifest.sourceCommit})`);
