@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, lazy, Suspense, useContext, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
@@ -8,18 +8,18 @@ import { cn } from './lib/utils';
 import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
 import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites, observeForegroundMessages } from './lib/fcmClient';
 
-// Pages
-import Dashboard from './pages/Dashboard';
-import Login from './pages/Login';
-import Polls from './pages/Polls';
-import Resources from './pages/Resources';
-import Duties from './pages/Duties';
-import Admin from './pages/Admin';
-import Profile from './pages/Profile';
-import Members from './pages/Members';
-import Announcements from './pages/Announcements';
-import Accounting from './pages/Accounting';
-import Inbox from './pages/Inbox';
+// Route pages are lazy-loaded so members download only the workflow they open.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Login = lazy(() => import('./pages/Login'));
+const Polls = lazy(() => import('./pages/Polls'));
+const Resources = lazy(() => import('./pages/Resources'));
+const Duties = lazy(() => import('./pages/Duties'));
+const Admin = lazy(() => import('./pages/Admin'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Members = lazy(() => import('./pages/Members'));
+const Announcements = lazy(() => import('./pages/Announcements'));
+const Accounting = lazy(() => import('./pages/Accounting'));
+const Inbox = lazy(() => import('./pages/Inbox'));
 import Navbar from './components/layout/Navbar';
 
 interface AuthContextType {
@@ -772,7 +772,8 @@ export default function App() {
         )}>
           {isAuthReady && <Navbar />}
           <main className={cn("min-h-screen", isAuthReady ? "pt-20 pb-24 md:pb-8 px-2 sm:px-4" : "")}>
-            <Routes>
+            <Suspense fallback={<div className="min-h-[40vh] flex items-center justify-center text-sm text-slate-500">Loading KCFC Portal…</div>}>
+              <Routes>
               <Route path="/login" element={!isAuthReady ? <Login /> : <Navigate to="/" replace />} />
               <Route path="/" element={isAuthReady ? <Dashboard /> : <Navigate to="/login" />} />
               <Route path="/polls" element={isAuthReady ? <Polls /> : <Navigate to="/login" />} />
@@ -786,7 +787,8 @@ export default function App() {
               <Route path="/inbox" element={isAuthReady ? <Inbox /> : <Navigate to="/login" />} />
               {/* Fallback for deep-linking unmatched routes or /index.html pathing */}
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+              </Routes>
+            </Suspense>
           </main>
 
           {/* Visual FCM Foreground Notification Banner */}
