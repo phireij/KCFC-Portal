@@ -28,6 +28,17 @@ const lines = [
   '',
 ];
 
+const describeFix = (item) => {
+  if (item.fixAvailable === true) return 'yes';
+  if (item.fixAvailable && typeof item.fixAvailable === 'object') {
+    const target = item.fixAvailable.name && item.fixAvailable.version
+      ? `${item.fixAvailable.name}@${item.fixAvailable.version}`
+      : 'version change';
+    return item.fixAvailable.isSemVerMajor ? `${target} (major)` : target;
+  }
+  return 'no';
+};
+
 if (parsed?.metadata?.vulnerabilities) {
   lines.push('| Severity | Count |', '| --- | ---: |');
   for (const severity of ['critical', 'high', 'moderate', 'low']) {
@@ -35,25 +46,17 @@ if (parsed?.metadata?.vulnerabilities) {
   }
   lines.push(`| **total** | **${counts.total}** |`, '');
 
-  const important = Object.values(parsed.vulnerabilities || {})
-    .filter((item) => item && (item.severity === 'critical' || item.severity === 'high'))
+  const findings = Object.values(parsed.vulnerabilities || {})
+    .filter(Boolean)
     .sort((a, b) => {
-      const rank = { critical: 0, high: 1 };
-      return (rank[a.severity] ?? 2) - (rank[b.severity] ?? 2) || String(a.name).localeCompare(String(b.name));
+      const rank = { critical: 0, high: 1, moderate: 2, low: 3, info: 4 };
+      return (rank[a.severity] ?? 5) - (rank[b.severity] ?? 5) || String(a.name).localeCompare(String(b.name));
     });
 
-  if (important.length > 0) {
-    lines.push('### Critical/high runtime package chains', '', '| Package | Severity | Direct | Affected range | Fix available |', '| --- | --- | --- | --- | --- |');
-    for (const item of important) {
-      let fix = 'no';
-      if (item.fixAvailable === true) fix = 'yes';
-      else if (item.fixAvailable && typeof item.fixAvailable === 'object') {
-        const target = item.fixAvailable.name && item.fixAvailable.version
-          ? `${item.fixAvailable.name}@${item.fixAvailable.version}`
-          : 'version change';
-        fix = item.fixAvailable.isSemVerMajor ? `${target} (major)` : target;
-      }
-      lines.push(`| ${item.name || 'unknown'} | ${item.severity} | ${item.isDirect ? 'yes' : 'no'} | ${String(item.range || '').replaceAll('|', '\\|')} | ${fix} |`);
+  if (findings.length > 0) {
+    lines.push('### Remaining runtime package findings', '', '| Package | Severity | Direct | Affected range | Fix available |', '| --- | --- | --- | --- | --- |');
+    for (const item of findings) {
+      lines.push(`| ${item.name || 'unknown'} | ${item.severity || 'unknown'} | ${item.isDirect ? 'yes' : 'no'} | ${String(item.range || '').replaceAll('|', '\\|')} | ${describeFix(item)} |`);
     }
     lines.push('');
   }
