@@ -10,6 +10,8 @@ This document defines the backup, rollback, identity-preservation, and verificat
 
 It does **not** authorize deployment, production writes, destructive restoration, Firebase Auth recreation, public cutover, or any other approval-gated action.
 
+Companion evidence form: `deployment-artifact-rollback-evidence-template-2026-09-11.md`. The form is intentionally blank until real provider/artifact/backup evidence is captured.
+
 ## Safety invariants
 
 1. Existing Firebase Auth UID is the canonical member identity and must be preserved.

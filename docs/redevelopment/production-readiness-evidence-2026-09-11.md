@@ -26,6 +26,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
+- staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
 - notification-linked Updates deep-link focus;
@@ -47,7 +48,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code checkpoint: `3e37e3e9aed6d4cd9577711e3c7c828e2b845d96`, `KCFC Redevelopment CI` run **#1071** / id `34578065249`, conclusion **SUCCESS**. All **53** validation/build/security steps passed.
+Latest validated code checkpoint: `b4baee6cb1611cf67eacf2b570a7c3db29196549`, `KCFC Redevelopment CI` run **#1088** / id `34578756178`, conclusion **SUCCESS**. All **54** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -123,7 +124,7 @@ No destructive legacy control should be moved into a routine workspace without a
 
 ## Staging/runtime isolation position
 
-The canonical staging runtime boundary is documented in `staging-firebase-isolation-contract-2026-09-11.md`.
+The canonical staging runtime boundary is documented in `staging-firebase-isolation-contract-2026-09-11.md`. The provider-neutral execution procedure is `staging-deployment-runbook-2026-09-11.md`; it prepares isolated staging evidence but does not authorize external resource creation or deployment.
 
 Before any browser or physical-device QA begins against an actual staging deployment:
 
@@ -244,7 +245,7 @@ The plan establishes:
 - post-rollback non-destructive smoke verification;
 - a strict separation between readiness documentation and actual production backup/restore execution.
 
-Provider/environment backup evidence and exact production deployment-artifact rollback evidence are still required before any production request.
+Provider/environment backup evidence and exact production deployment-artifact rollback evidence are still required before any production request. `deployment-artifact-rollback-evidence-template-2026-09-11.md` provides the blank evidence form without claiming that those production artifacts/backups already exist.
 
 ## Production-readiness blockers still open
 
