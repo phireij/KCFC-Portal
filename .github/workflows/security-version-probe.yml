@@ -1,0 +1,38 @@
+name: KCFC Security Version Probe
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/security-version-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Probe remaining parent-package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in firebase @google/genai autoprefixer @tailwindcss/vite firebase-admin nodemailer; do
+            echo "===== ${pkg} latest ====="
+            npm view "$pkg" version
+          done
+          echo '===== firebase 12.x latest tail ====='
+          npm view 'firebase@12' version --json | tail -n 15
+          echo '===== @google/genai 1.x latest tail ====='
+          npm view '@google/genai@1' version --json | tail -n 15
+          echo '===== firebase-admin 13.x latest tail ====='
+          npm view 'firebase-admin@13' version --json | tail -n 15
