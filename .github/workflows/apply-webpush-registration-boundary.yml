@@ -1,0 +1,30 @@
+name: Apply Web Push registration boundary
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/apply-webpush-registration-boundary.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - run: python3 scripts/patch-webpush-registration-boundary.py
+      - run: npx tsx scripts/verify-webpush-registration-boundary.ts
+      - run: npm run lint
+      - run: git diff --check
+      - run: |
+          rm scripts/patch-webpush-registration-boundary.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server.ts scripts/verify-webpush-registration-boundary.ts scripts/patch-webpush-registration-boundary.py
+          git commit -m 'fix: harden Web Push device registration boundary'
+          git push origin HEAD:redesign/mobile-first-v2
