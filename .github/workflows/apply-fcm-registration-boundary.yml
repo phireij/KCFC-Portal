@@ -33,4 +33,4 @@ jobs:
           git add server.ts src/lib/fcmClient.ts scripts/verify-fcm-registration-boundary.ts scripts/patch-fcm-registration-boundary.py
           git commit -m 'fix: bound caller-owned FCM device registration'
           git push origin HEAD:redesign/mobile-first-v2
-# rerun: scoped verifier
+# rerun: preserve shared Firestore imports
