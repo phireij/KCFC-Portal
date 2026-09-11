@@ -20,7 +20,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - TypeScript;
 - production/runtime audit visibility;
 - communication policy and communication batches;
-- persistent server diagnostic privacy: authenticated caller UID/email values and failed-recipient email addresses are not persisted in routine communication diagnostics; operational counts remain;
+- persistent/server diagnostic privacy: member-identifying UID/email interpolation is prohibited across governed communication, legacy purge, delivery and subscription-prune diagnostics; operational status/counts remain;
 - liturgical creator/diff/publication plans;
 - leadership broadcast planning/accessibility;
 - member governance, pre-registration safety, pre-registration email-verification migration, Login email-verification migration safety and account-status classification;
@@ -56,7 +56,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `3c4f5379fa89db6691d04dd1daef17eb91c4c725`, `KCFC Redevelopment CI` run **#1303** / id `34590134339`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
+Latest validated clean branch checkpoint: `78d81a5feb5f7a997cb9e2826f536418a7242923`, `KCFC Redevelopment CI` run **#1314** / id `34590624438`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
