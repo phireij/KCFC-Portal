@@ -29,7 +29,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: branch head `cd5b2aa232f14d250efe33dc2ed27cc95ad80839`, `KCFC Redevelopment CI` run **#914** / id `34572244658`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest validated code checkpoint: branch head `f95fee6461a7a7317099c39f8a9fcc7d0132d3e4`, `KCFC Redevelopment CI` run **#952** / id `34573730223`, conclusion **SUCCESS**, with all **46** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates deep-link focus, Inbox deep-link/history/filter navigation, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
@@ -89,7 +89,11 @@ Validate on representative widths and real devices where possible:
 - [ ] Published assignment highlighting makes the member's own role obvious.
 - [ ] Community Directory search/filter is comfortable on phone.
 - [ ] Updates cards/editor are readable on phone.
+- [ ] A direct `/announcements?id=<announcementId>` link focuses/highlights the intended visible authorized update.
 - [ ] Inbox list → detail flow works without desktop-style squeezing.
+- [ ] Direct `/inbox?tab=unread|assignment|availability|update` URLs restore the intended Inbox filter after reload.
+- [ ] Browser/mobile Back and Forward restore previous Inbox filters.
+- [ ] Changing Inbox filter preserves the selected message `id` query where appropriate.
 - [ ] Profile and notification setup remain usable at normal and large text sizes.
 - [ ] Resources remain usable on mobile.
 - [ ] Dark mode remains readable where supported.
@@ -106,8 +110,10 @@ Use the companion `staging-device-qa-package-2026-09-11.md` and canonical `notif
 - [ ] Send Test remains clearly test-scoped and caller-bound.
 - [ ] Test notification opens the intended Portal deep link where applicable, including query-specific routes such as `/duties?view=mine`.
 - [ ] When `/duties?view=all` is already open, tapping a `/duties?view=mine` notification navigates the existing KCFC window to My Ministry rather than merely focusing the wrong query state.
+- [ ] Update notification deep links such as `/announcements?id=<announcementId>` focus/highlight the intended visible update for the authorized member.
 - [ ] Malformed/cross-origin notification destinations fail closed to same-origin KCFC Inbox.
 - [ ] Durable Inbox record remains independent of OS notification presentation.
+- [ ] Inbox filters remain URL-backed and recoverable through Back/Forward.
 - [ ] No automatic broadcast or inquiry-reply send occurs merely by opening a composer/page.
 
 ### Physical baseline
