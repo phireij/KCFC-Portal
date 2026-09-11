@@ -43,6 +43,29 @@ Compared with the clean pre-change manifest on `147d5eed2d0acda2abeb1d29ab131914
 
 The preserved legacy surface therefore no longer increases the routine Leadership route payload for leaders who do not open Advanced tools.
 
+### Second-stage Leadership workspace deferral
+
+A second concrete loading issue remained after the advanced-tools split: the default **Leadership overview** still eagerly imported every non-default focused workspace even though those workspaces render only when their URL-backed tab is selected.
+
+Branch-only code change `e2cf55b7e200dedb7e2619a53a9906c23b143134` now defers:
+
+- Website Inquiries;
+- Member Communications;
+- Member Account Overview;
+- Member Pre-registration;
+- Member Approval Queue;
+- Roles & Ministries;
+- Core-status Planner; and
+- Advanced Legacy Tools.
+
+`LeadershipOverview` remains eager because it is the default workspace. Each deferred workspace is behind an accessible `React.Suspense` status fallback. Authorization, URL/history behavior, destructive-action isolation, and existing workspace semantics are unchanged.
+
+The existing permanent Leadership verifier was strengthened rather than adding a new CI step: it now requires all eight non-default lazy boundaries and fails if any of those components regress to an eager import.
+
+The bounded one-shot optimizer on parent `7e8495094a893f2b07d159f15572b0150012f02b` completed **SUCCESS**, including the targeted Leadership contract, TypeScript, production build, and a guard requiring the routine `Admin` chunk to be below **90,000 raw bytes**. It then committed `e2cf55b7...` and removed itself. The normal branch again contains only the permanent read-only redevelopment CI workflow.
+
+As with the earlier bot-authored optimization, the bot-triggered permanent workflow record is not treated as release evidence. This checkpoint provides the normal branch event required for the permanent 58-check suite to validate the exact current code state and retain a fresh build manifest. Exact post-split asset measurements are recorded only after that ordinary CI succeeds.
+
 ## Dependency disposition re-check
 
 The remaining runtime dependency findings stay bounded to the currently unused optional Firebase Admin / Google Cloud Storage path:
