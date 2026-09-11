@@ -226,7 +226,12 @@ jobs:
           fi
 
       - name: Record production bundle asset sizes
-        run: node scripts/report-build-assets.mjs dist
+        env:
+          KCFC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node scripts/generate-build-artifact-manifest.mjs dist dist/kcfc-build-manifest.json
+          node scripts/verify-build-artifact-manifest.mjs dist/kcfc-build-manifest.json dist
+          node scripts/report-build-assets.mjs dist
 
       - name: Guard Core status staging executor default
         shell: bash
