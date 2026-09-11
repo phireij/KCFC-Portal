@@ -1723,7 +1723,6 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { targetToken } = req.body;
 
     try {
       // 1. Verify caller ID token to safely bind the request to their authentic Firebase session
@@ -1737,12 +1736,8 @@ async function startServer() {
         return;
       }
 
-      // 3. Gather active tokens
+      // 3. Gather active tokens only from the authenticated caller profile.
       const allTokens: string[] = [];
-      if (typeof targetToken === "string" && targetToken.trim() !== "") {
-        allTokens.push(targetToken.trim());
-      }
-      
       const savedTokens = callerProfile.fcmTokens || [];
       if (Array.isArray(savedTokens)) {
         allTokens.push(...savedTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));

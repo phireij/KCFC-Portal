@@ -16,6 +16,8 @@ assert.match(route, /fetchUserDocWithFallback\(callerUid, token\)/, 'Self-test p
 assert.match(route, /userId:\s*callerUid/, 'Any Firestore fallback notification must remain bound to the verified caller UID.');
 assert.doesNotMatch(route, /fetchAllUsersWithFallback\(/, 'Self-test push must never enumerate the member directory.');
 assert.doesNotMatch(route, /req\.body\s*\.(?:target|targetUid|userId|uid|recipient)/, 'Self-test push must not accept a caller-selected recipient.');
-assert.doesNotMatch(route, /const\s*\{[^}]*\b(?:target|targetUid|userId|uid|recipient)\b[^}]*\}\s*=\s*req\.body/, 'Self-test push must not destructure a caller-selected recipient.');
+assert.doesNotMatch(route, /const\s*\{[^}]*\b(?:target|targetUid|targetToken|userId|uid|recipient)\b[^}]*\}\s*=\s*req\.body/, 'Self-test push must not destructure a caller-selected recipient or push token.');
+assert.doesNotMatch(route, /\btargetToken\b/, 'Self-test push must never accept a caller-supplied push token.');
+assert.match(route, /const savedTokens = callerProfile\.fcmTokens \|\| \[\]/, 'Self-test FCM tokens must come from the authenticated caller profile.');
 
 console.log('Self-test push recipient-boundary verification passed.');
