@@ -21,8 +21,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install --save-dev esbuild@0.28.2
-      - run: npm ls esbuild
+      - run: npm install --save-dev tsx@4.23.13 esbuild@0.28.2
+      - run: npm ls tsx esbuild
       - name: Verify esbuild audit finding is closed
         shell: bash
         run: |
@@ -46,5 +46,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add package.json package-lock.json
-          git commit -m 'chore: update esbuild to patched 0.28.2'
+          git commit -m 'chore: update tsx and esbuild to patched releases'
           git push origin HEAD:redesign/mobile-first-v2
