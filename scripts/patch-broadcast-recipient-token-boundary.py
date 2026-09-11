@@ -20,10 +20,9 @@ old_announcement_block = '''      if (Array.isArray(recipientTokens) && recipien
           if (u.preferences?.announcements === false) return; // Opted out of announcement updates
 
           const tokens = u.fcmTokens || [];
-          const validTokens = tokens.filter(isDeliverableFcmToken);
-          if (validTokens.length > 0) {
+          if (Array.isArray(tokens) && tokens.length > 0) {
+            allTokens.push(...tokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
             targetedUsersCount++;
-            allTokens.push(...validTokens);
           }
         });
       }'''
@@ -35,8 +34,8 @@ new_announcement_block = '''      logMessage(`[FCM BROADCAST] Fetching tokens fr
         const tokens = u.fcmTokens || [];
         const validTokens = tokens.filter(isDeliverableFcmToken);
         if (validTokens.length > 0) {
-          targetedUsersCount++;
           allTokens.push(...validTokens);
+          targetedUsersCount++;
         }
       });'''
 if old_announcement_block not in source:
