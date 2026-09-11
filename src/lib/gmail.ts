@@ -12,8 +12,17 @@ const SCOPES = [
 let cachedToken: string | null = null;
 let tokenExpiry: number = 0;
 
+const getRuntimeEnvironment = () => String((import.meta as any).env.VITE_KCFC_RUNTIME_ENV || 'production')
+  .trim()
+  .toLowerCase();
+
 export const getGmailAccessToken = (): Promise<string> => {
   return new Promise((resolve, reject) => {
+    if (getRuntimeEnvironment() === 'staging') {
+      reject(new Error('Gmail OAuth is disabled in staging.'));
+      return;
+    }
+
     if (cachedToken && Date.now() < tokenExpiry) {
       resolve(cachedToken);
       return;
@@ -59,8 +68,7 @@ const base64url = (str: string) => {
 };
 
 export const sendGmail = async (to: string, subject: string, body: string) => {
-  const runtimeEnvironment = ((import.meta as any).env.VITE_KCFC_RUNTIME_ENV || 'production').trim().toLowerCase();
-  if (runtimeEnvironment === 'staging') {
+  if (getRuntimeEnvironment() === 'staging') {
     console.info('KCFC staging email simulation: client-side Gmail and SMTP fallback delivery are suppressed.');
     return {
       success: true,
