@@ -56,11 +56,27 @@ Use synthetic staging identities with no production member data:
 | --- | --- | --- | --- |
 | PWA-IOS-01 | iPhone/iPad Safari | Visit Profile before install | Clear Share → Add to Home Screen instructions; notification enable remains constrained by iOS app-mode requirement |
 | PWA-IOS-02 | Installed iOS Home Screen app | Enable notifications | Permission request occurs after explicit tap; endpoint registers |
-| PWA-IOS-03 | Installed iOS Home Screen app | Send test | Authenticated test endpoint accepts request; notification arrives when platform permits |
+| PWA-IOS-03 | Installed iOS Home Screen app | Send test while app is backgrounded | Authenticated test endpoint accepts request; banner/lock-screen alert arrives when platform settings permit; tap opens intended Portal deep link |
+| PWA-IOS-04 | Installed iOS Home Screen app | Send test with device muted / Focus enabled, then with normal notification settings | Portal delivery remains successful in both cases; sound/banner differences are recorded as OS-controlled behavior rather than treated as transport failure |
+| PWA-IOS-05 | Installed iOS Home Screen app | Force-close Portal, lock device, send test | Push still arrives when iOS permits; opening the alert restores the intended route and Inbox record remains the source of truth |
 | PWA-AND-01 | Android Chrome | Browser install prompt available | Install button opens browser-native prompt |
 | PWA-AND-02 | Android Chrome | Prompt unavailable | Browser-menu manual instructions are shown |
 | PWA-AND-03 | Installed Android app | Enable + test | Registration health becomes ready and test can be dispatched |
+| PWA-AND-04 | Installed Android app | Send test while app is backgrounded/locked | Notification appears using system-default alert behavior; tap opens intended deep link |
+| PWA-AND-05 | Installed Android app | Compare normal notification settings vs muted channel/device | Transport success is separated from OS sound/vibration policy; Inbox record remains available in both cases |
 | PWA-REPAIR-01 | Supported device | Permission granted but no endpoint | Health shows repair-needed state and refresh action restores registration |
+| PWA-REPAIR-02 | Supported device | Remove/expire one synthetic endpoint, keep another valid endpoint | Invalid endpoint is reported/cleaned without preventing delivery to the valid device or removing the Inbox record |
+| PWA-MULTI-01 | Two registered devices for one staging member | Send one targeted test | Both valid endpoints are attempted and evidence can be correlated to the same Inbox record without claiming provider acceptance equals user-visible delivery |
+
+### Notification reliability interpretation
+
+For mobile QA, record **transport**, **OS presentation**, and **Inbox persistence** separately:
+
+1. Transport: did the Portal accept/send the push attempt and did the endpoint remain valid?
+2. OS presentation: did the device show a banner/lock-screen alert and, where allowed, sound/vibration?
+3. Durable source of truth: is the same message still present in KCFC Inbox even when OS presentation is muted, suppressed by Focus, or otherwise platform-controlled?
+
+A missing sound by itself is not sufficient to classify Web Push transport as failed. Conversely, a successful provider/transport response is not sufficient to claim the member saw or heard the notification. Device evidence must record both layers.
 
 ## Connector safety tests
 
@@ -89,9 +105,11 @@ For each execution capture:
 
 - Test ID.
 - Date/build SHA.
-- Device/browser.
+- Device model + OS version + browser/PWA mode.
 - Synthetic account role.
+- Portal notification-health state before the test.
 - Pass/fail.
+- Transport result separately from OS banner/sound/vibration observation.
 - Screenshot or short recording for visual/mobile tests.
 - Firestore document IDs only from staging for data-flow tests.
 - Defect link/notes if failed.
