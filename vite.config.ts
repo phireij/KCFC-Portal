@@ -21,15 +21,11 @@ export default defineConfig(({mode}) => {
           manualChunks(id) {
             if (!id.includes('node_modules')) return undefined;
 
-            // Split the Firebase SDK by functional surface instead of forcing the
-            // full client stack into one >500 KiB minified vendor chunk. Shared
-            // Firebase internals remain in a stable core cache boundary.
-            if (id.includes('/@firebase/auth/')) return 'vendor-firebase-auth';
-            if (id.includes('/@firebase/firestore/')) return 'vendor-firebase-firestore';
-            if (id.includes('/@firebase/messaging/')) return 'vendor-firebase-messaging';
-            if (id.includes('/@firebase/storage/')) return 'vendor-firebase-storage';
+            // Keep Firebase SDKs out of the application shell. These modules are
+            // shared across authentication, Firestore and notification flows and
+            // benefit from a stable browser-cache boundary.
             if (id.includes('/firebase/') || id.includes('/@firebase/')) {
-              return 'vendor-firebase-core';
+              return 'vendor-firebase';
             }
 
             // Recharts pulls in d3 helpers; isolate the visualization stack so
