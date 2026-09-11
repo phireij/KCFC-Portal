@@ -32,7 +32,6 @@ for (const marker of clientRequired) {
 
 const forbidden = [
   'fcmTokens: arrayUnion(token)',
-  'const userRef = doc(db, "users", userId);',
   'const { userId, token } = req.body',
 ];
 for (const marker of forbidden) {
@@ -41,4 +40,8 @@ for (const marker of forbidden) {
   }
 }
 
-console.log('FCM registration boundary: PASS (caller-bound backend registration, validation, dedupe, max-8 retention, no direct client Firestore token write).');
+if (client.includes('arrayUnion(token)')) {
+  throw new Error('FCM registration boundary regression: direct client arrayUnion(token) persistence returned.');
+}
+
+console.log('FCM registration boundary: PASS (caller-bound backend registration, validation, dedupe, max-8 retention, no direct client FCM token write).');
