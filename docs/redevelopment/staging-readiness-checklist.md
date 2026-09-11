@@ -15,7 +15,8 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] TypeScript validation passes.
 - [ ] Production build passes.
 - [ ] Runtime dependency audit snapshot has been reviewed.
-- [ ] Every remaining critical/high runtime dependency finding is either remediated or explicitly dispositioned with exposure analysis and compensating controls.
+- [x] Runtime dependency audit has no critical/high findings after validated compatible, transitive and Nodemailer remediation.
+- [ ] Remaining moderate/low dependency findings have exposure/disposition notes appropriate to severity.
 - [ ] Connector default/safety guards pass.
 - [ ] No secret, token or production credential is committed.
 - [ ] External communication connector flags default to `false`.
