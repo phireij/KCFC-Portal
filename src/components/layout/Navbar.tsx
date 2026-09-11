@@ -22,6 +22,7 @@ import { useAuth } from '../../App';
 import { cn } from '../../lib/utils';
 import { Logo } from '../ui/Logo';
 import NotificationCenter from '../ui/NotificationCenter';
+import StagingEnvironmentBanner from './StagingEnvironmentBanner';
 
 type PrimaryNavItem = {
   label: string;
@@ -151,6 +152,7 @@ export default function Navbar() {
 
   return (
     <>
+      <StagingEnvironmentBanner />
       {/* Desktop sidebar */}
       <aside className="kcfc-desktop-sidebar hidden xl:flex fixed inset-y-0 left-0 z-50 w-[280px] flex-col border-r border-slate-200/80 bg-white dark:border-white/10 dark:bg-[#0d1b2a]">
         <div className="px-6 pt-6 pb-5">
