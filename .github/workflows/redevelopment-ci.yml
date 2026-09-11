@@ -233,6 +233,14 @@ jobs:
           node scripts/verify-build-artifact-manifest.mjs dist/kcfc-build-manifest.json dist
           node scripts/report-build-assets.mjs dist
 
+      - name: Retain build artifact identity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: kcfc-build-manifest-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/kcfc-build-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Guard Core status staging executor default
         shell: bash
         run: |
