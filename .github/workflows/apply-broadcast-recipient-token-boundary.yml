@@ -27,3 +27,5 @@ jobs:
           git add server.ts scripts/verify-broadcast-recipient-token-boundary.ts scripts/patch-broadcast-recipient-token-boundary.py
           git commit -m 'fix: derive broadcast push recipients server-side'
           git push origin HEAD:redesign/mobile-first-v2
+
+# retrigger after matching live announcement block
