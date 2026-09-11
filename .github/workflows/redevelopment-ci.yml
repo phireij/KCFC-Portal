@@ -46,6 +46,7 @@ jobs:
           npx tsx scripts/verify-inquiry-privacy-logging.ts
           npx tsx scripts/verify-staging-verification-email-isolation.ts
           npx tsx scripts/verify-server-diagnostic-privacy.ts
+          npx tsx scripts/verify-broadcast-recipient-token-boundary.ts
 
       - name: Verify communication batches
         run: npx tsx scripts/verify-communication-batches.ts
