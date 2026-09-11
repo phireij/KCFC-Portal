@@ -11,7 +11,7 @@ text = text.replace(
     '- leadership accessibility;',
     '- leadership accessibility and URL-backed Leadership workspace history navigation;'
 )
-old = 'Latest validated code checkpoint: `97f9b8f4baf05f1aae7d1d7d3a1a6e763050fa19`, `KCFC Redevelopment CI` run **#1001** / id `34575327421`, conclusion **SUCCESS**. All **48** validation/build/security steps passed.'
+old = 'Latest validated code checkpoint: `470cad404e112c3a4b0afe3fd76a8257ac049a44`, `KCFC Redevelopment CI` run **#1043** / id `34576876886`, conclusion **SUCCESS**. All **51** validation/build/security steps passed.'
 new = 'Latest validated code checkpoint: `3e37e3e9aed6d4cd9577711e3c7c828e2b845d96`, `KCFC Redevelopment CI` run **#1071** / id `34578065249`, conclusion **SUCCESS**. All **53** validation/build/security steps passed.'
 if old not in text:
     raise SystemExit('production readiness checkpoint marker not found')
@@ -26,10 +26,10 @@ path.write_text(text)
 path = Path('docs/redevelopment/staging-readiness-checklist.md')
 text = path.read_text()
 text = text.replace(
-    '- [x] Notification-linked Updates, Inbox filters/history, and member/leader availability-request deep links are covered by permanent automated navigation/focus guards.',
-    '- [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, and Leadership workspace URL/history navigation are covered by permanent automated guards.\n- [x] Login/Google profile creation preserves real email-verification state; forced-true verification fallbacks are prohibited by CI.'
+    '- [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, and Updates scope history are covered by permanent automated guards.',
+    '- [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, Updates scope history, and Leadership workspace URL/history navigation are covered by permanent automated guards.\n- [x] Login/Google profile creation preserves real email-verification state; forced-true verification fallbacks are prohibited by CI.'
 )
-old = 'Latest exact-head automated evidence before this checklist update: code head `97f9b8f4baf05f1aae7d1d7d3a1a6e763050fa19`, `KCFC Redevelopment CI` run **#1001** / id `34575327421`, conclusion **SUCCESS**, with all **48** validation/build/security steps green. This includes staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus, Inbox deep-link/history/filter navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.'
+old = 'Latest exact-head automated evidence before this checklist update: code head `470cad404e112c3a4b0afe3fd76a8257ac049a44`, `KCFC Redevelopment CI` run **#1043** / id `34576876886`, conclusion **SUCCESS**, with all **51** validation/build/security steps green. This includes staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus + Published/All scope history, Inbox deep-link/history/filter navigation, Resources category history, Community member-type/ministry history, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.'
 new = 'Latest exact-head automated evidence before this checklist update: code head `3e37e3e9aed6d4cd9577711e3c7c828e2b845d96`, `KCFC Redevelopment CI` run **#1071** / id `34578065249`, conclusion **SUCCESS**, with all **53** validation/build/security steps green. This includes Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.'
 if old not in text:
     raise SystemExit('staging checklist checkpoint marker not found')
