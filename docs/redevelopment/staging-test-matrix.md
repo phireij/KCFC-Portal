@@ -110,7 +110,7 @@ A missing sound by itself is not sufficient to classify Web Push transport as fa
 ## Accessibility / resilience tests
 
 | ID | Scenario | Expected result |
-| --- | --- |
+| --- | --- | --- |
 | A11Y-01 | Keyboard-only desktop navigation | Visible focus; all primary actions reachable |
 | A11Y-02 | 200% browser zoom / large reading size | Primary navigation and critical actions remain usable |
 | A11Y-03 | Phone safe-area / small viewport | No critical button is hidden behind bottom navigation |
