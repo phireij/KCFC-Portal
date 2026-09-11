@@ -51,15 +51,16 @@ jobs:
               source = source.replace(eager, '', 1)
 
           legacy_decl = "const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));\n"
-          lazy_decls = """const BroadcastTool = React.lazy(() => import('../components/admin/BroadcastTool'));
-const CoreStatusPlanner = React.lazy(() => import('../components/admin/CoreStatusPlanner'));
-const LeadershipInquiries = React.lazy(() => import('../components/admin/LeadershipInquiries'));
-const MemberAccountOverview = React.lazy(() => import('../components/admin/MemberAccountOverview'));
-const MemberApprovalQueue = React.lazy(() => import('../components/admin/MemberApprovalQueue'));
-const MemberPreRegistration = React.lazy(() => import('../components/admin/MemberPreRegistration'));
-const MemberRoleEditor = React.lazy(() => import('../components/admin/MemberRoleEditor'));
-const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));
-"""
+          lazy_decls = "\n".join([
+              "const BroadcastTool = React.lazy(() => import('../components/admin/BroadcastTool'));",
+              "const CoreStatusPlanner = React.lazy(() => import('../components/admin/CoreStatusPlanner'));",
+              "const LeadershipInquiries = React.lazy(() => import('../components/admin/LeadershipInquiries'));",
+              "const MemberAccountOverview = React.lazy(() => import('../components/admin/MemberAccountOverview'));",
+              "const MemberApprovalQueue = React.lazy(() => import('../components/admin/MemberApprovalQueue'));",
+              "const MemberPreRegistration = React.lazy(() => import('../components/admin/MemberPreRegistration'));",
+              "const MemberRoleEditor = React.lazy(() => import('../components/admin/MemberRoleEditor'));",
+              "const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));",
+          ]) + "\n"
           if legacy_decl not in source:
               raise SystemExit('LegacyAdmin lazy declaration marker missing')
           source = source.replace(legacy_decl, lazy_decls, 1)
@@ -77,11 +78,12 @@ const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));
               source = source.replace(old, new, 1)
 
           principle_marker = "function Principle({ title, body }: { title: string; body: string }) {"
-          loading_component = """function WorkspaceLoading({ label }: { label: string }) {
-  return <div className=\"kcfc-surface px-4 py-8 text-center text-[12px] font-semibold text-slate-500 dark:text-slate-400\" role=\"status\">{label}</div>;
-}
-
-"""
+          loading_component = "\n".join([
+              "function WorkspaceLoading({ label }: { label: string }) {",
+              "  return <div className=\"kcfc-surface px-4 py-8 text-center text-[12px] font-semibold text-slate-500 dark:text-slate-400\" role=\"status\">{label}</div>;",
+              "}",
+              "",
+          ])
           if principle_marker not in source:
               raise SystemExit('Principle helper marker missing')
           source = source.replace(principle_marker, loading_component + principle_marker, 1)
@@ -90,40 +92,46 @@ const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));
           verify_path = Path('scripts/verify-admin-workspace-history.ts')
           verify = verify_path.read_text()
           required_marker = '  "const LegacyAdmin = React.lazy(() => import(\'./LegacyAdmin\'));",\n  "<React.Suspense fallback=",'
-          expanded = '''  "const BroadcastTool = React.lazy(() => import('../components/admin/BroadcastTool'));",
-  "const CoreStatusPlanner = React.lazy(() => import('../components/admin/CoreStatusPlanner'));",
-  "const LeadershipInquiries = React.lazy(() => import('../components/admin/LeadershipInquiries'));",
-  "const MemberAccountOverview = React.lazy(() => import('../components/admin/MemberAccountOverview'));",
-  "const MemberApprovalQueue = React.lazy(() => import('../components/admin/MemberApprovalQueue'));",
-  "const MemberPreRegistration = React.lazy(() => import('../components/admin/MemberPreRegistration'));",
-  "const MemberRoleEditor = React.lazy(() => import('../components/admin/MemberRoleEditor'));",
-  "const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));",
-  "<React.Suspense fallback=",'''
+          expanded = "\n".join([
+              '  "const BroadcastTool = React.lazy(() => import(\'../components/admin/BroadcastTool\'));",',
+              '  "const CoreStatusPlanner = React.lazy(() => import(\'../components/admin/CoreStatusPlanner\'));",',
+              '  "const LeadershipInquiries = React.lazy(() => import(\'../components/admin/LeadershipInquiries\'));",',
+              '  "const MemberAccountOverview = React.lazy(() => import(\'../components/admin/MemberAccountOverview\'));",',
+              '  "const MemberApprovalQueue = React.lazy(() => import(\'../components/admin/MemberApprovalQueue\'));",',
+              '  "const MemberPreRegistration = React.lazy(() => import(\'../components/admin/MemberPreRegistration\'));",',
+              '  "const MemberRoleEditor = React.lazy(() => import(\'../components/admin/MemberRoleEditor\'));",',
+              '  "const LegacyAdmin = React.lazy(() => import(\'./LegacyAdmin\'));",',
+              '  "<React.Suspense fallback=",',
+          ])
           if required_marker not in verify:
               raise SystemExit('Verifier lazy marker block missing')
           verify = verify.replace(required_marker, expanded, 1)
 
-          old_guard = '''if (source.includes("import LegacyAdmin from './LegacyAdmin';")) {
-  throw new Error('Advanced LegacyAdmin must remain behind the leadership lazy-load boundary');
-}
-'''
-          new_guard = '''const eagerWorkspaceImports = [
-  "import BroadcastTool from '../components/admin/BroadcastTool';",
-  "import CoreStatusPlanner from '../components/admin/CoreStatusPlanner';",
-  "import LeadershipInquiries from '../components/admin/LeadershipInquiries';",
-  "import MemberAccountOverview from '../components/admin/MemberAccountOverview';",
-  "import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';",
-  "import MemberPreRegistration from '../components/admin/MemberPreRegistration';",
-  "import MemberRoleEditor from '../components/admin/MemberRoleEditor';",
-  "import LegacyAdmin from './LegacyAdmin';",
-];
-
-for (const eagerImport of eagerWorkspaceImports) {
-  if (source.includes(eagerImport)) {
-    throw new Error(`Non-default Leadership workspace must remain lazy-loaded: ${eagerImport}`);
-  }
-}
-'''
+          old_guard = "\n".join([
+              'if (source.includes("import LegacyAdmin from \'./LegacyAdmin\';")) {',
+              "  throw new Error('Advanced LegacyAdmin must remain behind the leadership lazy-load boundary');",
+              '}',
+              '',
+          ])
+          new_guard = "\n".join([
+              'const eagerWorkspaceImports = [',
+              '  "import BroadcastTool from \'../components/admin/BroadcastTool\';",',
+              '  "import CoreStatusPlanner from \'../components/admin/CoreStatusPlanner\';",',
+              '  "import LeadershipInquiries from \'../components/admin/LeadershipInquiries\';",',
+              '  "import MemberAccountOverview from \'../components/admin/MemberAccountOverview\';",',
+              '  "import MemberApprovalQueue from \'../components/admin/MemberApprovalQueue\';",',
+              '  "import MemberPreRegistration from \'../components/admin/MemberPreRegistration\';",',
+              '  "import MemberRoleEditor from \'../components/admin/MemberRoleEditor\';",',
+              '  "import LegacyAdmin from \'./LegacyAdmin\';",',
+              '];',
+              '',
+              'for (const eagerImport of eagerWorkspaceImports) {',
+              '  if (source.includes(eagerImport)) {',
+              '    throw new Error(`Non-default Leadership workspace must remain lazy-loaded: ${eagerImport}`);',
+              '  }',
+              '}',
+              '',
+          ])
           if old_guard not in verify:
               raise SystemExit('Existing eager LegacyAdmin guard missing')
           verify = verify.replace(old_guard, new_guard, 1)
