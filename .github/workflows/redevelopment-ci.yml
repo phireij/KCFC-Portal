@@ -93,6 +93,9 @@ jobs:
       - name: Verify Web Push service worker boundary
         run: npx tsx scripts/verify-webpush-service-worker-boundary.ts
 
+      - name: Verify PWA theme contract
+        run: npx tsx scripts/verify-pwa-theme-contract.ts
+
       - name: Exercise staging preflight with synthetic isolated environment
         env:
           VITE_KCFC_RUNTIME_ENV: staging
