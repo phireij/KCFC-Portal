@@ -162,6 +162,9 @@ jobs:
       - name: Verify leadership accessibility contracts
         run: npx tsx scripts/verify-leadership-accessibility.ts
 
+      - name: Verify Leadership workspace history navigation
+        run: npx tsx scripts/verify-admin-workspace-history.ts
+
       - name: Verify mobile navigation contract
         run: npx tsx scripts/verify-mobile-navigation-contract.ts
 
