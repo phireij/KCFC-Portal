@@ -13,7 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useAuth } from '../App';
-import { registerDeviceToken, isStandaloneMode } from '../lib/fcmClient';
+import { registerDeviceToken, isIOSDevice, isStandaloneMode } from '../lib/fcmClient';
 import { communicationConnectorFlags, type CommunicationConnector } from '../lib/communicationConnectorFlags';
 import { cn } from '../lib/utils';
 import { currentDeviceHealthLabel, evaluateCurrentWebPushEndpoint, type CurrentDeviceEndpointHealth } from '../lib/currentDeviceNotificationHealth';
@@ -45,7 +45,7 @@ export default function NotificationHealth() {
 
   const permission = typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   const standalone = typeof window !== 'undefined' ? isStandaloneMode() : false;
-  const ios = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const ios = typeof navigator !== 'undefined' && isIOSDevice();
   const tokenCount = profile?.fcmTokens?.filter(Boolean).length || 0;
   const subscriptionCount = profile?.webPushSubscriptions?.length || 0;
   const endpointCount = tokenCount + subscriptionCount;
