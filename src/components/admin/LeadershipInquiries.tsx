@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, ArrowLeft, CheckCircle2, Inbox, Mail, Search } from 'lucide-react';
+import { Archive, ArrowLeft, CheckCircle2, Inbox, Loader2, Mail, Reply, Search, Send, X } from 'lucide-react';
 import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { sendGmail } from '../../lib/gmail';
 import type { ContactMessage } from '../../types';
 import { cn } from '../../lib/utils';
 
@@ -20,6 +21,15 @@ function messageDate(message: ContactMessage) {
   }
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 export default function LeadershipInquiries() {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [filter, setFilter] = useState<Filter>('unread');
@@ -28,6 +38,11 @@ export default function LeadershipInquiries() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [replying, setReplying] = useState(false);
+  const [replySubject, setReplySubject] = useState('');
+  const [replyBody, setReplyBody] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -75,6 +90,18 @@ export default function LeadershipInquiries() {
 
   const selected = messages.find((message) => message.id === selectedId) || null;
 
+  useEffect(() => {
+    setReplying(false);
+    setReplyError(null);
+    if (!selected) {
+      setReplySubject('');
+      setReplyBody('');
+      return;
+    }
+    setReplySubject(`Re: ${selected.subject || 'KCFC Portal Inquiry'}`);
+    setReplyBody(`Dear ${selected.name || 'Sir/Madam'},\n\nThank you for reaching out to KCFC.\n\n\n\nSincerely,\nKCFC Administration`);
+  }, [selectedId]);
+
   const setStatus = async (message: ContactMessage, status: string) => {
     setBusy(true);
     setFeedback(null);
@@ -89,6 +116,37 @@ export default function LeadershipInquiries() {
     }
   };
 
+  const sendReply = async () => {
+    if (!selected?.email) return;
+    const subject = replySubject.trim();
+    const body = replyBody.trim();
+    if (!subject || !body) {
+      setReplyError('Add both a subject and message before sending.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Send this individual email reply to ${selected.email}?`);
+    if (!confirmed) return;
+
+    setSendingReply(true);
+    setReplyError(null);
+    setFeedback(null);
+    try {
+      const htmlBody = escapeHtml(body).replace(/\n/g, '<br />');
+      await sendGmail(selected.email, subject, htmlBody);
+      if (selected.status === 'unread') {
+        await updateDoc(doc(db, 'messages', selected.id), { status: 'read' });
+      }
+      setReplying(false);
+      setFeedback(`Reply sent to ${selected.email}. The inquiry remains preserved in the Portal.`);
+    } catch (error) {
+      console.error('Inquiry reply failed', error);
+      setReplyError(error instanceof Error ? error.message : 'The reply could not be sent. The inquiry remains unchanged.');
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
   return (
     <section className="kcfc-surface overflow-hidden" aria-labelledby="leadership-inquiries-title">
       <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
@@ -99,7 +157,7 @@ export default function LeadershipInquiries() {
           <div>
             <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#2563EB]">Inbound communication</span>
             <h2 id="leadership-inquiries-title" className="mt-1 text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Website inquiries</h2>
-            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">Review, mark and archive incoming messages without mixing them with member deletion, security or broadcast controls. Email replies remain intentionally outside this focused queue for now.</p>
+            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">Review, reply, mark and archive incoming messages without mixing them with member deletion, security or broadcast controls. Replies are individual, explicit-send actions; nothing is sent automatically.</p>
           </div>
         </div>
       </div>
@@ -202,19 +260,56 @@ export default function LeadershipInquiries() {
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-[13px] leading-6 text-slate-700 whitespace-pre-wrap dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">{selected.message}</div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {selected.status === 'unread' ? (
-                  <button type="button" disabled={busy} onClick={() => setStatus(selected, 'read')} className="min-h-11 rounded-xl bg-[#123B66] px-4 text-[11px] font-extrabold text-white hover:bg-[#0f3156] disabled:opacity-60">Mark read</button>
-                ) : selected.status !== 'archived' ? (
-                  <button type="button" disabled={busy} onClick={() => setStatus(selected, 'unread')} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-extrabold text-slate-700 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">Mark unread</button>
-                ) : null}
+              {!replying ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {selected.email && (
+                    <button type="button" onClick={() => { setReplying(true); setReplyError(null); }} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#2563EB] px-4 text-[11px] font-extrabold text-white hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                      <Reply className="h-4 w-4" /> Reply by email
+                    </button>
+                  )}
+                  {selected.status === 'unread' ? (
+                    <button type="button" disabled={busy} onClick={() => setStatus(selected, 'read')} className="min-h-11 rounded-xl bg-[#123B66] px-4 text-[11px] font-extrabold text-white hover:bg-[#0f3156] disabled:opacity-60">Mark read</button>
+                  ) : selected.status !== 'archived' ? (
+                    <button type="button" disabled={busy} onClick={() => setStatus(selected, 'unread')} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-extrabold text-slate-700 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">Mark unread</button>
+                  ) : null}
 
-                {selected.status === 'archived' ? (
-                  <button type="button" disabled={busy} onClick={() => setStatus(selected, 'read')} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-extrabold text-slate-700 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">Restore to active</button>
-                ) : (
-                  <button type="button" disabled={busy} onClick={() => setStatus(selected, 'archived')} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-extrabold text-slate-700 hover:border-amber-300 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200"><Archive className="h-4 w-4" /> Archive</button>
-                )}
-              </div>
+                  {selected.status === 'archived' ? (
+                    <button type="button" disabled={busy} onClick={() => setStatus(selected, 'read')} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-extrabold text-slate-700 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">Restore to active</button>
+                  ) : (
+                    <button type="button" disabled={busy} onClick={() => setStatus(selected, 'archived')} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-extrabold text-slate-700 hover:border-amber-300 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200"><Archive className="h-4 w-4" /> Archive</button>
+                  )}
+                </div>
+              ) : (
+                <section className="mt-4 rounded-2xl border border-blue-200 bg-[#F7FAFF] p-4 dark:border-blue-400/20 dark:bg-blue-500/[0.06]" aria-label="Reply to inquiry">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[12px] font-extrabold text-[#172033] dark:text-white">Individual email reply</p>
+                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">Recipient is locked to {selected.email}. Nothing is sent until you press Send reply and confirm.</p>
+                    </div>
+                    <button type="button" onClick={() => { setReplying(false); setReplyError(null); }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300" aria-label="Close reply composer">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <label className="mt-4 block">
+                    <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">Subject</span>
+                    <input type="text" value={replySubject} onChange={(event) => setReplySubject(event.target.value)} disabled={sendingReply} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-[12px] text-[#172033] outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/[0.04] dark:text-white" />
+                  </label>
+                  <label className="mt-3 block">
+                    <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">Message</span>
+                    <textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} disabled={sendingReply} rows={8} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[12px] leading-5 text-[#172033] outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/[0.04] dark:text-white" />
+                  </label>
+
+                  {replyError && <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[11px] leading-5 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">{replyError}</div>}
+
+                  <div className="mt-4 flex justify-end">
+                    <button type="button" onClick={sendReply} disabled={sendingReply} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#123B66] px-5 text-[11px] font-extrabold text-white hover:bg-[#0f3156] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-60">
+                      {sendingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      {sendingReply ? 'Sending…' : 'Send reply'}
+                    </button>
+                  </div>
+                </section>
+              )}
             </article>
           ) : (
             <div className="text-center">
