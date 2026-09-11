@@ -16,6 +16,7 @@ import LeadershipInquiries from '../components/admin/LeadershipInquiries';
 import LeadershipOverview from '../components/admin/LeadershipOverview';
 import MemberAccountOverview from '../components/admin/MemberAccountOverview';
 import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
+import MemberPreRegistration from '../components/admin/MemberPreRegistration';
 import MemberRoleEditor from '../components/admin/MemberRoleEditor';
 import LegacyAdmin from './LegacyAdmin';
 import { cn } from '../lib/utils';
@@ -125,6 +126,7 @@ export default function Admin() {
         {activeView === 'members' && (
           <div className="space-y-4">
             <MemberAccountOverview />
+            <MemberPreRegistration />
             <MemberApprovalQueue />
             <MemberRoleEditor />
             <CoreStatusPlanner />
