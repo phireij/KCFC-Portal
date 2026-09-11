@@ -107,6 +107,9 @@ jobs:
             exit 1
           fi
 
+      - name: Record production bundle asset sizes
+        run: node scripts/report-build-assets.mjs dist
+
       - name: Guard Core status staging executor default
         shell: bash
         run: |
