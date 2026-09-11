@@ -51,6 +51,20 @@ The post-remediation runtime audit still reports these critical/high package ent
 
 `nodemailer` remains the only directly declared critical/high package in this post-remediation list, and npm reports its available remediation as a major-version transition. The other entries should be traced to their owning direct dependency families before considering overrides or broad lockfile changes.
 
+## Ownership trace for the remaining chains
+
+A one-time dependency ownership trace was run against the post-remediation lockfile and then removed from the branch. The important parent relationships are:
+
+- `firebase@12.12.1` → `@firebase/database@1.1.2` → `faye-websocket@0.11.4` → `websocket-driver@0.7.4`. This is the current **critical** chain.
+- `firebase@12.12.1` → `@firebase/firestore@4.14.0` → `@grpc/grpc-js@1.9.15`. This is the vulnerable gRPC instance; the `firebase-admin` side currently resolves a newer `@grpc/grpc-js@1.14.4`.
+- `firebase-admin@13.10.0` → `@google-cloud/storage@7.19.0` → `retry-request` / `@types/request` → `form-data@2.5.5`.
+- `@google/genai@1.50.1` currently owns `ws@8.20.0` and also resolves `protobufjs@7.5.5`.
+- `@vitejs/plugin-react@5.2.0` → `@babel/core@7.29.0` → Browserslist tooling; `autoprefixer@10.5.0` also resolves `browserslist@4.28.2`.
+- `autoprefixer@10.5.0` and `vite@6.4.3` resolve `postcss@8.5.10`; that PostCSS tree currently includes `nanoid@3.3.11`.
+- `nodemailer@8.0.9` is direct and remains isolated for a separately reviewed major-version transition.
+
+These results make the next security work more targeted: the critical `websocket-driver` and vulnerable `@grpc/grpc-js` instances belong to the Firebase **client** package family, while the `form-data` path belongs to Firebase Admin / Google Cloud Storage. `ws` belongs to Google GenAI. Browserslist/PostCSS/Nanoid are currently build-tool chains rather than application-owned direct packages.
+
 The same runtime report also shows moderate/other findings including `@babel/core`, `@protobufjs/utf8`, `baseline-browser-mapping`, `body-parser`, `esbuild`, `qs`, and `uuid`. Several are transitive and some remediation paths imply a major `firebase-admin` update, so they remain staged behind critical/high analysis rather than being changed blindly.
 
 ## Policy
@@ -70,10 +84,11 @@ This is distinct from the existing hard-fail safety checks for connector default
 
 ## Next remediation sequence
 
-- trace the critical `websocket-driver` package to its owning direct dependency and determine whether a compatible parent update removes it;
-- trace `@grpc/grpc-js`, `form-data`, `protobufjs`, and `ws` through Firebase / Google Cloud dependency families before considering a `firebase-admin` major update;
-- trace `nanoid`, `postcss`, and `browserslist` to build/runtime ownership and prefer supported parent-package updates over lockfile overrides;
+- investigate supported Firebase client patch/minor releases first because the current critical `websocket-driver` and one high `@grpc/grpc-js` chain are both under `firebase@12.12.1`;
+- investigate a compatible `@google/genai` update for the remaining `ws` chain before considering any override;
+- trace whether supported build-tool parent updates can advance Browserslist/PostCSS/Nanoid safely;
 - review `nodemailer` 10 compatibility separately, including transporter API and TypeScript compatibility, before any major-version change;
+- review Firebase Admin / Google Cloud Storage compatibility before touching the `form-data` path or any `firebase-admin` major version;
 - assess whether each remaining affected module is reachable in browser, server, build-only, or optional code paths;
 - measure the runtime audit after every remediation family rather than assuming transitive fixes;
 - only consider overrides or major-version migrations when a supported compatible remediation path is unavailable.
