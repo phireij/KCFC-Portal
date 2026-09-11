@@ -1980,7 +1980,8 @@ async function startServer() {
       let emailSent = false;
       let logMsgText = "";
 
-      if (smtpHost && smtpUser && smtpPass) {
+      const allowVerificationEmailDelivery = runtimeEnvironment !== "staging";
+      if (allowVerificationEmailDelivery && smtpHost && smtpUser && smtpPass) {
         const transporter = nodemailer.createTransport({
           host: smtpHost,
           port: smtpPort,
