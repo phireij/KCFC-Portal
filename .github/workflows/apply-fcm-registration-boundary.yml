@@ -24,22 +24,7 @@ jobs:
       - run: npm ci
       - run: python3 scripts/patch-fcm-registration-boundary.py
       - run: npx tsx scripts/verify-fcm-registration-boundary.ts
-      - name: Capture lint diagnostics
-        id: lint
-        shell: bash
-        run: |
-          set +e
-          npm run lint > /tmp/fcm-registration-lint.txt 2>&1
-          status=$?
-          cat /tmp/fcm-registration-lint.txt
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          exit 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fcm-registration-lint-${{ github.sha }}
-          path: /tmp/fcm-registration-lint.txt
-          retention-days: 1
-      - run: test "${{ steps.lint.outputs.status }}" = "0"
+      - run: npm run lint
       - run: git diff --check
       - run: |
           rm scripts/patch-fcm-registration-boundary.py
@@ -48,3 +33,4 @@ jobs:
           git add server.ts src/lib/fcmClient.ts scripts/verify-fcm-registration-boundary.ts scripts/patch-fcm-registration-boundary.py
           git commit -m 'fix: bound caller-owned FCM device registration'
           git push origin HEAD:redesign/mobile-first-v2
+# rerun: retain shared arrayUnion import
