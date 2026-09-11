@@ -1,0 +1,49 @@
+name: One-shot notification iOS detection fix
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/fix-notification-health-ios-detection.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply exact replacements
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/components/NotificationHealth.tsx')
+          s = p.read_text()
+          old_import = "import { registerDeviceToken, isStandaloneMode } from '../lib/fcmClient';"
+          new_import = "import { registerDeviceToken, isIOSDevice, isStandaloneMode } from '../lib/fcmClient';"
+          old_ios = "const ios = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);"
+          new_ios = "const ios = typeof navigator !== 'undefined' && isIOSDevice();"
+          for old in (old_import, old_ios):
+              if s.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one occurrence: {old!r}; found {s.count(old)}')
+          s = s.replace(old_import, new_import).replace(old_ios, new_ios)
+          p.write_text(s)
+          PY
+          git diff --check
+          git diff -- src/components/NotificationHealth.tsx
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/NotificationHealth.tsx
+          git commit -m 'fix: share iOS detection in notification health'
+          git push origin HEAD:redesign/mobile-first-v2
