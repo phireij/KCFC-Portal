@@ -2340,7 +2340,6 @@ async function startServer() {
 
       // 2. Write the message to Firestore (try direct admin SDK write first, fallback to REST API)
       let firestoreWritten = false;
-      let errorDetails = "";
       try {
         logMessage(`[INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...`);
         await dbAdmin.collection("messages").add({
@@ -2355,8 +2354,7 @@ async function startServer() {
         firestoreWritten = true;
         logMessage("[SUCCESS] Message written to Firestore via dbAdmin.");
       } catch (dbErr: any) {
-        logMessage(`[WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: ${dbErr.message}`);
-        errorDetails += `[dbAdmin Error: ${dbErr.message}]`;
+        logMessage(`[WARN] dbAdmin direct write failed; attempting Firestore REST fallback.`);
         
         try {
           const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || "(default)"}/documents/messages?key=${firebaseConfig.apiKey}`;
@@ -2383,19 +2381,16 @@ async function startServer() {
             firestoreWritten = true;
             logMessage("[SUCCESS] Message written to Firestore via REST API fallback.");
           } else {
-            const errText = await fsResponse.text();
-            logMessage(`[ERROR] REST API fallback failed: ${errText}`);
-            errorDetails += ` [REST Error: ${errText}]`;
+            logMessage(`[ERROR] Firestore REST fallback failed with status ${fsResponse.status}.`);
           }
         } catch (fsErr: any) {
-          logMessage(`[ERROR] REST API fetch failed: ${fsErr.message}`);
-          errorDetails += ` [REST Fetch Error: ${fsErr.message}]`;
+          logMessage(`[ERROR] Firestore REST fallback request failed.`);
         }
       }
 
       res.json({ success: true, emailSent, firestoreWritten });
     } catch (err: any) {
-      logMessage(`[ERROR] Public contact endpoint execution failed: ${err.message}`);
+      logMessage(`[ERROR] Public contact endpoint execution failed.`);
       res.status(500).json({ error: "Failed to process contact inquiry" });
     }
   });
