@@ -8,6 +8,9 @@ const forbidden = [
   'logMessage(`[PROCESS] Caller UID verified:',
   'Body preview: "${body.substring(0, 100)}..."',
   'Title: "${title}"',
+  'res.status(500).json({ error: err.message || "Failed to register web push subscription" });',
+  'res.status(500).json({ error: error.message || "Failed to dispatch push notification" });',
+  'res.status(500).json({ error: error.message || "Failed to dispatch custom push notification" });',
 ];
 
 for (const marker of forbidden) {
@@ -43,6 +46,9 @@ const required = [
   'emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.`;',
   '[FCM SIMULATION] No registered real browser push tokens found. Announcement broadcast simulation completed without message-content logging.',
   '[FCM SIMULATION] No registered real browser push tokens found for targeted users. Custom broadcast simulation completed without message-content logging.',
+  'res.status(500).json({ error: "Failed to register web push subscription" });',
+  'res.status(500).json({ error: "Failed to dispatch push notification" });',
+  'res.status(500).json({ error: "Failed to dispatch custom push notification" });',
 ];
 
 for (const marker of required) {
@@ -61,4 +67,4 @@ if (smtpSafeCount < 1) {
   throw new Error('Expected at least one privacy-safe SMTP result log statement.');
 }
 
-console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers and broadcast message previews absent from diagnostic interpolation.`);
+console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers, broadcast message previews, and notification backend exception details are absent from public diagnostic/error surfaces.`);
