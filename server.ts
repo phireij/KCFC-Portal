@@ -212,6 +212,9 @@ async function initializeWebPush() {
     }
   } catch (err: any) {
     console.error("[WEBPUSH] Failed to initialize web-push credentials:", err);
+    if (runtimeEnvironment === "staging") {
+      throw err;
+    }
     const keys = webpush.generateVAPIDKeys();
     vapidPublicKey = keys.publicKey;
     vapidPrivateKey = keys.privateKey;

@@ -7,6 +7,7 @@ const required = [
   'const envPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY || "";',
   'if (runtimeEnvironment === "staging" && (!envPublicKey || !envPrivateKey)) {',
   'KCFC staging safety guard: staging Web Push requires explicit WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY.',
+  'if (runtimeEnvironment === "staging") {\n      throw err;\n    }',
 ];
 
 for (const marker of required) {
@@ -16,13 +17,18 @@ for (const marker of required) {
 const stagingGuard = source.indexOf('if (runtimeEnvironment === "staging" && (!envPublicKey || !envPrivateKey))');
 const cacheFallback = source.indexOf('if (existsSync(localKeysPath))');
 const firestoreFallback = source.indexOf('const configRef = dbAdmin.collection("configurations").doc("webpush_vapid_keys")');
-const generationFallback = source.indexOf('const keys = webpush.generateVAPIDKeys();');
+const outerCatch = source.indexOf('} catch (err: any) {\n    console.error("[WEBPUSH] Failed to initialize web-push credentials:", err);');
+const stagingRethrow = source.indexOf('if (runtimeEnvironment === "staging") {\n      throw err;\n    }', outerCatch);
+const generationFallback = source.indexOf('const keys = webpush.generateVAPIDKeys();', outerCatch);
 
-if (stagingGuard < 0 || cacheFallback < 0 || firestoreFallback < 0 || generationFallback < 0) {
+if ([stagingGuard, cacheFallback, firestoreFallback, outerCatch, stagingRethrow, generationFallback].some((v) => v < 0)) {
   throw new Error('Unable to locate staging Web Push guard/fallback ordering');
 }
-if (!(stagingGuard < cacheFallback && stagingGuard < firestoreFallback && stagingGuard < generationFallback)) {
-  throw new Error('Staging Web Push guard must fail before cached, Firestore, or generated-key fallbacks');
+if (!(stagingGuard < cacheFallback && stagingGuard < firestoreFallback)) {
+  throw new Error('Staging Web Push key-presence guard must precede cached and Firestore fallbacks');
+}
+if (!(outerCatch < stagingRethrow && stagingRethrow < generationFallback)) {
+  throw new Error('Staging Web Push initialization errors must be re-thrown before in-memory key generation fallback');
 }
 
 console.log('Staging Web Push runtime boundary: PASS');
