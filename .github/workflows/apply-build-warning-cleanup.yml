@@ -32,7 +32,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           app = Path('src/App.tsx')
           text = app.read_text()
           old_import = "import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites } from './lib/fcmClient';"
@@ -40,86 +39,24 @@ jobs:
           if old_import not in text:
               raise SystemExit('Expected fcmClient import not found')
           text = text.replace(old_import, new_import, 1)
-
-          old_block = """    import('./lib/fcmClient').then(async ({ observeForegroundMessages }) => {
-      // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
-      await preloadVapidKeyFromServer();
-
-      // 2. Attempt token registration. If permission is already granted, update silently.
-      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
-      if (hasNotification && Notification.permission === 'granted') {
-        try {
-          await registerDeviceToken(user.uid, false);
-        } catch (e) {
-          console.warn(\"Auto-registering device token failed silently on load:\", e);
-          if (isStandaloneMode()) {
-            setShowPwaNotificationPrompt(true);
-          }
-        }
-      }
-
-      // 3. Setup active window listener for push alerts
-      const unsubscribeMessages = await observeForegroundMessages((payload) => {
-        const title = payload.notification?.title || 'Notification';
-        const body = payload.notification?.body || '';
-        setFcmNotification({ title, body });
-      });
-
-      if (unsubscribeMessages) {
-        activeCleanup = unsubscribeMessages;
-      }
-    }).catch(err => {
-      console.warn(\"FCM: Client initialization deferred or unsupported in this sandboxed frame:\", err);
-    });
-"""
-          new_block = """    const initializeForegroundMessaging = async () => {
-      // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
-      await preloadVapidKeyFromServer();
-
-      // 2. Attempt token registration. If permission is already granted, update silently.
-      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
-      if (hasNotification && Notification.permission === 'granted') {
-        try {
-          await registerDeviceToken(user.uid, false);
-        } catch (e) {
-          console.warn(\"Auto-registering device token failed silently on load:\", e);
-          if (isStandaloneMode()) {
-            setShowPwaNotificationPrompt(true);
-          }
-        }
-      }
-
-      // 3. Setup active window listener for push alerts
-      const unsubscribeMessages = await observeForegroundMessages((payload) => {
-        const title = payload.notification?.title || 'Notification';
-        const body = payload.notification?.body || '';
-        setFcmNotification({ title, body });
-      });
-
-      if (unsubscribeMessages) {
-        activeCleanup = unsubscribeMessages;
-      }
-    };
-
-    initializeForegroundMessaging().catch(err => {
-      console.warn(\"FCM: Client initialization deferred or unsupported in this sandboxed frame:\", err);
-    });
-"""
-          if old_block not in text:
-              raise SystemExit('Expected dynamic FCM initialization block not found')
-          app.write_text(text.replace(old_block, new_block, 1))
-
+          old_open = "    import('./lib/fcmClient').then(async ({ observeForegroundMessages }) => {"
+          new_open = "    const initializeForegroundMessaging = async () => {"
+          if old_open not in text:
+              raise SystemExit('Expected dynamic fcmClient initialization not found')
+          text = text.replace(old_open, new_open, 1)
+          old_close = "    }).catch(err => {\n      console.warn(\"FCM: Client initialization deferred or unsupported in this sandboxed frame:\", err);\n    });"
+          new_close = "    };\n\n    initializeForegroundMessaging().catch(err => {\n      console.warn(\"FCM: Client initialization deferred or unsupported in this sandboxed frame:\", err);\n    });"
+          if old_close not in text:
+              raise SystemExit('Expected dynamic fcmClient completion not found')
+          app.write_text(text.replace(old_close, new_close, 1))
           server = Path('server.ts')
           text = server.read_text()
-          text = text.replace('import { fileURLToPath } from "url";\n', '', 1)
-          old_dir = """const hasImportMeta = typeof import.meta !== \"undefined\" && \"url\" in import.meta;
-const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== \"undefined\" ? __filename : \"\");
-const currentDirname = hasImportMeta ? path.dirname(currentFilename) : (typeof __dirname !== \"undefined\" ? __dirname : \"\");
-"""
-          new_dir = """// The server bundle is emitted as CommonJS, where __dirname is available. During
-// tsx development execution it may not be, so fall back to the process working directory.
-const currentDirname = typeof __dirname !== \"undefined\" ? __dirname : process.cwd();
-"""
+          file_url_import = 'import { fileURLToPath } from "url";\n'
+          if file_url_import not in text:
+              raise SystemExit('Expected fileURLToPath import not found')
+          text = text.replace(file_url_import, '', 1)
+          old_dir = 'const hasImportMeta = typeof import.meta !== "undefined" && "url" in import.meta;\nconst currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== "undefined" ? __filename : "");\nconst currentDirname = hasImportMeta ? path.dirname(currentFilename) : (typeof __dirname !== "undefined" ? __dirname : "");\n'
+          new_dir = '// The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().\nconst currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();\n'
           if old_dir not in text:
               raise SystemExit('Expected import.meta compatibility block not found')
           server.write_text(text.replace(old_dir, new_dir, 1))
