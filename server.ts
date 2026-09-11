@@ -626,7 +626,7 @@ async function startServer() {
       const decodedToken = await authAdmin.verifyIdToken(token);
       const callerUid = decodedToken.uid;
       const callerEmail = decodedToken.email;
-      logMessage(`[PROCESS] Caller UID verified: "${callerUid}" | Email: "${callerEmail}"`);
+      logMessage(`[PROCESS] Caller Firebase ID token verified.`);
 
       // 2. Verify admin credentials
       let hasPermission = false;
@@ -775,7 +775,7 @@ async function startServer() {
       const decodedToken = await authAdmin.verifyIdToken(token);
       const callerUid = decodedToken.uid;
       const callerEmail = decodedToken.email;
-      logMessage(`[PROCESS] Caller UID verified: "${callerUid}" | Email: "${callerEmail}"`);
+      logMessage(`[PROCESS] Caller Firebase ID token verified.`);
 
       // 2. Fetch caller's profile from Firestore to verify role
       let hasPermission = false;
@@ -1154,7 +1154,7 @@ async function startServer() {
             }
           }
 
-          emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.${failCount > 0 ? ` Failed recipients: ${failedRecipients.join(", ")}` : ""}`;
+          emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.`;
           logMessage(emailLogMessage);
         } else if (emails && Array.isArray(emails) && emails.length > 0) {
           logMessage(`[BROADCAST EMAIL] Dispatching single BCC SMTP mail to ${emails.length} recipients...`);
