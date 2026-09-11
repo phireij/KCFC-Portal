@@ -55,13 +55,17 @@ old_custom_block = '''      if (Array.isArray(recipientTokens) && recipientToken
         logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
         targetUsers.forEach(u => {
           if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
+
           const tokens = u.fcmTokens || [];
-          allTokens.push(...tokens.filter(isDeliverableFcmToken));
+          if (Array.isArray(tokens) && tokens.length > 0) {
+            allTokens.push(...tokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
+          }
         });
       }'''
 new_custom_block = '''      logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
       targetUsers.forEach(u => {
         if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
+
         const tokens = u.fcmTokens || [];
         allTokens.push(...tokens.filter(isDeliverableFcmToken));
       });'''
