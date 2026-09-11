@@ -11,16 +11,16 @@ import {
   UserCheck,
   UsersRound,
 } from 'lucide-react';
-import BroadcastTool from '../components/admin/BroadcastTool';
-import CoreStatusPlanner from '../components/admin/CoreStatusPlanner';
-import LeadershipInquiries from '../components/admin/LeadershipInquiries';
 import LeadershipOverview from '../components/admin/LeadershipOverview';
-import MemberAccountOverview from '../components/admin/MemberAccountOverview';
-import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
-import MemberPreRegistration from '../components/admin/MemberPreRegistration';
-import MemberRoleEditor from '../components/admin/MemberRoleEditor';
 import { cn } from '../lib/utils';
 
+const BroadcastTool = React.lazy(() => import('../components/admin/BroadcastTool'));
+const CoreStatusPlanner = React.lazy(() => import('../components/admin/CoreStatusPlanner'));
+const LeadershipInquiries = React.lazy(() => import('../components/admin/LeadershipInquiries'));
+const MemberAccountOverview = React.lazy(() => import('../components/admin/MemberAccountOverview'));
+const MemberApprovalQueue = React.lazy(() => import('../components/admin/MemberApprovalQueue'));
+const MemberPreRegistration = React.lazy(() => import('../components/admin/MemberPreRegistration'));
+const MemberRoleEditor = React.lazy(() => import('../components/admin/MemberRoleEditor'));
 const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));
 
 const adminRoles = ['admin', 'president'];
@@ -133,9 +133,10 @@ export default function Admin() {
 
       <div id="leadership-workspace-panel" role="tabpanel" aria-labelledby={activeTabId} tabIndex={0}>
         {activeView === 'overview' && <div className="space-y-4"><LeadershipOverview /><section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Principle title="Review first" body="Pending approvals and requests should remain visibly separate from completed work." /><Principle title="Least privilege" body="Member access and leadership roles stay explicitly controlled by the existing permission model." /><Principle title="Message carefully" body="Broadcast and notification actions remain deliberate; no mass send is triggered by this redesign." /><Principle title="Preserve records" body="Existing users, roles, inquiries and settings remain in place throughout migration." /></section></div>}
-        {activeView === 'inquiries' && <LeadershipInquiries />}
-        {activeView === 'broadcast' && <section aria-label="Member communications"><BroadcastTool /></section>}
+        {activeView === 'inquiries' && <React.Suspense fallback={<WorkspaceLoading label="Loading website inquiries…" />}><LeadershipInquiries /></React.Suspense>}
+        {activeView === 'broadcast' && <React.Suspense fallback={<WorkspaceLoading label="Loading member communications…" />}><section aria-label="Member communications"><BroadcastTool /></section></React.Suspense>}
         {activeView === 'members' && (
+          <React.Suspense fallback={<WorkspaceLoading label="Loading member administration…" />}>
           <div className="space-y-4">
             <MemberAccountOverview />
             <MemberPreRegistration />
@@ -146,11 +147,12 @@ export default function Admin() {
               <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2563EB]" /><div><h2 className="text-[13px] font-extrabold text-[#172033] dark:text-white">Account controls remain isolated</h2><p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">The account-status overview and Core-status planner are read-only. Actual Core-status changes, account disabling, profile removal and credential cleanup remain in Advanced tools until dedicated governed workflows have passed staging and approval.</p></div></div>
             </section>
           </div>
+          </React.Suspense>
         )}
         {activeView === 'advanced' && (
           <section className="space-y-3">
             <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100"><div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" /><div><h2 className="text-[15px] font-extrabold">Advanced legacy administration</h2><p className="mt-1 text-[11px] leading-5">This preserved workspace contains Core-status management, account controls, Gmail inquiry replies and low-frequency potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p></div></div></div>
-            <section className="kcfc-surface overflow-hidden"><div className="p-2 sm:p-4"><React.Suspense fallback={<div className="px-4 py-8 text-center text-[12px] font-semibold text-slate-500 dark:text-slate-400" role="status">Loading advanced legacy tools…</div>}><LegacyAdmin /></React.Suspense></div></section>
+            <section className="kcfc-surface overflow-hidden"><div className="p-2 sm:p-4"><React.Suspense fallback={<WorkspaceLoading label="Loading advanced legacy tools…" />}><LegacyAdmin /></React.Suspense></div></section>
           </section>
         )}
       </div>
@@ -162,6 +164,9 @@ function HeaderMetric({ icon: Icon, label, value }: { icon: React.ComponentType<
   return <div className="rounded-2xl bg-white/12 p-3 backdrop-blur-sm"><Icon className="h-4 w-4 text-blue-100" /><p className="mt-2 text-[9px] font-bold uppercase tracking-wide text-blue-100">{label}</p><p className="mt-0.5 text-[11px] font-extrabold text-white">{value}</p></div>;
 }
 
+function WorkspaceLoading({ label }: { label: string }) {
+  return <div className="kcfc-surface px-4 py-8 text-center text-[12px] font-semibold text-slate-500 dark:text-slate-400" role="status">{label}</div>;
+}
 function Principle({ title, body }: { title: string; body: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"><p className="text-[12px] font-extrabold text-[#172033] dark:text-white">{title}</p><p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">{body}</p></div>;
 }
