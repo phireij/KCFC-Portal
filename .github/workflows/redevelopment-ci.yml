@@ -90,6 +90,33 @@ jobs:
       - name: Verify Firebase runtime isolation
         run: npx tsx scripts/verify-firebase-runtime-isolation.ts
 
+      - name: Exercise staging preflight with synthetic isolated environment
+        env:
+          VITE_KCFC_RUNTIME_ENV: staging
+          KCFC_RUNTIME_ENV: staging
+          VITE_FIREBASE_API_KEY: synthetic-client-key
+          FIREBASE_API_KEY: synthetic-server-key
+          VITE_FIREBASE_AUTH_DOMAIN: kcfc-staging-ci.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: kcfc-staging-ci
+          FIREBASE_PROJECT_ID: kcfc-staging-ci
+          VITE_FIREBASE_APP_ID: synthetic-app-id
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '1234567890'
+          VITE_FIREBASE_DATABASE_ID: kcfc-staging-ci-db
+          FIREBASE_DATABASE_ID: kcfc-staging-ci-db
+          VITE_FCM_VAPID_KEY: synthetic-public-vapid
+          WEB_PUSH_VAPID_PUBLIC_KEY: synthetic-public-vapid
+          WEB_PUSH_VAPID_PRIVATE_KEY: synthetic-private-vapid
+          KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED: 'false'
+          KCFC_CONNECTOR_LINE_ENABLED: 'false'
+          KCFC_CONNECTOR_TELEGRAM_ENABLED: 'false'
+          KCFC_CONNECTOR_WHATSAPP_ENABLED: 'false'
+          KCFC_CONNECTOR_VIBER_ENABLED: 'false'
+          VITE_KCFC_LINE_CONNECTOR_ENABLED: 'false'
+          VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED: 'false'
+          VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED: 'false'
+          VITE_KCFC_VIBER_CONNECTOR_ENABLED: 'false'
+        run: npm run staging:preflight
+
       - name: Verify leadership accessibility contracts
         run: npx tsx scripts/verify-leadership-accessibility.ts
 
