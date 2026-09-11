@@ -19,8 +19,9 @@ import MemberAccountOverview from '../components/admin/MemberAccountOverview';
 import MemberApprovalQueue from '../components/admin/MemberApprovalQueue';
 import MemberPreRegistration from '../components/admin/MemberPreRegistration';
 import MemberRoleEditor from '../components/admin/MemberRoleEditor';
-import LegacyAdmin from './LegacyAdmin';
 import { cn } from '../lib/utils';
+
+const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));
 
 const adminRoles = ['admin', 'president'];
 type WorkspaceView = 'overview' | 'inquiries' | 'broadcast' | 'members' | 'advanced';
@@ -149,7 +150,7 @@ export default function Admin() {
         {activeView === 'advanced' && (
           <section className="space-y-3">
             <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100"><div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" /><div><h2 className="text-[15px] font-extrabold">Advanced legacy administration</h2><p className="mt-1 text-[11px] leading-5">This preserved workspace contains Core-status management, account controls, Gmail inquiry replies and low-frequency potentially destructive tools, including member removal and credential-purge controls. Production use of destructive actions remains an explicit approval-gated operation.</p></div></div></div>
-            <section className="kcfc-surface overflow-hidden"><div className="p-2 sm:p-4"><LegacyAdmin /></div></section>
+            <section className="kcfc-surface overflow-hidden"><div className="p-2 sm:p-4"><React.Suspense fallback={<div className="px-4 py-8 text-center text-[12px] font-semibold text-slate-500 dark:text-slate-400" role="status">Loading advanced legacy tools…</div>}><LegacyAdmin /></React.Suspense></div></section>
           </section>
         )}
       </div>

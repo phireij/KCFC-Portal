@@ -13,6 +13,8 @@ const required = [
   "else next.set('view', nextView);",
   "onClick={() => activateTab(index)}",
   "const canAccess = (profile?.roles || []).some((role) => adminRoles.includes(role));",
+  "const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));",
+  "<React.Suspense fallback=",
 ];
 
 for (const marker of required) {
@@ -27,6 +29,10 @@ if (source.includes("const [activeView, setActiveView] = useState<WorkspaceView>
 
 if (!source.includes("if (!canAccess)")) {
   throw new Error('Admin authorization boundary must remain before leadership workspace rendering');
+}
+
+if (source.includes("import LegacyAdmin from './LegacyAdmin';")) {
+  throw new Error('Advanced LegacyAdmin must remain behind the leadership lazy-load boundary');
 }
 
 console.log('Admin workspace URL/history navigation: PASS');
