@@ -26,18 +26,21 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] Staging client/server Firebase project IDs must match each other and differ from the committed production/default project ID.
 - [x] `npm run staging:preflight` is regression-tested in CI with a synthetic isolated staging environment.
 - [x] Synthetic staging preflight requires explicit matching client/server VAPID public keys and a server private key rather than relying on inherited/local fallback material.
+- [x] Staging preflight requires an explicit HTTPS `APP_URL` and rejects the production Portal hostname; server startup enforces the same boundary.
+- [x] Admin mass-email broadcast uses simulation-only behavior in staging even when SMTP credentials are present.
 - [x] Staging environment template documents the same browser/server VAPID contract, with the private key server-only and CI-guarded.
 - [x] Synthetic staging preflight verifies external connectors OFF and Core-status staging executor OFF.
 - [x] Staging app shell renders an explicit `Staging • Test environment` badge only for `VITE_KCFC_RUNTIME_ENV=staging`; default/production runtime renders no staging badge.
 - [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, Updates scope history, and Leadership workspace URL/history navigation are covered by permanent automated guards.
 - [x] Login/Google profile creation preserves real email-verification state; forced-true verification fallbacks are prohibited by CI.
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
+- [ ] Real staging `APP_URL` is HTTPS, uses the approved non-production hostname, and generated staging links never point to production.
 - [ ] Running `/api/health` shows `runtime=staging` and the expected isolated Firebase project/database IDs; no secret fields are present.
 - [ ] Staging server starts only with explicit `WEB_PUSH_VAPID_PUBLIC_KEY` + `WEB_PUSH_VAPID_PRIVATE_KEY`; missing keys fail closed before fallback initialization.
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: code head `b67f1e8767276830c74a08850199040046441f30`, `KCFC Redevelopment CI` run **#1141** / id `34581079376`, conclusion **SUCCESS**, with all **57** validation/build/security steps green. This includes staging environment-template parity, Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: code head `879f7188f4ecf3ff1fb16409d0e10fc1350bb0ba`, `KCFC Redevelopment CI` run **#1186** / id `34582465638`, conclusion **SUCCESS**, with all **57** validation/build/security steps green. This includes staging environment-template parity, Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 

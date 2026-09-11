@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize creation o
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Latest validated staging-contract checkpoint: `b67f1e8767276830c74a08850199040046441f30`, with `KCFC Redevelopment CI` run **#1141** / id `34581079376` completing successfully with all **57** validation/build/security steps green.
+Latest validated staging-contract checkpoint: `879f7188f4ecf3ff1fb16409d0e10fc1350bb0ba`, with `KCFC Redevelopment CI` run **#1186** / id `34582465638` completing successfully with all **57** validation/build/security steps green.
 
 ## Non-negotiable isolation rules
 
@@ -48,7 +48,7 @@ VITE_KCFC_RUNTIME_ENV=staging
 KCFC_RUNTIME_ENV=staging
 ```
 
-Both are mandatory. The application and `staging:preflight` fail closed if staging is only partially declared.
+Both are mandatory. The application and `staging:preflight` fail closed if staging is only partially declared. Also set `APP_URL` to the exact non-production HTTPS staging origin; both preflight and server startup reject a missing, non-HTTPS, or production-Portal `APP_URL`.
 
 ### Firebase client configuration
 
@@ -111,6 +111,8 @@ VITE_KCFC_VIBER_CONNECTOR_ENABLED=false
 ```
 
 Provider credentials for LINE, Telegram, WhatsApp or Viber are not needed for baseline staging QA and should remain absent.
+
+For baseline staging, the admin mass-email broadcast endpoint remains simulation-only even if SMTP credentials are present. This prevents an inherited SMTP configuration from turning a staging broadcast test into live outbound mail. Single-account email verification/inquiry flows remain separate empirical QA cases and must use synthetic/test recipients under the applicable approval boundary.
 
 ## Pre-deployment gate
 
@@ -271,6 +273,7 @@ The staging environment gate may be marked complete only when all of the followi
 - isolated staging project/database identifiers;
 - successful real `npm run staging:preflight`;
 - staging-only Admin authentication/identity confirmed;
+- approved non-production HTTPS `APP_URL` confirmed and generated links checked against the staging origin;
 - staging badge visibly confirmed;
 - `/api/health` successful and reporting the expected staging runtime/project/database identifiers with no secret fields;
 - connectors OFF;
