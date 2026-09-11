@@ -1,0 +1,52 @@
+name: One-shot app shell theme fix
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/fix-app-shell-theme.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Apply approved shell palette
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/App.tsx')
+          s = p.read_text()
+          replacements = {
+            '#5A5A40': '#123B66',
+            '#5a5a40': '#123b66',
+            'background=5A5A40': 'background=123B66',
+            'bg-[#f5f5f0]': 'bg-[#F7F9FC]',
+          }
+          counts = {old: s.count(old) for old in replacements}
+          for old, count in counts.items():
+              if count < 1:
+                  raise SystemExit(f'Expected at least one occurrence of {old!r}; found {count}')
+          for old, new in replacements.items():
+              s = s.replace(old, new)
+          p.write_text(s)
+          print('Replacements:', counts)
+          PY
+          git diff --check
+          npx tsx scripts/verify-app-shell-theme-contract.ts
+          git diff -- src/App.tsx
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx
+          git commit -m 'fix: align app shell with KCFC palette'
+          git push origin HEAD:redesign/mobile-first-v2
