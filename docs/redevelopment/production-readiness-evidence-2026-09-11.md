@@ -38,6 +38,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - staging admin mass-email broadcasts are simulation-only even when SMTP credentials are present;
 - staging public-inquiry notification and authorized inquiry-alert SMTP are suppressed/simulated so QA cannot notify the production KCFC mailbox;
 - staging verification-email SMTP is suppressed even when SMTP credentials are inherited; the route returns the generated verification link for synthetic onboarding QA instead of sending mail;
+- client-side Gmail delivery is also staging-isolated: `sendGmail()` returns a simulation result before OAuth/token/network activity and `getGmailAccessToken()` refuses staging before cached-token reuse;
 - inquiry diagnostics do not persist submitted name/email/message content or raw request headers/body/query, do not log Firestore REST URLs containing API-key query parameters, and public inquiry responses do not return internal backend error detail;
 - staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
@@ -63,7 +64,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - 30-day GitHub Actions retention of the verified non-secret build manifest as repository-side release evidence;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `8ea202c552d88712ffe34b53e7697caa40b6d6b2`, `KCFC Redevelopment CI` run **#1459** / id `34596788624`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed. The runtime audit is now **0 critical, 0 high, 2 moderate, 0 low**; staging runtime-evidence validation, complete build-artifact manifest/hash coverage and manifest retention all remained green.
+Latest validated clean branch checkpoint: `96dd4257137b595331c5b1346bfe31205c19e6cd`, `KCFC Redevelopment CI` run **#1535** / id `34616084222`, conclusion **SUCCESS**. All **58** named validation/build/security steps passed. The runtime audit remains **0 critical, 0 high, 2 moderate, 0 low**; staging runtime-evidence validation, complete build-artifact manifest/hash coverage, manifest retention and staging client-email isolation all remained green.
 
 The validated staging isolation work establishes:
 
@@ -82,7 +83,7 @@ The validated staging isolation work establishes:
 - `npm run staging:evidence -- <health-json>` validates a captured health payload against the protected staging environment and rejects unexpected fields, wrong runtime/project/database, or a production Portal hostname;
 - when `KCFC_RUNTIME_ENV=staging`, the server refuses missing explicit server VAPID keys and also re-throws later Web Push initialization errors before any in-memory fallback key generation;
 - staging preflight and server startup require an explicit HTTPS `APP_URL` whose hostname is not the production KCFC Portal, preventing generated staging links from silently targeting production;
-- baseline staging routes for broadcast email, inquiry notification/alert email and custom verification email cannot enter real SMTP delivery while `KCFC_RUNTIME_ENV=staging`.
+- baseline staging has no live email delivery path: server broadcast/inquiry/verification SMTP is suppressed while `KCFC_RUNTIME_ENV=staging`, and client-side Gmail OAuth/API plus SMTP fallback are suppressed while `VITE_KCFC_RUNTIME_ENV=staging`; the exported Gmail token helper also fails closed before cached-token reuse in staging.
 
 Email-verification migration is guarded in both authenticated bootstrap migration and the Login/Google profile creation path: a pending profile or newly created profile cannot be marked email-verified by an unconditional fallback. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 
