@@ -1,0 +1,55 @@
+name: One-shot staging readiness map refresh
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/refresh-staging-readiness-map.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Refresh map
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('docs/redevelopment/staging-readiness-evidence-map-2026-09-11.md')
+          s = p.read_text()
+          old = "- Firebase Admin Storage non-use boundary.\n- Leadership accessibility contracts."
+          new = "- Firebase Admin Storage non-use boundary.\n- Client/server staging Firebase fail-closed isolation.\n- Same-origin, Firebase-project-agnostic Web Push service-worker boundary.\n- Push privacy logging guard: VAPID public key, PushSubscription object and FCM token values are not written to browser logs.\n- Canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + Notification Health.\n- Synthetic execution of `npm run staging:preflight` with isolated values.\n- Leadership accessibility contracts."
+          if s.count(old) != 1:
+              raise SystemExit(f'automated evidence marker count={s.count(old)}')
+          s = s.replace(old, new)
+
+          old2 = "Latest fully validated evidence before this document update:\n\n- head `93e2cdd070a7c49fb1243eb1bec2ec5f6d7afc1a`\n- `KCFC Redevelopment CI` run #770\n- conclusion: **success**\n- all 33 validation/build/security steps completed successfully, including `Verify pre-registration email verification migration`."
+          new2 = "Latest fully validated evidence before this document update:\n\n- head `9eafd9363e0a7be770b283ef3d801c2edd3bb222`\n- `KCFC Redevelopment CI` run **#850** / id `34570190923`\n- conclusion: **success**\n- all **39** validation/build/security steps completed successfully, including Firebase runtime isolation, Web Push worker boundary, push privacy logging, PWA theme/install metadata, shared iPhone/iPadOS platform detection and synthetic staging preflight."
+          if s.count(old2) != 1:
+              raise SystemExit(f'validated evidence marker count={s.count(old2)}')
+          s = s.replace(old2, new2)
+
+          old3 = "Physical acceptance must separately record:\n\n1. transport acceptance;\n2. actual OS banner/lock-screen/sound/vibration presentation;\n3. durable KCFC Inbox persistence;\n4. notification tap/deep-link result."
+          new3 = old3 + "\n\nUse `notification-acceptance-evidence-template-2026-09-11.md` as the canonical record. A case cannot be classified PASS merely because transport was accepted; ambiguous or incomplete signal sets remain INVESTIGATE."
+          if s.count(old3) != 1:
+              raise SystemExit(f'physical acceptance marker count={s.count(old3)}')
+          s = s.replace(old3, new3)
+          p.write_text(s)
+          PY
+          git diff --check
+          git diff -- docs/redevelopment/staging-readiness-evidence-map-2026-09-11.md
+      - name: Commit branch-only map refresh
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/redevelopment/staging-readiness-evidence-map-2026-09-11.md
+          git commit -m 'docs: refresh staging readiness evidence map'
+          git push origin HEAD:redesign/mobile-first-v2
