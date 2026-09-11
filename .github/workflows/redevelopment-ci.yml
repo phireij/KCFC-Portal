@@ -93,6 +93,9 @@ jobs:
       - name: Verify Web Push service worker boundary
         run: npx tsx scripts/verify-webpush-service-worker-boundary.ts
 
+      - name: Verify Inbox deep-link boundary
+        run: npx tsx scripts/verify-inbox-deep-link-boundary.ts
+
       - name: Verify push privacy logging
         run: npx tsx scripts/verify-push-privacy-logging.ts
 
