@@ -66,7 +66,6 @@ if smtp_anchor not in text:
 text = text.replace(smtp_anchor, smtp_replacement, 1)
 
 mail_replacements = [
-    ('subject: `[KCFC Web Inquiry] New message from ${name}`', 'subject: `[KCFC Web Inquiry] New message from ${name}`'),
     ('>${name}</td>', '>${safeName}</td>'),
     ('href="mailto:${email}" style="color: #8a8a65;">${email}</a>', 'href="mailto:${safeEmail}" style="color: #8a8a65;">${safeEmail}</a>'),
     ('>${subject || "KCFC Portal Inquiry"}</td>', '>${safeSubject}</td>'),
@@ -77,16 +76,16 @@ for old, new in mail_replacements:
         raise SystemExit(f'missing mail marker: {old}')
     text = text.replace(old, new, 1)
 
-alert_count = text.count('          alertSent: true,')
-if alert_count < 2:
-    raise SystemExit(f'expected at least 2 alertSent true markers, found {alert_count}')
-# Only the two public-contact persistence payloads in this region should change.
+# Only the public-contact persistence payloads should change alert state.
 contact_start = text.index('  app.post("/api/public/contact"')
 contact_end = text.index('  // Secure API endpoint for client-side triggered email alerts', contact_start)
 contact = text[contact_start:contact_end]
-if contact.count('alertSent: true') != 2:
-    raise SystemExit(f'expected exactly 2 contact alertSent true markers, found {contact.count("alertSent: true")}')
-contact = contact.replace('alertSent: true', 'alertSent: emailSent')
+if contact.count('alertSent: true') != 1:
+    raise SystemExit(f'expected exactly 1 direct contact alertSent true marker, found {contact.count("alertSent: true")}')
+if contact.count('alertSent: { booleanValue: true }') != 1:
+    raise SystemExit(f'expected exactly 1 REST contact alertSent boolean marker, found {contact.count("alertSent: { booleanValue: true }")}')
+contact = contact.replace('alertSent: true', 'alertSent: emailSent', 1)
+contact = contact.replace('alertSent: { booleanValue: true }', 'alertSent: { booleanValue: emailSent }', 1)
 text = text[:contact_start] + contact + text[contact_end:]
 
 path.write_text(text)
