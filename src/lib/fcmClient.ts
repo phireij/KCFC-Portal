@@ -35,7 +35,7 @@ export async function preloadVapidKeyFromServer(): Promise<string | null> {
       if (data && data.publicKey) {
         const cleanedKey = cleanVapidKey(data.publicKey);
         cachedVapidKeyFromServer = cleanedKey;
-        console.log("WebPush: Preloaded VAPID public key from server successfully:", cleanedKey);
+        console.log("WebPush: Preloaded VAPID public key from server successfully.");
         return cleanedKey;
       }
     }
@@ -339,7 +339,7 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
         fcmTokens: arrayUnion(token),
         updatedAt: new Date().toISOString()
       });
-      console.log("FCM: Device push token registered successfully:", token);
+      console.log("FCM: Device push token registered successfully.");
       return token;
     } else {
       throw new Error("No token returned by the FCM registration server.");
@@ -423,7 +423,7 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
       }
     }
 
-    console.log("WebPush: Obtained PushSubscription successfully:", subscription);
+    console.log("WebPush: Obtained PushSubscription successfully.");
     const subscriptionJson = subscription.toJSON();
 
     // 4. Send subscription to our backend register endpoint
