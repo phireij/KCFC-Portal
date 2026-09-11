@@ -1,119 +1,161 @@
 # KCFC Portal — Staging Evidence Log
 
 Date opened: 2026-09-10
+Last refreshed: 2026-09-11
 Branch: `redesign/mobile-first-v2`
 
-This log records evidence gathered during redevelopment. It does **not** authorize production deployment and does not replace the staging-readiness checklist.
+This log records evidence gathered during redevelopment. It does **not** authorize production deployment and does not replace the staging-readiness checklist or empirical device acceptance.
 
-## Evidence E-001 — Repository baseline
+## Evidence E-001 — Repository boundary
 
 - Production branch: `main`
-- Verified production SHA at latest check: `653cc7229600fd7baff17a21a21f12d267b66d2b`
+- Verified production SHA: `653cc7229600fd7baff17a21a21f12d267b66d2b`
 - Redevelopment branch: `redesign/mobile-first-v2`
 - Draft PR: #1
-- Production `main` had not moved from the redevelopment baseline at the latest verification.
+- Production `main` remains the redevelopment baseline.
 - No production merge or deployment occurred during this evidence collection.
 
-Result: **PASS — no upstream drift detected at latest verification.**
+Result: **PASS — production boundary preserved.**
 
-## Evidence E-002 — Core redevelopment CI
+## Evidence E-002 — Current redevelopment CI
 
 GitHub Actions workflow: `KCFC Redevelopment CI`
 
-Current mandatory steps:
+Latest exact-head run before this documentation refresh:
 
-1. dependency installation,
-2. TypeScript validation (`npm run lint` / `tsc --noEmit`),
-3. synthetic communication-policy verification,
-4. production build,
-5. external-connector default-OFF guard,
-6. provider-secret browser-exposure guard.
+- validated head: `98c1901cabc6414c7b9e017570dbd27c68d4c6ec`
+- run: **#774 / id 34562112607**
+- conclusion: **SUCCESS**
 
-Result through the normalized Announcements implementation head `295ad9d11767160b731232210156fe3afeea5018`:
+The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration safety and email-verification migration, Core-status safeguards, Firebase Admin Storage non-use, accessibility/mobile navigation, delivery/notification diagnostics, privacy-safe device QA snapshots, caller-bound self-test push isolation, production build/bundle reporting, connector defaults OFF and provider-secret browser guards.
 
-- TypeScript: **PASS**
-- Communication policy verification: **PASS**
-- Production build: **PASS**
-- Connector default-OFF guard: **PASS**
-- Browser-secret guard: **PASS**
+Result: **PASS — exact intended code head validated.**
 
-GitHub Actions run: **#92 / run id 34443219237 — SUCCESS**.
+Documentation-only commits after this head do not replace code CI evidence; any later code/dependency change requires a fresh green exact-head run.
 
 ## Evidence E-003 — Communication routing invariants
 
 Executable synthetic checks cover:
 
-- Inbox remains present for a normal announcement.
-- Inbox remains present when routine announcement alerts are muted.
-- Composer can disable PWA without removing Inbox/email.
-- Composer can request Inbox-only delivery.
-- Assignment routing uses `important` urgency.
-- External provider remains excluded while connector gate is disabled.
-- External provider can only enter a routing plan when the caller gate is enabled, the member opted in and the provider is connected.
-- Notification record builder de-duplicates and retains Inbox.
+- Inbox remains present for normal communication.
+- Inbox remains present when routine alerts are muted.
+- Composer can disable PWA without removing the durable Inbox record.
+- Assignment routing uses important urgency.
+- External providers remain excluded while connector gates are disabled.
+- Notification records retain routing metadata and de-duplicate delivery destinations.
 - Disabled users are excluded from new operational audience delivery.
-- KCFC Members require current verified-member state.
 - Leadership audience requires a leadership role.
 
 Result: **PASS in CI.**
 
-Important: the external-connector-positive test validates only pure routing logic. All actual connector environment flags remain OFF and no external message is sent.
+Important: positive connector-routing tests validate pure planning logic only. Actual external connector environment flags remain OFF and no live external message has been sent.
 
-## Evidence E-004 — Announcement creator normalization
+## Evidence E-004 — Notification safety and diagnostics
 
-New announcement publication now uses the shared:
+Permanent automated contracts now cover:
 
-- audience eligibility helper,
-- routing-policy helper,
-- notification-record helper.
+- current-device notification-health logic;
+- privacy-safe device QA snapshot generation;
+- authenticated self-test push recipient isolation;
+- self-test recipient derivation from authenticated caller UID/profile only;
+- prohibition on caller-selected arbitrary recipients/member enumeration;
+- stale/invalid registration diagnostics;
+- KCFC Inbox persistence as durable truth independent of OS presentation.
 
-Behavior validated by TypeScript/build/policy CI:
+Result: **PASS in CI.**
 
-- Inbox record remains the durable communication record.
-- Member routine-alert preference no longer erases the Inbox record.
-- PWA token collection occurs only when the publisher enabled push and the recipient routing plan includes PWA.
-- Duplicate FCM tokens are removed before the push request.
-- New Inbox records carry source, urgency, channels, audience and routing rationale metadata.
-- External providers remain disabled.
-- Public website synchronization remains `not_requested`.
+Limitation: CI/browser evidence cannot prove physical OS banner, lock-screen, sound, vibration, Focus/Silent behavior, or actual PWA background delivery. Those remain physical-device acceptance items.
 
-Result: **IMPLEMENTED + CI GREEN**.
+## Evidence E-005 — Safe member pre-registration/onboarding
 
-## Evidence E-005 — Specification v4 visual QA
+Focused pre-registration creates an unverified pending Firestore profile and does not create/recreate Firebase Auth users or grant leadership access.
 
-Artifact: `KCFC_Portal_Redevelopment_UI_UX_Feature_Specification_v4_2026-09-10.docx`
+The migration path from a pending pre-registration to the real Firebase UID is permanently regression-tested so that:
 
-- Final render: 28 pages.
-- All 28 pages visually inspected after final layout/pagination changes.
-- No clipping, overlap, broken tables, missing glyphs, or header/footer collision observed.
+- the real Firebase UID is preserved as identity;
+- pending roles/ministries can migrate without UID recreation;
+- existence of a pending profile alone does **not** mark the member email verified;
+- Firebase Auth `emailVerified` is respected;
+- an already-true pending verification state is preserved;
+- bootstrap-admin behavior remains an explicit exception rather than a general promotion path.
 
-Result: **PASS — documentation visual QA.**
+Result: **PASS in CI #774.**
 
-## Evidence still required before production request
+Empirical staging still must test first authentication while unverified and the later verified transition using a synthetic member.
 
-No production readiness claim is made yet. Evidence is still required for:
+## Evidence E-006 — Dependency/security position
 
-- real staging sign-in with synthetic role accounts,
-- Firestore compatibility against isolated staging data,
-- iPhone/iPad PWA install and Web Push behavior,
-- Android/Chromium install and push behavior,
-- multi-device notification registration,
-- liturgical availability → matrix → assignment → publication end-to-end staging flow,
-- Resources role checks,
-- Accounting regression against non-production sample data,
-- Admin regression with synthetic accounts,
-- keyboard/accessibility/device-width checks,
+Current documented runtime audit position:
+
+- **0 critical**
+- **0 high**
+- **2 moderate**
+- **1 low**
+
+`qs` is closed through the validated Express 5.2.1 migration. Remaining moderate `uuid` / older `gaxios` findings are under Firebase Admin's optional `@google-cloud/storage` path. KCFC does not activate that Storage path, and permanent CI prevents silent activation by forbidding the relevant imports/calls.
+
+Result: **BOUNDED / OPEN FOR SUPPORTED PARENT REMEDIATION.** No forced leaf override or audit suppression is accepted.
+
+## Evidence E-007 — Leadership destructive-action isolation
+
+Focused leadership workspaces cover routine Overview, Website Inquiries, Member Communications and Member Administration. Individual inquiry replies require explicit confirmation and are locked to the inquiry sender. Roles & Ministries provides a pre-save change summary and preserves Firebase UID.
+
+Actual Core-status mutation, account disablement, profile/member removal, credential purge and other destructive compatibility controls remain isolated in Advanced Legacy Tools.
+
+Result: **IMPLEMENTED + AUTOMATED CONTRACT COVERAGE.**
+
+No destructive control is considered staging-approved until representative authorization/denial tests are completed with synthetic roles.
+
+## Evidence E-008 — Bundle/build position
+
+- Route pages are lazy-loaded.
+- Firebase, Recharts/D3 and Motion have explicit vendor boundaries.
+- Normal Vite chunk-size warnings remain enabled.
+- CI records raw + gzip JavaScript asset sizes and total JS weight.
+- Production starts with `node dist/server.cjs`.
+
+Earlier measured route-splitting improvement remains approximately 2.31 MB / 603.5 KB gzip to 1.32 MB / 357.1 KB gzip for the main client chunk before later vendor separation. No unverified post-vendor-split figure is claimed here.
+
+Result: **PASS — build/reporting controls present.**
+
+## Evidence E-009 — Specification/documentation QA
+
+Specification v4 remains the working redevelopment baseline for Communications + Schedule + Staging Safeguards. The staging device QA package, staging readiness evidence map, production readiness register, dependency disposition and backup/rollback plan are maintained alongside implementation.
+
+Result: **PASS — readiness documentation present.**
+
+## Empirical evidence still required before production request
+
+Use synthetic/isolated staging data only. Still required:
+
+- browser responsive/mobile regression at representative iPhone/Android widths;
+- synthetic role sign-in and authorization/denial matrix;
+- representative historical Firestore compatibility in an isolated environment;
+- liturgical availability → matrix → assignment → publication end-to-end staging flow;
+- pre-registration first sign-in while unverified → later verified transition without UID recreation;
+- Resources and Accounting regression against non-production sample data;
+- individual inquiry reply only to a staging/sink recipient;
+- targeted self-test push only to the authenticated staging tester;
+- physical iPhone PWA/Web Push acceptance;
+- physical Android tablet acceptance (acceptable as first Android physical baseline);
+- preferably an additional member Android phone for broader Android coverage;
+- multi-device registration/stale-endpoint behavior;
 - backup/rollback proof immediately before any production approval request.
+
+For physical notification acceptance, separately record transport acceptance, OS presentation, durable Inbox persistence and notification-tap/deep-link result. Browser/emulator results must never be labeled as physical-device evidence.
 
 ## Production authority
 
 This evidence log grants **no** authority to:
 
-- merge/deploy production,
-- mutate production users in bulk,
-- run destructive migration,
-- send production mass notifications,
-- enable LINE/Telegram/WhatsApp/Viber,
-- switch on public website publishing.
+- merge/deploy production;
+- mutate production users in bulk;
+- delete/recreate Firebase Auth users;
+- run destructive migration/restore;
+- execute production Core-status changes;
+- enable a staging executor against a non-isolated environment;
+- send production mass notifications;
+- enable live LINE/Telegram/WhatsApp/Viber connectors;
+- switch on public website publishing/cutover.
 
 Those remain explicit approval gates.
