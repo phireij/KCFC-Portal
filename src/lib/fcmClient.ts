@@ -333,12 +333,22 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
     }
 
     if (token) {
-      // Cleanly append device token to current user's profile in Firestore using arrayUnion
-      const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
-        fcmTokens: arrayUnion(token),
-        updatedAt: new Date().toISOString()
+      const currentUser = auth.currentUser;
+      if (!currentUser || currentUser.uid !== userId) {
+        throw new Error("Authenticated user does not match the device-registration target.");
+      }
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch("/api/users/register-fcm-token", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
       });
+      if (!response.ok) {
+        throw new Error("Failed to register FCM device token with the KCFC server.");
+      }
       console.log("FCM: Device push token registered successfully.");
       return token;
     } else {

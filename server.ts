@@ -278,6 +278,8 @@ function isDeliverableFcmToken(token: unknown): token is string {
 const MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER = 8;
 const MAX_WEB_PUSH_ENDPOINT_LENGTH = 2048;
 const MAX_WEB_PUSH_KEY_LENGTH = 512;
+const MAX_FCM_TOKENS_PER_USER = 8;
+const MAX_FCM_TOKEN_LENGTH = 4096;
 
 function normalizeWebPushSubscription(input: any) {
   if (!input || typeof input !== "object") return null;
@@ -587,6 +589,48 @@ async function startServer() {
     } catch (err: any) {
       console.error("[WEBPUSH REGISTER ERROR]", err);
       res.status(500).json({ error: "Failed to register web push subscription" });
+    }
+  });
+
+  // Caller-bound FCM token registration with bounded recent-device retention.
+  app.post("/api/users/register-fcm-token", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized: Missing authorization token" });
+      return;
+    }
+
+    const idToken = authHeader.split("Bearer ")[1];
+    const rawToken = req.body?.token;
+    const normalizedToken = typeof rawToken === "string" ? rawToken.trim() : "";
+    if (!normalizedToken || normalizedToken.length > MAX_FCM_TOKEN_LENGTH || !isDeliverableFcmToken(normalizedToken)) {
+      res.status(400).json({ error: "Invalid FCM registration token" });
+      return;
+    }
+
+    try {
+      const decodedToken = await authAdmin.verifyIdToken(idToken);
+      const userId = decodedToken.uid;
+      const userRef = dbAdmin.collection("users").doc(userId);
+      const userDoc = await userRef.get();
+      const existingTokens = userDoc.exists && Array.isArray(userDoc.data()?.fcmTokens)
+        ? userDoc.data()?.fcmTokens.filter((value: unknown): value is string => isDeliverableFcmToken(value)) || []
+        : [];
+      const fcmTokens = existingTokens
+        .filter((value: string) => value !== normalizedToken)
+        .slice(-(MAX_FCM_TOKENS_PER_USER - 1));
+      fcmTokens.push(normalizedToken);
+
+      await userRef.set({
+        fcmTokens,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      logMessage(`[FCM REGISTER] Successfully registered caller-bound device token for user [redacted]`);
+      res.json({ success: true, registeredTokens: fcmTokens.length });
+    } catch (error) {
+      console.error("[FCM REGISTER ERROR]", error);
+      res.status(500).json({ error: "Failed to register FCM device token" });
     }
   });
 
