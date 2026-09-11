@@ -61,14 +61,14 @@ if (clientDatabaseId !== serverDatabaseId) {
   throw new Error(`KCFC staging preflight: client/server Firestore database ID mismatch (${clientDatabaseId || '(default)'} vs ${serverDatabaseId || '(default)'}).`);
 }
 
-required('VITE_FCM_VAPID_KEY');
+const firebaseFcmVapidPublic = required('VITE_FCM_VAPID_KEY');
 const serverVapidPublic = String(process.env.WEB_PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || '').trim();
 const serverVapidPrivate = String(process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY || '').trim();
 if (!serverVapidPublic || !serverVapidPrivate) {
   throw new Error('KCFC staging preflight: explicit server VAPID public/private keys are required for isolated notification QA.');
 }
-if (String(process.env.VITE_FCM_VAPID_KEY || '').trim() !== serverVapidPublic) {
-  throw new Error('KCFC staging preflight: browser VAPID public key must match the server staging VAPID public key.');
+if (firebaseFcmVapidPublic === serverVapidPublic) {
+  throw new Error('KCFC staging preflight: Firebase FCM and native Web Push must use distinct VAPID public keys; Firebase does not expose the FCM private key to this server.');
 }
 
 expectFalse('KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED');
@@ -92,4 +92,4 @@ console.log(`Firestore database: ${clientDatabaseId || '(default)'}`);
 console.log('Runtime markers: client=staging, server=staging');
 console.log('External connectors: OFF');
 console.log('Core status staging executor: OFF');
-console.log('VAPID: explicit client/server staging keys present and public keys match');
+console.log('VAPID: Firebase FCM public key plus a distinct explicit native Web Push server key pair are present');

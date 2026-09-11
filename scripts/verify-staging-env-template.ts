@@ -30,7 +30,7 @@ const requiredPreflightMarkers = [
   "required('VITE_FCM_VAPID_KEY')",
   'process.env.WEB_PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY',
   'process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY',
-  'browser VAPID public key must match the server staging VAPID public key',
+  'Firebase FCM and native Web Push must use distinct VAPID public keys',
 ];
 
 for (const marker of requiredPreflightMarkers) {
