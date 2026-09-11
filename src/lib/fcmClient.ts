@@ -457,19 +457,7 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
     });
 
     if (!regResponse.ok) {
-      const errText = await regResponse.text();
-      const isPermissionDenied = regResponse.status === 403 || /PERMISSION_DENIED|permission/i.test(errText);
-      if (isPermissionDenied) {
-        console.warn("WebPush: Backend registration lacked permission. Falling back to direct Firestore self-update.", errText);
-        const userRef = doc(db, "users", userId);
-        await updateDoc(userRef, {
-          webPushSubscriptions: arrayUnion(subscriptionJson),
-          updatedAt: new Date().toISOString()
-        });
-        console.log("WebPush: Successfully registered PushSubscription directly in Firestore.");
-        return true;
-      }
-      throw new Error(`Backend registration failed: ${errText}`);
+      throw new Error(`Backend Web Push registration failed with status ${regResponse.status}.`);
     }
 
     console.log("WebPush: Successfully registered PushSubscription on backend.");
