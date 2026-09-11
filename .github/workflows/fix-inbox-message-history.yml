@@ -1,0 +1,64 @@
+name: One-shot Inbox message history fix
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/fix-inbox-message-history.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Make Inbox detail URL/history aware
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/pages/Inbox.tsx')
+          s = p.read_text()
+
+          old = "  const [searchParams] = useSearchParams();"
+          new = "  const [searchParams, setSearchParams] = useSearchParams();"
+          if s.count(old) != 1:
+              raise SystemExit(f'useSearchParams marker count={s.count(old)}')
+          s = s.replace(old, new)
+
+          old_effect = "  useEffect(() => {\n    const id = searchParams.get('id') || searchParams.get('noteId');\n    if (!id || notifications.length === 0) return;\n    const target = notifications.find((item) => item.id === id);\n    if (target) {\n      setSelected(target);\n      setMobileDetail(true);\n    }\n  }, [notifications, searchParams]);"
+          new_effect = "  useEffect(() => {\n    const id = searchParams.get('id') || searchParams.get('noteId');\n    if (!id) {\n      setSelected(null);\n      setMobileDetail(false);\n      return;\n    }\n    if (notifications.length === 0) return;\n    const target = notifications.find((item) => item.id === id);\n    if (target) {\n      setSelected(target);\n      setMobileDetail(true);\n    } else {\n      setSelected(null);\n      setMobileDetail(false);\n    }\n  }, [notifications, searchParams]);"
+          if s.count(old_effect) != 1:
+              raise SystemExit(f'selection effect count={s.count(old_effect)}')
+          s = s.replace(old_effect, new_effect)
+
+          old_block = "  const removeMessage = async (item: NotificationType) => {\n    if (!item.id || !window.confirm('Delete this message from your KCFC Inbox?')) return;\n    await deleteDoc(doc(db, 'notifications', item.id));\n    if (selected?.id === item.id) {\n      setSelected(null);\n      setMobileDetail(false);\n    }\n  };\n\n  const openMessage = (item: NotificationType) => {\n    setSelected(item);\n    setMobileDetail(true);\n  };"
+          new_block = "  const setMessageInUrl = (id?: string) => {\n    setSearchParams((current) => {\n      const next = new URLSearchParams(current);\n      next.delete('noteId');\n      if (id) next.set('id', id);\n      else next.delete('id');\n      return next;\n    });\n  };\n\n  const openMessage = (item: NotificationType) => {\n    setSelected(item);\n    setMobileDetail(true);\n    setMessageInUrl(item.id);\n  };\n\n  const closeMessage = () => {\n    setSelected(null);\n    setMobileDetail(false);\n    setMessageInUrl();\n  };\n\n  const removeMessage = async (item: NotificationType) => {\n    if (!item.id || !window.confirm('Delete this message from your KCFC Inbox?')) return;\n    await deleteDoc(doc(db, 'notifications', item.id));\n    if (selected?.id === item.id) closeMessage();\n  };"
+          if s.count(old_block) != 1:
+              raise SystemExit(f'message action block count={s.count(old_block)}')
+          s = s.replace(old_block, new_block)
+
+          old_back = "onClick={() => setMobileDetail(false)}"
+          if s.count(old_back) != 1:
+              raise SystemExit(f'mobile back marker count={s.count(old_back)}')
+          s = s.replace(old_back, "onClick={closeMessage}")
+
+          p.write_text(s)
+          PY
+          npx tsx scripts/verify-inbox-message-history.ts
+          npx tsx scripts/verify-inbox-deep-link-boundary.ts
+          git diff --check
+          git diff -- src/pages/Inbox.tsx
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/Inbox.tsx
+          git commit -m 'fix: persist Inbox detail in navigation history'
+          git push origin HEAD:redesign/mobile-first-v2
