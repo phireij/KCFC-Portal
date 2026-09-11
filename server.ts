@@ -231,7 +231,7 @@ async function sendWebPushNotification(subscription: any, title: string, body: s
     await webpush.sendNotification(subscription, payload, options);
     return { success: true };
   } catch (err: any) {
-    console.error(`[WEBPUSH SEND ERROR] Failed to deliver to endpoint ${subscription?.endpoint}:`, err.message);
+    console.error(`[WEBPUSH SEND ERROR] Failed to deliver Web Push notification:`, err.message);
     if (err.statusCode === 410 || err.statusCode === 404) {
       return { success: false, expired: true };
     }
