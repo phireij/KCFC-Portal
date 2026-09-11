@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot } from 'firebase/firestore';
 import {
   Check,
@@ -77,11 +78,13 @@ const primaryLeadershipRole = (member: UserProfile) =>
     .sort((a, b) => (roleOrder[a] ?? 999) - (roleOrder[b] ?? 999))[0];
 
 export default function Members() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [memberType, setMemberType] = useState<MemberTypeFilter>('all');
-  const [selectedMinistries, setSelectedMinistries] = useState<string[]>([]);
+  const memberTypeParam = searchParams.get('type');
+  const memberType: MemberTypeFilter = memberTypeParam === 'core' || memberTypeParam === 'regular' ? memberTypeParam : 'all';
+  const selectedMinistries = Array.from(new Set(searchParams.getAll('ministry').filter((id) => ministryOptions.some((option) => option.id === id))));
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
@@ -140,13 +143,33 @@ export default function Members() {
   const coreCount = useMemo(() => members.filter((member) => member.isCoreMember).length, [members]);
   const activeFilterCount = selectedMinistries.length + (memberType === 'all' ? 0 : 1);
 
+  const setMemberTypeFilter = (nextType: MemberTypeFilter) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextType === 'all') next.delete('type');
+      else next.set('type', nextType);
+      return next;
+    });
+  };
+
   const toggleMinistry = (id: string) => {
-    setSelectedMinistries((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      const valid = Array.from(new Set(next.getAll('ministry').filter((value) => ministryOptions.some((option) => option.id === value))));
+      const ministries = valid.includes(id) ? valid.filter((value) => value !== id) : [...valid, id];
+      next.delete('ministry');
+      ministries.forEach((ministry) => next.append('ministry', ministry));
+      return next;
+    });
   };
 
   const resetFilters = () => {
-    setMemberType('all');
-    setSelectedMinistries([]);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('type');
+      next.delete('ministry');
+      return next;
+    });
     setSearchQuery('');
   };
 
@@ -186,9 +209,9 @@ export default function Members() {
             </label>
 
             <div className="grid grid-cols-3 gap-1 rounded-2xl bg-[#F7F9FC] p-1 dark:bg-white/5">
-              <MemberTypeButton active={memberType === 'all'} onClick={() => setMemberType('all')} label="All" />
-              <MemberTypeButton active={memberType === 'core'} onClick={() => setMemberType('core')} label="Core" />
-              <MemberTypeButton active={memberType === 'regular'} onClick={() => setMemberType('regular')} label="Regular" />
+              <MemberTypeButton active={memberType === 'all'} onClick={() => setMemberTypeFilter('all')} label="All" />
+              <MemberTypeButton active={memberType === 'core'} onClick={() => setMemberTypeFilter('core')} label="Core" />
+              <MemberTypeButton active={memberType === 'regular'} onClick={() => setMemberTypeFilter('regular')} label="Regular" />
             </div>
 
             <button
