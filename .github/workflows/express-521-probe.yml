@@ -102,18 +102,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PORT=4173 NODE_ENV=production timeout 20s node dist/server.cjs > /tmp/kcfc-express5-server.log 2>&1 &
+          NODE_ENV=production timeout 20s node dist/server.cjs > /tmp/kcfc-express5-server.log 2>&1 &
           pid=$!
           cleanup() { kill "$pid" 2>/dev/null || true; }
           trap cleanup EXIT
           for attempt in $(seq 1 20); do
-            if curl --fail --silent http://127.0.0.1:4173/api/health > /tmp/kcfc-health.json; then
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /tmp/kcfc-health.json; then
               break
             fi
             sleep 0.5
           done
           cat /tmp/kcfc-health.json
-          curl --fail --silent http://127.0.0.1:4173/nonexistent-spa-route > /tmp/kcfc-spa.html
+          curl --fail --silent http://127.0.0.1:3000/nonexistent-spa-route > /tmp/kcfc-spa.html
           grep -qi '<!doctype html' /tmp/kcfc-spa.html
 
       - name: Upload candidate files
