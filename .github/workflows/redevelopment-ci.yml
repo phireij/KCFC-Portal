@@ -99,6 +99,9 @@ jobs:
       - name: Verify device QA snapshot contract
         run: npx tsx scripts/verify-device-qa-snapshot.ts
 
+      - name: Verify self-test push recipient boundary
+        run: npx tsx scripts/verify-self-test-push-boundary.ts
+
       - name: Build and guard resolved warnings
         shell: bash
         run: |
