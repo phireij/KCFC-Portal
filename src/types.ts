@@ -132,6 +132,8 @@ export interface Poll {
     };
   };
   completedAssignments?: string[];
+  rosterPublished?: boolean;
+  publicationMode?: 'explicit';
   rosterPublishedAt?: any;
   rosterPublishedBy?: string;
   createdAt: string;

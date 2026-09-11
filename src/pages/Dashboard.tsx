@@ -81,6 +81,12 @@ const dutyLabel = (duty: DutyAssignment) => {
   return duty.slot || 'Ministry Duty';
 };
 
+const isDashboardRosterPublished = (poll: Poll) => {
+  if (poll.publicationMode === 'explicit') return poll.rosterPublished === true;
+  const completed = poll.completedAssignments || [];
+  return poll.status === 'closed' && ['lector', 'altar_server', 'usher'].every((ministry) => completed.includes(ministry));
+};
+
 export default function Dashboard() {
   const { profile, user } = useAuth();
   const [polls, setPolls] = useState<Poll[]>([]);
@@ -232,10 +238,7 @@ export default function Dashboard() {
           : poll.massDate
             ? [{ date: poll.massDate, description: poll.description }]
             : [];
-        const completed = poll.completedAssignments || [];
-        const rosterPublished =
-          poll.status === 'closed' &&
-          ['lector', 'altar_server', 'usher'].every((ministry) => completed.includes(ministry));
+        const rosterPublished = isDashboardRosterPublished(poll);
 
         options.forEach((option, index) => {
           const parsedDate = parseDateValue(option.date);
@@ -268,9 +271,7 @@ export default function Dashboard() {
     polls
       .filter((poll) => poll.category === 'committee' && poll.status === 'closed')
       .forEach((poll) => {
-        const completed = poll.completedAssignments || [];
-        const rosterPublished = ['lector', 'altar_server', 'usher'].every((ministry) => completed.includes(ministry));
-        if (!rosterPublished || !poll.assignments) return;
+        if (!isDashboardRosterPublished(poll) || !poll.assignments) return;
 
         Object.entries(poll.assignments).forEach(([dateValue, dateAssignments]) => {
           const role = dateAssignments[user.uid];
