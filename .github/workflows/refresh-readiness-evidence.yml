@@ -1,0 +1,74 @@
+name: One-shot readiness evidence refresh
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/refresh-readiness-evidence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Refresh exact-head readiness evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          prod = Path('docs/redevelopment/production-readiness-evidence-2026-09-11.md')
+          s = prod.read_text()
+          old = "Latest validated code/CI head before this documentation-only refresh: `9c1afa6e05f37d5cd85c5536da68896f5c7282bc`, `KCFC Redevelopment CI` run **#803**, conclusion **SUCCESS**. All 35 validation/build/security steps passed."
+          new = "Latest validated exact-head checkpoint before this documentation-only refresh: `967894f0eecbd53c80cffbc9b5e3461390217c98`, `KCFC Redevelopment CI` run **#845** / id `34567540510`, conclusion **SUCCESS**. All 39 validation/build/security steps passed."
+          if s.count(old) != 1:
+              raise SystemExit(f'production readiness checkpoint text count={s.count(old)}')
+          s = s.replace(old, new)
+          marker = "- client/server Firebase runtime isolation for staging;\n- synthetic execution of the staging preflight contract;"
+          repl = "- client/server Firebase runtime isolation for staging;\n- same-origin, Firebase-project-agnostic Web Push service-worker boundary;\n- browser push privacy logging guard preventing VAPID key, PushSubscription and FCM token values from being logged;\n- canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + notification health;\n- synthetic execution of the staging preflight contract;"
+          if s.count(marker) != 1:
+              raise SystemExit(f'production readiness automated evidence marker count={s.count(marker)}')
+          s = s.replace(marker, repl)
+          marker2 = "Every notification test separately records:\n\n- transport acceptance;\n- actual OS presentation (banner/lock screen/sound/vibration);\n- durable KCFC Inbox persistence; and\n- notification tap/deep-link result."
+          repl2 = marker2 + "\n\nThe canonical `notification-acceptance-evidence-template-2026-09-11.md` requires those signals to be recorded independently before a case can be classified PASS; ambiguous outcomes remain INVESTIGATE."
+          if s.count(marker2) != 1:
+              raise SystemExit(f'production readiness notification evidence marker count={s.count(marker2)}')
+          s = s.replace(marker2, repl2)
+          prod.write_text(s)
+
+          log = Path('docs/redevelopment/staging-evidence-log.md')
+          t = log.read_text()
+          old2 = "- validated head: `98c1901cabc6414c7b9e017570dbd27c68d4c6ec`\n- run: **#774 / id 34562112607**\n- conclusion: **SUCCESS**"
+          new2 = "- validated head: `967894f0eecbd53c80cffbc9b5e3461390217c98`\n- run: **#845 / id 34567540510**\n- conclusion: **SUCCESS**\n- validation/build/security steps: **39 passed**"
+          if t.count(old2) != 1:
+              raise SystemExit(f'staging evidence checkpoint text count={t.count(old2)}')
+          t = t.replace(old2, new2)
+          old3 = "The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration safety and email-verification migration, Core-status safeguards, Firebase Admin Storage non-use, accessibility/mobile navigation, delivery/notification diagnostics, privacy-safe device QA snapshots, caller-bound self-test push isolation, production build/bundle reporting, connector defaults OFF and provider-secret browser guards."
+          new3 = "The current workflow validates dependency installation/audit visibility, TypeScript, communication and liturgical contracts, leadership/member governance, pre-registration safety and email-verification migration, Core-status safeguards, Firebase Admin Storage non-use, client/server staging Firebase isolation, same-origin Web Push worker boundaries, push privacy logging, PWA theme/install metadata, modern iPhone/iPadOS platform detection, synthetic staging preflight, accessibility/mobile navigation, delivery/notification diagnostics, privacy-safe device QA snapshots, caller-bound self-test push isolation, production build/bundle reporting, connector defaults OFF and provider-secret browser guards."
+          if t.count(old3) != 1:
+              raise SystemExit(f'staging evidence workflow text count={t.count(old3)}')
+          t = t.replace(old3, new3)
+          t = t.replace('Result: **PASS in CI #774.**', 'Result: **PASS in CI #845.**')
+          marker3 = "- KCFC Inbox persistence as durable truth independent of OS presentation."
+          repl3 = marker3 + "\n- browser diagnostics do not log the VAPID public key, PushSubscription object or FCM token values.\n- install and Notification Health share the same modern iPhone/iPadOS detector.\n- physical acceptance uses the canonical notification evidence template with separate transport, OS presentation, Inbox and tap/deep-link outcomes."
+          if t.count(marker3) != 1:
+              raise SystemExit(f'staging evidence notification marker count={t.count(marker3)}')
+          t = t.replace(marker3, repl3)
+          log.write_text(t)
+          PY
+          git diff --check
+          git diff -- docs/redevelopment/production-readiness-evidence-2026-09-11.md docs/redevelopment/staging-evidence-log.md
+      - name: Commit branch-only docs refresh
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/redevelopment/production-readiness-evidence-2026-09-11.md docs/redevelopment/staging-evidence-log.md
+          git commit -m 'docs: refresh exact-head readiness evidence'
+          git push origin HEAD:redesign/mobile-first-v2
