@@ -1091,7 +1091,8 @@ async function startServer() {
       let usingRealSMTP = false;
       const sendCount = recipients && Array.isArray(recipients) ? recipients.length : (emails ? emails.length : 0);
 
-      if (smtpHost && smtpUser && smtpPass) {
+      const allowRealBroadcastEmail = runtimeEnvironment !== "staging";
+      if (allowRealBroadcastEmail && smtpHost && smtpUser && smtpPass) {
         usingRealSMTP = true;
         const transporter = nodemailer.createTransport({
           host: smtpHost,
