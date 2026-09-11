@@ -141,6 +141,9 @@ jobs:
       - name: Verify schedule view history navigation
         run: npx tsx scripts/verify-schedule-view-history.ts
 
+      - name: Verify Home roster publication boundary
+        run: npx tsx scripts/verify-dashboard-roster-publication-boundary.ts
+
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
