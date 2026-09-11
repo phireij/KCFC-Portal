@@ -26,11 +26,13 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] `npm run staging:preflight` is regression-tested in CI with a synthetic isolated staging environment.
 - [x] Synthetic staging preflight requires explicit matching client/server VAPID public keys and a server private key rather than relying on inherited/local fallback material.
 - [x] Synthetic staging preflight verifies external connectors OFF and Core-status staging executor OFF.
+- [x] Staging app shell renders an explicit `Staging • Test environment` badge only for `VITE_KCFC_RUNTIME_ENV=staging`; default/production runtime renders no staging badge.
 - [x] Notification-linked Updates, Inbox filters/history, and member/leader availability-request deep links are covered by permanent automated navigation/focus guards.
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
+- [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: code head `28fcf0191f97ccf1fccfd50cd84c142bf8bc02bd`, `KCFC Redevelopment CI` run **#979** / id `34574745848`, conclusion **SUCCESS**, with all **47** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus, Inbox deep-link/history/filter navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: code head `97f9b8f4baf05f1aae7d1d7d3a1a6e763050fa19`, `KCFC Redevelopment CI` run **#1001** / id `34575327421`, conclusion **SUCCESS**, with all **48** validation/build/security steps green. This includes staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus, Inbox deep-link/history/filter navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
@@ -77,6 +79,7 @@ Verify:
 
 Validate on representative widths and real devices where possible:
 
+- [ ] Staging builds visibly show `Staging • Test environment` without covering primary navigation or important content.
 - [ ] Home is understandable without horizontal scrolling.
 - [ ] Bottom navigation has exactly Home / Schedule / Community / Updates / More.
 - [ ] More sheet is usable with safe-area insets.
@@ -103,6 +106,7 @@ Use the companion `staging-device-qa-package-2026-09-11.md` and canonical `notif
 
 ### Browser/emulation
 
+- [ ] Staging badge is visible and non-obstructive at representative phone/tablet/desktop widths.
 - [ ] Install/help guidance is correct for supported/unsupported browser states.
 - [ ] Notification Health reflects permission/install/service-worker/current-endpoint state.
 - [ ] Device registration/repair flow is understandable.
@@ -123,6 +127,7 @@ Use the companion `staging-device-qa-package-2026-09-11.md` and canonical `notif
 - [ ] Physical iPhone: Focus/Silent conditions recorded where relevant.
 - [ ] Physical Android tablet: foreground/background/locked baseline recorded.
 - [ ] Optional supplemental Android phone evidence recorded when available.
+- [ ] Staging badge remains visible/non-obstructive in installed staging PWA where applicable.
 - [ ] For every notification case, record separately: transport acceptance, OS presentation, Inbox persistence, and tap/deep-link result.
 - [ ] Missing sound alone is not treated as Web Push transport failure.
 - [ ] Provider acceptance alone is not treated as proof the user saw/heard the notification.
@@ -173,7 +178,7 @@ No production backup, restore, deploy or rollback execution is authorized by thi
 Do not request production approval until:
 
 1. latest intended branch head has green redevelopment CI;
-2. actual isolated staging `staging:preflight` is retained;
+2. actual isolated staging `staging:preflight` is retained and staging badge is visibly confirmed;
 3. browser/responsive regression evidence is recorded;
 4. role/data/workflow staging regression is recorded;
 5. physical iPhone + Android notification acceptance is recorded;
