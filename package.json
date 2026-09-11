@@ -28,7 +28,7 @@
     "multer": "^2.3.0",
     "nodemailer": "^10.0.3",
     "react": "^19.0.0",
-    "react-dom": "^19.2.15",
+    "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
