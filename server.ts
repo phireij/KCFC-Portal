@@ -449,7 +449,14 @@ async function startServer() {
 
   // API routes
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
+    const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
+    res.json({
+      status: "ok",
+      time: new Date().toISOString(),
+      runtime: runtimeEnvironment,
+      firebaseProjectId: targetProjectId,
+      firestoreDatabaseId: databaseId,
+    });
   });
 
   app.get("/api/client-id", (req, res) => {
