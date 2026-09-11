@@ -1,0 +1,53 @@
+name: Apply KCFC Dependency Remediation
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/apply-dependency-remediation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install lowest-risk patched direct dependencies
+        run: |
+          npm install --save react-router-dom@7.18.3 multer@2.3.0 vite@6.4.3 @vitejs/plugin-react@5.2.0
+      - name: Validate TypeScript and production build before commit
+        run: |
+          npm run lint
+          npm run build
+      - name: Show runtime security delta
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev
+          exit 0
+      - name: Commit dependency remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'phireij'
+          git config user.email 'phireij@gmail.com'
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No dependency file changes to commit.'
+            exit 0
+          fi
+          git commit -m 'security: patch router multer and vite dependency families'
+          git push origin HEAD:redesign/mobile-first-v2
