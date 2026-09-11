@@ -1,0 +1,91 @@
+name: One-shot lazy LegacyAdmin optimization
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply lazy LegacyAdmin boundary and regression guard
+        shell: python
+        run: |
+          from pathlib import Path
+
+          admin_path = Path('src/pages/Admin.tsx')
+          admin = admin_path.read_text()
+
+          eager_import = "import LegacyAdmin from './LegacyAdmin';\n"
+          if eager_import not in admin:
+              raise SystemExit('Expected eager LegacyAdmin import was not found')
+          admin = admin.replace(eager_import, '', 1)
+
+          admin_roles = "const adminRoles = ['admin', 'president'];"
+          lazy_decl = "const LegacyAdmin = React.lazy(() => import('./LegacyAdmin'));\n\n"
+          if lazy_decl.strip() in admin:
+              raise SystemExit('LegacyAdmin is already lazy-loaded')
+          if admin_roles not in admin:
+              raise SystemExit('Admin role marker not found')
+          admin = admin.replace(admin_roles, lazy_decl + admin_roles, 1)
+
+          old_render = '<section className="kcfc-surface overflow-hidden"><div className="p-2 sm:p-4"><LegacyAdmin /></div></section>'
+          new_render = '<section className="kcfc-surface overflow-hidden"><div className="p-2 sm:p-4"><React.Suspense fallback={<div className="px-4 py-8 text-center text-[12px] font-semibold text-slate-500 dark:text-slate-400" role="status">Loading advanced legacy tools…</div>}><LegacyAdmin /></React.Suspense></div></section>'
+          if old_render not in admin:
+              raise SystemExit('Expected LegacyAdmin render marker was not found')
+          admin = admin.replace(old_render, new_render, 1)
+          admin_path.write_text(admin)
+
+          verify_path = Path('scripts/verify-admin-workspace-history.ts')
+          verify = verify_path.read_text()
+
+          required_tail = '  "const canAccess = (profile?.roles || []).some((role) => adminRoles.includes(role));",\n];'
+          replacement_tail = '  "const canAccess = (profile?.roles || []).some((role) => adminRoles.includes(role));",\n  "const LegacyAdmin = React.lazy(() => import(\'./LegacyAdmin\'));",\n  "<React.Suspense fallback=",\n];'
+          if required_tail not in verify:
+              raise SystemExit('Admin verifier required-marker tail not found')
+          verify = verify.replace(required_tail, replacement_tail, 1)
+
+          auth_guard = "if (!source.includes(\"if (!canAccess)\")) {\n  throw new Error('Admin authorization boundary must remain before leadership workspace rendering');\n}\n"
+          lazy_guard = "\nif (source.includes(\"import LegacyAdmin from './LegacyAdmin';\")) {\n  throw new Error('Advanced LegacyAdmin must remain behind the leadership lazy-load boundary');\n}\n"
+          if auth_guard not in verify:
+              raise SystemExit('Admin verifier authorization guard not found')
+          verify = verify.replace(auth_guard, auth_guard + lazy_guard, 1)
+          verify_path.write_text(verify)
+
+      - name: Validate targeted contract
+        run: npx tsx scripts/verify-admin-workspace-history.ts
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit optimized leadership boundary and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-shot-lazy-legacy-admin.yml
+          git add src/pages/Admin.tsx scripts/verify-admin-workspace-history.ts
+          git commit -m "perf: lazy-load advanced legacy admin surface"
+          git push origin HEAD:redesign/mobile-first-v2
