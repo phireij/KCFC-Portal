@@ -1,0 +1,102 @@
+name: One-shot server Firebase isolation fix
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/fix-server-firebase-isolation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+
+      - name: Harden server Firebase runtime isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('server.ts')
+          text = path.read_text()
+          old = '''const hasServerEnvConfig = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID);
+          const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
+          const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasServerEnvConfig ? {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.FIREBASE_APP_ID,
+            firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)" ? process.env.FIREBASE_DATABASE_ID : undefined,
+          } : {});
+
+          // Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
+          // If the environment variable is set to "(default)", it should not overwrite our custom database ID
+          if (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)") {
+            firebaseConfig.firestoreDatabaseId = process.env.FIREBASE_DATABASE_ID;
+          } else if (firebaseConfig.firestoreDatabaseId === "(default)") {
+            if (hasFileConfig && firebaseConfigFromFile.firestoreDatabaseId && firebaseConfigFromFile.firestoreDatabaseId !== "(default)") {
+              firebaseConfig.firestoreDatabaseId = firebaseConfigFromFile.firestoreDatabaseId;
+            } else {
+              delete firebaseConfig.firestoreDatabaseId;
+            }
+          }
+          '''
+          new = '''const runtimeEnvironment = String(process.env.KCFC_RUNTIME_ENV || "production").trim().toLowerCase();
+          const hasServerEnvConfig = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID);
+          const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
+          const committedProjectId = String(firebaseConfigFromFile?.projectId || "").trim();
+          const serverEnvConfig = hasServerEnvConfig ? {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.FIREBASE_APP_ID,
+            firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)" ? process.env.FIREBASE_DATABASE_ID : undefined,
+          } : null;
+
+          if (runtimeEnvironment === "staging") {
+            if (!serverEnvConfig) {
+              throw new Error("KCFC staging safety guard: KCFC_RUNTIME_ENV=staging requires explicit FIREBASE_* staging configuration. Refusing to fall back to the committed Firebase project.");
+            }
+            if (String(serverEnvConfig.projectId || "").trim() === committedProjectId) {
+              throw new Error("KCFC staging safety guard: server staging Firebase projectId must differ from the committed production/default projectId.");
+            }
+          }
+
+          const firebaseConfig: any = serverEnvConfig
+            ? { ...serverEnvConfig }
+            : (hasFileConfig ? { ...firebaseConfigFromFile } : {});
+
+          if (process.env.FIREBASE_DATABASE_ID === "(default)") {
+            delete firebaseConfig.firestoreDatabaseId;
+          }
+          '''
+          if old not in text:
+              raise SystemExit('Expected server Firebase configuration block not found exactly once.')
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one server Firebase configuration block, found {text.count(old)}.')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Commit branch-only fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server.ts
+          git diff --cached --check
+          git commit -m 'fix: fail closed for server staging Firebase isolation'
+          git push origin HEAD:redesign/mobile-first-v2
