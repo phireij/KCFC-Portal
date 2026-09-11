@@ -507,7 +507,9 @@ async function startServer() {
   await initializeWebPush();
 
   const app = express();
-  const PORT = 3000;
+  // Cloud Run and Firebase App Hosting provide the listener port through PORT.
+  // Retain 3000 only for local development.
+  const PORT = Number(process.env.PORT || 3000);
 
   // Middleware
   app.use(express.json());
