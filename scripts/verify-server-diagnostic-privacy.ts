@@ -6,6 +6,8 @@ const forbidden = [
   'Caller UID verified: "${callerUid}" | Email: "${callerEmail}"',
   'Failed recipients: ${failedRecipients.join(", ")}',
   'logMessage(`[PROCESS] Caller UID verified:',
+  'Body preview: "${body.substring(0, 100)}..."',
+  'Title: "${title}"',
 ];
 
 for (const marker of forbidden) {
@@ -39,6 +41,8 @@ for (const line of source.split(/\r?\n/)) {
 const required = [
   'logMessage(`[PROCESS] Caller Firebase ID token verified.`);',
   'emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.`;',
+  '[FCM SIMULATION] No registered real browser push tokens found. Announcement broadcast simulation completed without message-content logging.',
+  '[FCM SIMULATION] No registered real browser push tokens found for targeted users. Custom broadcast simulation completed without message-content logging.',
 ];
 
 for (const marker of required) {
@@ -57,4 +61,4 @@ if (smtpSafeCount < 1) {
   throw new Error('Expected at least one privacy-safe SMTP result log statement.');
 }
 
-console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers absent from diagnostic interpolation.`);
+console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers and broadcast message previews absent from diagnostic interpolation.`);
