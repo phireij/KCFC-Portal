@@ -1,0 +1,151 @@
+name: Apply KCFC Build Warning Cleanup
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/apply-build-warning-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Remove redundant FCM dynamic import and CJS import.meta warnings
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('src/App.tsx')
+          text = app.read_text()
+          old_import = "import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites } from './lib/fcmClient';"
+          new_import = "import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites, observeForegroundMessages } from './lib/fcmClient';"
+          if old_import not in text:
+              raise SystemExit('Expected fcmClient import not found')
+          text = text.replace(old_import, new_import, 1)
+
+          old_block = """    import('./lib/fcmClient').then(async ({ observeForegroundMessages }) => {
+      // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
+      await preloadVapidKeyFromServer();
+
+      // 2. Attempt token registration. If permission is already granted, update silently.
+      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
+      if (hasNotification && Notification.permission === 'granted') {
+        try {
+          await registerDeviceToken(user.uid, false);
+        } catch (e) {
+          console.warn(\"Auto-registering device token failed silently on load:\", e);
+          if (isStandaloneMode()) {
+            setShowPwaNotificationPrompt(true);
+          }
+        }
+      }
+
+      // 3. Setup active window listener for push alerts
+      const unsubscribeMessages = await observeForegroundMessages((payload) => {
+        const title = payload.notification?.title || 'Notification';
+        const body = payload.notification?.body || '';
+        setFcmNotification({ title, body });
+      });
+
+      if (unsubscribeMessages) {
+        activeCleanup = unsubscribeMessages;
+      }
+    }).catch(err => {
+      console.warn(\"FCM: Client initialization deferred or unsupported in this sandboxed frame:\", err);
+    });
+"""
+          new_block = """    const initializeForegroundMessaging = async () => {
+      // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
+      await preloadVapidKeyFromServer();
+
+      // 2. Attempt token registration. If permission is already granted, update silently.
+      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
+      if (hasNotification && Notification.permission === 'granted') {
+        try {
+          await registerDeviceToken(user.uid, false);
+        } catch (e) {
+          console.warn(\"Auto-registering device token failed silently on load:\", e);
+          if (isStandaloneMode()) {
+            setShowPwaNotificationPrompt(true);
+          }
+        }
+      }
+
+      // 3. Setup active window listener for push alerts
+      const unsubscribeMessages = await observeForegroundMessages((payload) => {
+        const title = payload.notification?.title || 'Notification';
+        const body = payload.notification?.body || '';
+        setFcmNotification({ title, body });
+      });
+
+      if (unsubscribeMessages) {
+        activeCleanup = unsubscribeMessages;
+      }
+    };
+
+    initializeForegroundMessaging().catch(err => {
+      console.warn(\"FCM: Client initialization deferred or unsupported in this sandboxed frame:\", err);
+    });
+"""
+          if old_block not in text:
+              raise SystemExit('Expected dynamic FCM initialization block not found')
+          app.write_text(text.replace(old_block, new_block, 1))
+
+          server = Path('server.ts')
+          text = server.read_text()
+          text = text.replace('import { fileURLToPath } from "url";\n', '', 1)
+          old_dir = """const hasImportMeta = typeof import.meta !== \"undefined\" && \"url\" in import.meta;
+const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== \"undefined\" ? __filename : \"\");
+const currentDirname = hasImportMeta ? path.dirname(currentFilename) : (typeof __dirname !== \"undefined\" ? __dirname : \"\");
+"""
+          new_dir = """// The server bundle is emitted as CommonJS, where __dirname is available. During
+// tsx development execution it may not be, so fall back to the process working directory.
+const currentDirname = typeof __dirname !== \"undefined\" ? __dirname : process.cwd();
+"""
+          if old_dir not in text:
+              raise SystemExit('Expected import.meta compatibility block not found')
+          server.write_text(text.replace(old_dir, new_dir, 1))
+          PY
+      - name: Validate TypeScript and production build
+        run: |
+          npm run lint
+          npm run build 2>&1 | tee /tmp/kcfc-build.log
+          if grep -q 'dynamically imported by .*fcmClient' /tmp/kcfc-build.log; then
+            echo 'Redundant fcmClient dynamic-import warning is still present.' >&2
+            exit 1
+          fi
+          if grep -q 'import.meta.*not available with the "cjs" output format' /tmp/kcfc-build.log; then
+            echo 'CJS import.meta warning is still present.' >&2
+            exit 1
+          fi
+      - name: Commit validated cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'phireij'
+          git config user.email 'phireij@gmail.com'
+          git add src/App.tsx server.ts
+          if git diff --cached --quiet; then
+            echo 'No build-warning cleanup changes to commit.'
+            exit 0
+          fi
+          git commit -m 'build: remove redundant FCM and import.meta warnings'
+          git push origin HEAD:redesign/mobile-first-v2
