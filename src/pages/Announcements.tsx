@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../App';
+import { useSearchParams } from 'react-router-dom';
 import {
   addDoc,
   collection,
@@ -99,6 +100,8 @@ const connectedProvidersFor = (apps?: ConnectedCommunicationApp[]) =>
 
 export default function Announcements() {
   const { profile, user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const focusedAnnouncementId = searchParams.get('id');
   const [announcements, setAnnouncements] = useState<ExtendedAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -137,6 +140,20 @@ export default function Announcements() {
         .includes(needle);
     });
   }, [announcements, user?.uid, canEditOthers, scope, queryText]);
+
+  useEffect(() => {
+    if (!focusedAnnouncementId || loading) return;
+    if (!visibleAnnouncements.some((announcement) => announcement.id === focusedAnnouncementId)) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`announcement-${focusedAnnouncementId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedAnnouncementId, loading, visibleAnnouncements]);
 
   const resetEditor = () => {
     setEditingId(null);
@@ -306,7 +323,7 @@ export default function Announcements() {
           </div>
         </div>
 
-        {loading ? <div className="space-y-3 p-4 sm:p-5">{[0, 1, 2].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />)}</div> : visibleAnnouncements.length === 0 ? <EmptyState queryText={queryText} canCreate={canCreate} onCreate={openNew} /> : <div className="divide-y divide-slate-100 dark:divide-white/10">{visibleAnnouncements.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} canEdit={announcement.authorId === user?.uid || canEditOthers} onEdit={() => openEdit(announcement)} onDelete={() => handleDelete(announcement)} />)}</div>}
+        {loading ? <div className="space-y-3 p-4 sm:p-5">{[0, 1, 2].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />)}</div> : visibleAnnouncements.length === 0 ? <EmptyState queryText={queryText} canCreate={canCreate} onCreate={openNew} /> : <div className="divide-y divide-slate-100 dark:divide-white/10">{visibleAnnouncements.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} focused={focusedAnnouncementId === announcement.id} canEdit={announcement.authorId === user?.uid || canEditOthers} onEdit={() => openEdit(announcement)} onDelete={() => handleDelete(announcement)} />)}</div>}
       </section>
 
       {editorOpen && <EditorSheet form={form} setForm={setForm} editing={Boolean(editingId)} saving={saving} onClose={resetEditor} onSave={handleSave} />}
@@ -314,11 +331,11 @@ export default function Announcements() {
   );
 }
 
-function AnnouncementCard({ announcement, canEdit, onEdit, onDelete }: { announcement: ExtendedAnnouncement; canEdit: boolean; onEdit: () => void; onDelete: () => void }) {
+function AnnouncementCard({ announcement, focused, canEdit, onEdit, onDelete }: { announcement: ExtendedAnnouncement; focused: boolean; canEdit: boolean; onEdit: () => void; onDelete: () => void }) {
   const AudienceIcon = audienceIcon(announcement.audience);
   const isDraft = announcement.status === 'draft';
   return (
-    <article className="p-4 sm:p-5">
+    <article id={announcement.id ? `announcement-${announcement.id}` : undefined} tabIndex={focused ? -1 : undefined} aria-current={focused ? 'true' : undefined} className={cn('p-4 transition-colors sm:p-5', focused && 'bg-blue-50/60 ring-2 ring-inset ring-blue-400 dark:bg-blue-500/10 dark:ring-blue-400/70')}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide', isDraft ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300')}>{isDraft ? <Clock3 className="h-3 w-3" /> : <Check className="h-3 w-3" />}{isDraft ? 'Draft' : 'Published'}</span><span className="inline-flex items-center gap-1 rounded-full bg-[#F7F9FC] px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:bg-white/5 dark:text-slate-300"><AudienceIcon className="h-3 w-3" />{audienceLabel(announcement.audience)}</span></div><h3 className="mt-3 text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white sm:text-[20px]">{announcement.title}</h3>{announcement.summary && <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-600 dark:text-slate-300">{announcement.summary}</p>}<p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-slate-500 dark:text-slate-400">{announcement.content}</p><div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium text-slate-400"><span>{announcement.authorName}</span><span>•</span><span>{formatDate(announcement.publishedAt || announcement.updatedAt || announcement.createdAt)}</span>{(announcement.channels || []).includes('push') && <><span>•</span><span className="inline-flex items-center gap-1"><Bell className="h-3 w-3" />Push enabled</span></>}</div></div>
         {canEdit && <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={onEdit} aria-label="Edit announcement" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-[#EAF3FF] hover:text-[#123B66] dark:text-slate-400 dark:hover:bg-blue-500/10"><Edit3 className="h-4 w-4" /></button><button type="button" onClick={onDelete} aria-label="Delete announcement" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-4 w-4" /></button></div>}
