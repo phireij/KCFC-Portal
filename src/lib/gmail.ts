@@ -49,7 +49,7 @@ export const getGmailAccessToken = (): Promise<string> => {
             tokenExpiry = Date.now() + (response.expires_in * 1000) - 60000; // Buffer
             resolve(response.access_token);
           } else {
-            reject(new Error('Failed to get Gmail access token: ' + (response.error || 'Unknown error'));
+            reject(new Error('Failed to get Gmail access token: ' + (response.error || 'Unknown error')));
           }
         },
       });
