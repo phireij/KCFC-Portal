@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 
 const server = fs.readFileSync('server.ts', 'utf8');
+const contactStart = server.indexOf('app.post("/api/public/contact"');
+const contactEnd = server.indexOf('// Secure API endpoint for client-side triggered email alerts', contactStart);
+if (contactStart === -1 || contactEnd === -1) {
+  throw new Error('Public contact route boundary not found for inquiry privacy verification.');
+}
+const contactRoute = server.slice(contactStart, contactEnd);
 
 const forbiddenMarkers = [
   'Extracted fields => name:',
@@ -19,6 +25,20 @@ for (const marker of forbiddenMarkers) {
   }
 }
 
+const contactErrorForbidden = [
+  'let errorDetails =',
+  '${dbErr.message}',
+  '${errText}',
+  '${fsErr.message}',
+  '${err.message}',
+  'await fsResponse.text()',
+];
+for (const marker of contactErrorForbidden) {
+  if (contactRoute.includes(marker)) {
+    throw new Error(`Inquiry persistent diagnostic privacy regression: raw backend detail present: ${marker}`);
+  }
+}
+
 const requiredMarkers = [
   '[INBOUND CONTACT] Parsed inquiry fields:',
   'messageLength=${message.length}',
@@ -26,6 +46,10 @@ const requiredMarkers = [
   'res.json({ success: true, emailSent, firestoreWritten });',
   'bodyFields=${inboundBodyFieldCount} queryFields=${inboundQueryFieldCount}',
   'res.status(500).json({ error: "Failed to process contact inquiry" });',
+  '[WARN] dbAdmin direct write failed; attempting Firestore REST fallback.',
+  '[ERROR] Firestore REST fallback failed with status ${fsResponse.status}.',
+  '[ERROR] Firestore REST fallback request failed.',
+  '[ERROR] Public contact endpoint execution failed.',
 ];
 
 for (const marker of requiredMarkers) {
@@ -34,4 +58,4 @@ for (const marker of requiredMarkers) {
   }
 }
 
-console.log('Inquiry privacy logging boundary: PASS');
+console.log('Inquiry privacy logging boundary: PASS (payload, URL, backend-detail and public-error privacy enforced).');
