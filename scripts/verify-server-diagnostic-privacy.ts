@@ -14,6 +14,28 @@ for (const marker of forbidden) {
   }
 }
 
+const identifierMarkers = [
+  '${userId}',
+  '${targetUserId}',
+  '${currentUid}',
+  '${emailTrimmed}',
+  '${targetUser.uid}',
+  '${targetUser.email}',
+  '${callerEmail}',
+  '${rec.email}',
+  '${u.id}',
+  '${JSON.stringify(allUidsToDelete)}',
+];
+
+for (const line of source.split(/\r?\n/)) {
+  if (!line.includes('logMessage(') && !line.includes('console.')) continue;
+  for (const marker of identifierMarkers) {
+    if (line.includes(marker)) {
+      throw new Error(`Server diagnostic privacy regression: member identifier interpolation present in diagnostic statement: ${marker}`);
+    }
+  }
+}
+
 const required = [
   'logMessage(`[PROCESS] Caller Firebase ID token verified.`);',
   'emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.`;',
@@ -35,4 +57,4 @@ if (smtpSafeCount < 1) {
   throw new Error('Expected at least one privacy-safe SMTP result log statement.');
 }
 
-console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s))`);
+console.log(`Server diagnostic privacy logging boundary: PASS (${callerSafeCount} caller log(s), ${smtpSafeCount} SMTP result log(s)); member identifiers absent from diagnostic interpolation.`);
