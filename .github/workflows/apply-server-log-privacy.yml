@@ -27,3 +27,5 @@ jobs:
           git add server.ts scripts/verify-server-diagnostic-privacy.ts scripts/patch-server-log-privacy.py
           git commit -m 'fix: remove member identifiers from server diagnostics'
           git push origin HEAD:redesign/mobile-first-v2
+
+# retrigger after marker correction
