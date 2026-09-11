@@ -30,6 +30,25 @@ try {
 }
 
 const runtimeEnvironment = String(process.env.KCFC_RUNTIME_ENV || "production").trim().toLowerCase();
+const runtimeAppUrl = String(process.env.APP_URL || "").trim();
+if (runtimeEnvironment === "staging") {
+  if (!runtimeAppUrl) {
+    throw new Error("KCFC staging safety guard: APP_URL is required for staging.");
+  }
+  let stagingAppUrl: URL;
+  try {
+    stagingAppUrl = new URL(runtimeAppUrl);
+  } catch {
+    throw new Error("KCFC staging safety guard: staging APP_URL must be a valid absolute HTTPS URL.");
+  }
+  if (stagingAppUrl.protocol !== "https:") {
+    throw new Error("KCFC staging safety guard: staging APP_URL must be a valid absolute HTTPS URL.");
+  }
+  const productionPortalHostnames = new Set(['portal.kcfcjp.com', 'www.portal.kcfcjp.com']);
+  if (productionPortalHostnames.has(stagingAppUrl.hostname.toLowerCase())) {
+    throw new Error("KCFC staging safety guard: staging APP_URL must not target the production KCFC Portal hostname.");
+  }
+}
 const hasServerEnvConfig = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID);
 const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
 const committedProjectId = String(firebaseConfigFromFile?.projectId || "").trim();
