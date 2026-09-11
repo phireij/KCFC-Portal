@@ -1815,7 +1815,7 @@ async function startServer() {
             await dbAdmin.collection("users").doc(callerUid).update({
               webPushSubscriptions: updatedSubs
             });
-            logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for user ${callerUid}`);
+            logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for authenticated caller.`);
           } catch (err) {
             console.error("[WEBPUSH TEST PRUNE ERROR]", err);
           }
@@ -1867,7 +1867,7 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Error sending user test push notification:", error);
-      res.status(500).json({ error: error.message || "Failed to dispatch test push notification" });
+      res.status(500).json({ error: "Failed to dispatch test push notification" });
     }
   });
 
@@ -1958,15 +1958,15 @@ async function startServer() {
             </div>
           `
         }).then(() => {
-          logMessage(`[SMTP SUCCESS] Sent custom server-side verification link to ${email}`);
+          logMessage(`[SMTP SUCCESS] Custom server-side verification link dispatched.`);
         }).catch((err) => {
           console.error("[SMTP ERROR] Failed to send verification email in background:", err);
         });
         emailSent = true;
-        logMsgText = `[SMTP INITIATED] Custom server-side verification link dispatch started for ${email}`;
+        logMsgText = `[SMTP INITIATED] Custom server-side verification link dispatch started.`;
         logMessage(logMsgText);
       } else {
-        logMsgText = `[SMTP SIMULATION] No server SMTP config found. Raw verification link: ${verificationLink}`;
+        logMsgText = `[SMTP SIMULATION] No server SMTP config found. Verification link generated for authenticated caller without logging the link.`;
         logMessage(logMsgText);
       }
 
@@ -1979,7 +1979,7 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Error generating verification link or sending email:", error);
-      res.status(500).json({ error: error.message || "Failed to process verification email dispatch" });
+      res.status(500).json({ error: "Failed to process verification email dispatch" });
     }
   });
 
