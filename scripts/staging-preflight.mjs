@@ -22,6 +22,21 @@ if (clientRuntime !== 'staging' || serverRuntime !== 'staging') {
   throw new Error('KCFC staging preflight: both VITE_KCFC_RUNTIME_ENV and KCFC_RUNTIME_ENV must equal "staging".');
 }
 
+const appUrlRaw = required('APP_URL');
+let appUrl;
+try {
+  appUrl = new URL(appUrlRaw);
+} catch {
+  throw new Error('KCFC staging preflight: APP_URL must be a valid absolute URL.');
+}
+if (appUrl.protocol !== 'https:') {
+  throw new Error('KCFC staging preflight: APP_URL must use HTTPS for PWA/Web Push QA.');
+}
+const productionPortalHostnames = new Set(['portal.kcfcjp.com', 'www.portal.kcfcjp.com']);
+if (productionPortalHostnames.has(appUrl.hostname.toLowerCase())) {
+  throw new Error('KCFC staging preflight: APP_URL must not target the production KCFC Portal hostname.');
+}
+
 const clientProjectId = required('VITE_FIREBASE_PROJECT_ID');
 const serverProjectId = required('FIREBASE_PROJECT_ID');
 required('VITE_FIREBASE_API_KEY');
@@ -71,6 +86,7 @@ for (const name of [
 }
 
 console.log('KCFC staging preflight PASS');
+console.log(`Application URL host: ${appUrl.hostname}`);
 console.log(`Firebase project: ${clientProjectId}`);
 console.log(`Firestore database: ${clientDatabaseId || '(default)'}`);
 console.log('Runtime markers: client=staging, server=staging');
