@@ -70,7 +70,8 @@ export default function Inbox() {
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<NotificationType | null>(null);
-  const [tab, setTab] = useState<Tab>('all');
+  const tabParam = searchParams.get('tab');
+  const tab: Tab = tabs.includes(tabParam as Tab) ? (tabParam as Tab) : 'all';
   const [search, setSearch] = useState('');
   const [mobileDetail, setMobileDetail] = useState(false);
 
@@ -148,6 +149,15 @@ export default function Inbox() {
     });
   };
 
+  const setInboxTab = (nextTab: Tab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextTab === 'all') next.delete('tab');
+      else next.set('tab', nextTab);
+      return next;
+    });
+  };
+
   const openMessage = (item: NotificationType) => {
     setSelected(item);
     setMobileDetail(true);
@@ -196,7 +206,7 @@ export default function Inbox() {
               {tabs.map((item) => {
                 const count = item === 'all' ? notifications.length : notifications.filter((note) => matchesTab(note, item)).length;
                 if (count === 0 && !['all', 'unread'].includes(item)) return null;
-                return <button key={item} type="button" aria-pressed={tab === item} onClick={() => setTab(item)} className={cn('min-h-9 shrink-0 rounded-xl px-3 text-[10px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', tab === item ? 'bg-[#123B66] text-white' : 'bg-[#F7F9FC] text-slate-500 dark:bg-white/5 dark:text-slate-300')}>{item}{count > 0 && <span className="ml-1.5 opacity-70">{count}</span>}</button>;
+                return <button key={item} type="button" aria-pressed={tab === item} onClick={() => setInboxTab(item)} className={cn('min-h-9 shrink-0 rounded-xl px-3 text-[10px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', tab === item ? 'bg-[#123B66] text-white' : 'bg-[#F7F9FC] text-slate-500 dark:bg-white/5 dark:text-slate-300')}>{item}{count > 0 && <span className="ml-1.5 opacity-70">{count}</span>}</button>;
               })}
             </div>
           </div>
