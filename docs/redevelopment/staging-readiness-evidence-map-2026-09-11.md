@@ -24,6 +24,7 @@ These can be treated as repository evidence when the exact branch head has a gre
 - Liturgical creator, assignment-diff and publication-plan contracts.
 - Leadership broadcast creator and accessibility contracts.
 - Member-governance and safe pre-registration contracts.
+- Pre-registration migration preserves the real Firebase email-verification state; it cannot promote an unverified pending member merely because the pending profile exists.
 - Member account-status classification.
 - Core-status transition/mutation planning safeguards.
 - Staging Core-status executor isolation and disabled-by-default guard.
@@ -40,9 +41,10 @@ These can be treated as repository evidence when the exact branch head has a gre
 
 Latest fully validated evidence before this document update:
 
-- head `66147350bf73bc21597173a078b1a0927fca9571`
-- `KCFC Redevelopment CI` run #759
+- head `93e2cdd070a7c49fb1243eb1bec2ec5f6d7afc1a`
+- `KCFC Redevelopment CI` run #770
 - conclusion: **success**
+- all 33 validation/build/security steps completed successfully, including `Verify pre-registration email verification migration`.
 
 Any later code or CI change requires a fresh green run before that later head is considered validated.
 
@@ -52,6 +54,7 @@ The following are supported by current implementation review but still require s
 
 - Existing Firebase UID is the intended member identity key.
 - Safe member pre-registration does not create Firebase Auth users.
+- Pending-profile migration writes the real Firebase UID and preserves pending roles/ministries without automatically granting verified membership.
 - Destructive admin controls remain isolated from focused routine administration.
 - Notification self-test derives the destination from the authenticated caller UID and caller profile.
 - KCFC Inbox remains the durable message record independent of OS notification presentation.
@@ -125,6 +128,8 @@ Confirm end-to-end behavior for:
 - explicit roster publication;
 - published-assignment revision returning to review state;
 - focused member pre-registration;
+- pending pre-registered member first authentication while email is still unverified;
+- the same member after Firebase email verification, without changing Firebase UID;
 - governed role/ministry change preview/save;
 - individual website-inquiry reply to a staging/sink recipient only;
 - targeted self-test push to the authenticated staging tester.
