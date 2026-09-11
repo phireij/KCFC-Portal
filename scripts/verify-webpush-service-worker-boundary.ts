@@ -13,11 +13,12 @@ const forbiddenWorkerFragments = [
   "importScripts('https://www.gstatic.com/firebasejs",
   'VITE_FIREBASE_',
   'FIREBASE_PROJECT_ID',
+  'clientUrlObj.pathname === targetUrlObj.pathname',
 ];
 
 for (const fragment of forbiddenWorkerFragments) {
   if (sw.includes(fragment)) {
-    throw new Error(`Web Push service worker must remain Firebase-project agnostic; forbidden fragment found: ${fragment}`);
+    throw new Error(`Web Push service worker must remain Firebase-project agnostic and deep-link safe; forbidden fragment found: ${fragment}`);
   }
 }
 
@@ -26,6 +27,11 @@ const requiredWorkerFragments = [
   'self.registration.showNotification',
   "self.addEventListener('notificationclick'",
   'self.location.origin',
+  "targetUrl = new URL('/inbox', self.location.origin);",
+  'targetUrl.origin !== self.location.origin',
+  "typeof client.navigate === 'function'",
+  'client.navigate(absoluteTargetUrl)',
+  'client.url === absoluteTargetUrl',
 ];
 
 for (const fragment of requiredWorkerFragments) {
@@ -50,4 +56,4 @@ if (client.includes('serviceWorker.register("http://') || client.includes("servi
   throw new Error('Notification service worker must never be registered from a cross-origin URL.');
 }
 
-console.log(`Web Push service worker boundary verified (${registrations.length} canonical registration call(s)).`);
+console.log(`Web Push service worker boundary verified (${registrations.length} canonical registration call(s)); notification click navigation is same-origin and full-URL aware.`);
