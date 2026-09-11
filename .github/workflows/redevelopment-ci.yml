@@ -93,6 +93,9 @@ jobs:
       - name: Verify Firebase runtime isolation
         run: npx tsx scripts/verify-firebase-runtime-isolation.ts
 
+      - name: Verify staging environment template
+        run: npx tsx scripts/verify-staging-env-template.ts
+
       - name: Verify staging environment badge
         run: npx tsx scripts/verify-staging-environment-banner.ts
 
