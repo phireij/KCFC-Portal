@@ -57,13 +57,13 @@ jobs:
 
           package = Path('docs/redevelopment/staging-device-qa-package-2026-09-11.md')
           s = package.read_text()
-          old = "- Schedule All Schedule ↔ My Ministry behavior;"
-          new = "- Schedule All Schedule ↔ My Ministry behavior, including direct `?view=` URLs and browser Back/Forward restoration;"
+          old = "- Schedule All Schedule ↔ My Ministry behavior."
+          new = "- Schedule All Schedule ↔ My Ministry behavior, including direct `?view=` URLs and browser Back/Forward restoration."
           if s.count(old) != 1:
               raise SystemExit(f'device QA schedule marker count={s.count(old)}')
           s = s.replace(old, new)
-          old2 = "- notification deep-link routes;"
-          new2 = "- notification deep-link routes, including query-specific navigation when a different Schedule view is already open and same-origin fallback for malformed/external targets;"
+          old2 = "- Notification deep-link destination handling."
+          new2 = "- Notification deep-link destination handling, including query-specific navigation when a different Schedule view is already open and same-origin fallback for malformed/external targets."
           if s.count(old2) != 1:
               raise SystemExit(f'device QA deep-link marker count={s.count(old2)}')
           package.write_text(s.replace(old2, new2))
