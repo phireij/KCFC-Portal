@@ -2279,7 +2279,8 @@ async function startServer() {
       };
 
       let emailSent = false;
-      if (smtpHost && smtpUser && smtpPass) {
+      const allowInquiryEmailDelivery = runtimeEnvironment !== "staging";
+      if (allowInquiryEmailDelivery && smtpHost && smtpUser && smtpPass) {
         logMessage(`[INBOUND CONTACT] Initiating background SMTP mail dispatch to kcfc.jp@gmail.com...`);
         const transporter = nodemailer.createTransport({
           host: smtpHost,
@@ -2293,6 +2294,8 @@ async function startServer() {
           console.error(`[INBOUND CONTACT] SMTP mail dispatch FAILED in background:`, err);
         });
         emailSent = true;
+      } else if (!allowInquiryEmailDelivery) {
+        logMessage(`[INBOUND CONTACT] Staging runtime: SMTP notification suppressed; inquiry remains in isolated staging data.`);
       } else {
         logMessage(`[INBOUND CONTACT] SMTP disabled or credentials missing. Skipping email notification.`);
       }
@@ -2399,6 +2402,16 @@ async function startServer() {
 
       if (!hasPermission) {
         res.status(403).json({ error: "Forbidden: Only Admin or President can trigger email alerts" });
+        return;
+      }
+
+      if (runtimeEnvironment === "staging") {
+        logMessage(`[SMTP SIMULATION] Staging runtime: inquiry email alert suppressed for message ${messageId}.`);
+        res.json({
+          success: true,
+          simulated: true,
+          message: "Staging runtime: inquiry email alert simulated; no SMTP message was sent."
+        });
         return;
       }
 
