@@ -4,94 +4,62 @@ Branch: `redesign/mobile-first-v2`
 
 Status: production-readiness evidence only. This record does **not** authorize a production merge or deployment.
 
-## Purpose
+## Current measured position
 
-The current runtime audit has already been reduced to four residual package entries with no critical or high runtime finding. This record maps the remaining moderate findings to their current public advisories and the installed copies we can identify, without treating package presence alone as proof of exploitability.
+The production/runtime audit is now reduced to **3 findings: 0 critical, 0 high, 2 moderate, 1 low**.
 
-No `npm audit fix --force`, speculative package override, or production dependency rewrite is authorized by this document.
+The previously open `qs` moderate was remediated by a supported parent migration from Express 4 to **Express 5.2.1**. The migration was first exercised in an isolated probe with TypeScript, all KCFC redevelopment contracts, production build, live `/api/health` startup and SPA fallback routing. The tested package/lock/server state was then committed to the redevelopment branch and the ordinary `KCFC Redevelopment CI` passed again.
 
-## Current residual set
+No `npm audit fix --force`, speculative leaf override, or production deployment was used.
 
-| Package | Audit severity | Locked-tree / advisory evidence | Disposition |
+## Residual set
+
+| Package | Severity | Current evidence | Disposition |
 | --- | --- | --- | --- |
-| `qs` | moderate | The lockfile contains `qs` **6.14.2** plus a nested `body-parser` copy at **6.16.0**. `GHSA-4mjr-xmp4-gh2g` / `CVE-2026-82417` affects `qs >=2.2.5 <=6.15.3`; `GHSA-x5fp-wj9c-mxmx` / `CVE-2026-82562` affects `qs >=6.14.2 <=6.15.3`. Both are patched in 6.16.0. | **OPEN, NARROWED — the 6.14.2 copy is inside the affected ranges; the nested 6.16.0 copy is outside them.** Map the 6.14.2 owner/call path and use a supported parent update rather than a blanket override. |
-| `uuid` | moderate | Lockfile resolves `uuid` **9.0.1** as an optional transitive dependency. `GHSA-w5hq-g745-h8pq` / `CVE-2026-41907` affects versions `<11.1.1` and specifically concerns the `v3`/`v5`/`v6` APIs when caller-provided output buffers/offsets are used. | **OPEN, NARROWED — installed version is affected, but KCFC reachability depends on the owning Google Cloud/gaxios path invoking the vulnerable buffer-output APIs.** Prefer a supported parent-package fix. |
-| `gaxios` | moderate | Lockfile contains `gaxios` **7.1.4** plus an optional `@google-cloud/storage` nested copy at **6.7.1**. The older Google Cloud path is also where the transitive `uuid` 9.x family appears. | **OPEN — evaluate together with the owning Google Cloud/Auth/Storage parent.** Do not independently force `gaxios` or `uuid` across parent compatibility boundaries. |
-| `esbuild` | low | Reported through the `tsx` development-tooling chain. `tsx` is a development dependency; production start executes `node dist/server.cjs`. | **PRODUCTION EXPOSURE LOW / TOOLING-ONLY PATH.** Keep visible in the full dependency audit and update through supported tooling versions when compatible. |
+| `uuid` | moderate | `uuid` 9.0.1 remains under the optional Firebase Admin / `@google-cloud/storage` chain. The reviewed advisory is specific to v3/v5/v6 caller-provided output-buffer behavior. | **BOUNDED / OPEN FOR PARENT REMEDIATION.** KCFC source does not import Firebase Admin Storage, `@google-cloud/storage`, or call `getStorage()`. Permanent CI now guards that boundary. Reopen reachability review before any Storage activation. |
+| `gaxios` | moderate | The affected older `gaxios` copy remains under the optional `@google-cloud/storage` dependency path. A newer auth-related copy is also present elsewhere in the tree. | **BOUNDED / OPEN FOR PARENT REMEDIATION.** Do not force a global leaf override. Treat the Storage path as unused unless a future feature explicitly activates it. |
+| `esbuild` | low | Reported through the `tsx` development/tooling chain. Production starts with `node dist/server.cjs`. | **LOW PRODUCTION EXPOSURE / TOOLING PATH.** Keep visible and update through supported tooling versions when compatible. |
 
-## Advisory-specific interpretation
+## Closed finding: `qs`
 
-### `qs` 6.14.2
+The prior lockfile contained an affected `qs` 6.14.2 copy. A supported Express 4.22.2 probe still resolved an affected `qs` line, so that candidate was rejected rather than recorded as remediation.
 
-Two current reviewed advisories now make the installed-copy distinction important:
+A separate Express **5.2.1** probe resolved the parent chain to patched `qs` **6.16.0**. The candidate passed:
 
-1. `GHSA-4mjr-xmp4-gh2g` / `CVE-2026-82417` — denial of service involving attacker-controlled `constructor.isBuffer` during an affected `qs.parse(...)` → `qs.stringify(...)` style flow. Patched in `qs` 6.16.0.
-2. `GHSA-x5fp-wj9c-mxmx` / `CVE-2026-82562` — array-limit bypass when comma parsing and bracket-array syntax are combined. Patched in `qs` 6.16.0.
+- dependency resolution and runtime audit capture;
+- TypeScript;
+- all KCFC redevelopment verification contracts;
+- production build;
+- real production-server startup on port 3000;
+- `/api/health` response;
+- SPA fallback routing for a non-API path.
 
-The KCFC lockfile's `qs` 6.14.2 copy falls inside both affected ranges, while the nested 6.16.0 copy is already patched for both. This means a global statement that “qs is patched” would be incorrect, but a global override is also not justified without validating the owner package.
+The exact tested package/lock/server state was then committed to `redesign/mobile-first-v2`, the one-time probe was removed, and normal redevelopment CI passed on the committed state. The `qs` moderate is therefore **CLOSED** at the current branch state.
 
-KCFC does not currently document use of `comma: true`, `plainObjects: true`, or an explicit application-level `qs.stringify` round trip. That reduces evidence for those exact exploit preconditions but is **not** enough to close the finding because Express/body-parser query/form parsing remains part of the server request boundary. The supported parent chain should therefore be upgraded/probed rather than relying on configuration assumptions.
+## Firebase Admin Storage exposure boundary
 
-### `uuid` 9.0.1
+The remaining `uuid` / older `gaxios` chain is installed through Firebase Admin's optional Google Cloud Storage path. KCFC production source currently uses Firebase Admin App / Firestore / Auth / Messaging behavior and does not activate Storage.
 
-`GHSA-w5hq-g745-h8pq` / `CVE-2026-41907` is narrower than a generic UUID-generation flaw. The vulnerable behavior is in the `v3`, `v5`, and `v6` API methods when an external output buffer and offset are supplied; ordinary UUID APIs such as `v4` are not the affected path described by the advisory.
+Permanent verification now fails if KCFC source introduces any of the following without reopening security review:
 
-The installed `uuid` 9.0.1 version is inside the affected range, but it is optional/transitive rather than a KCFC direct dependency. Production disposition therefore depends on whether the owning Google Cloud/gaxios path can exercise those specific buffer-writing methods with attacker-influenced buffer/offset inputs. Until that owner/API reachability is proven or the parent dependency is upgraded, the finding remains open.
+- `firebase-admin/storage` import;
+- direct `@google-cloud/storage` import;
+- `getStorage(...)` API use.
 
-### `gaxios`
-
-The lockfile contains two material versions rather than one homogeneous package state. The older nested `gaxios` 6.7.1 copy belongs to an optional `@google-cloud/storage` path, while a newer 7.1.4 copy is also installed for current Google auth support. Because the residual audit output groups findings by package and npm can report transitive paths together, the correct remediation unit is the owning Google Cloud/Auth/Storage package family, not an isolated leaf override.
-
-## Exposure boundary
-
-### Production server/runtime
-
-The production package scripts build a browser bundle with Vite and a bundled CommonJS server entry with esbuild, then start the deployed server with:
-
-`node dist/server.cjs`
-
-The `tsx` runner is used by the local/development `dev` script and CI verification commands; it is not the production start command. That supports treating the residual low `esbuild` entry under the `tsx` chain as a development/tooling exposure rather than a deployed-server execution dependency.
-
-This does **not** remove the finding from audit visibility. It documents why it does not currently block production readiness at the same level as a reachable runtime vulnerability.
-
-### Runtime moderate findings
-
-Current classification is now:
-
-- `qs`: **affected installed copy confirmed**; exact server owner/call-path remediation still open.
-- `uuid`: **affected installed version confirmed**; vulnerable API reachability through the optional cloud path still open.
-- `gaxios`: **multiple installed copies confirmed**; remediation must be evaluated at the supported parent-package family level.
-
-Until parent/remediation validation is complete:
-
-- no forced audit fix;
-- no speculative `overrides` entry;
-- no downgrade of audit visibility;
-- no claim that the three moderate findings are harmless;
-- supported parent-package upgrades remain preferred over leaf overrides.
-
-## Required closure evidence for the three moderate entries
-
-For each remaining runtime finding, record:
-
-1. exact affected installed version and advisory identifier;
-2. direct/transitive owner chain from the KCFC dependency tree;
-3. browser, server, connector, build-only, or unused-path classification;
-4. whether the affected API/path is actually exercised by KCFC production flows;
-5. supported remediation path, if one exists;
-6. TypeScript + production build + redevelopment regression evidence for any accepted dependency change.
+This is a reachability boundary, not a claim that the installed packages are patched. The findings remain visible in the production audit snapshot until the supported parent chain removes them.
 
 ## Release-gate effect
 
-- Critical/high runtime dependency gate: **CLEAR at the current measured branch state.**
-- Low `esbuild`/`tsx` production-exposure disposition: **DOCUMENTED as tooling-only / low production exposure.**
-- `qs` moderate gate: **OPEN, but affected copy/advisories are now identified.**
-- `uuid` moderate gate: **OPEN, but affected version and vulnerable API family are now identified.**
-- `gaxios` moderate gate: **OPEN pending parent-family remediation/reachability evidence.**
-- Production merge/deployment: **STILL REQUIRES EXPLICIT USER APPROVAL even after all dependency findings are dispositioned.**
+- Critical/high runtime dependency gate: **CLEAR**.
+- `qs` moderate: **CLOSED through validated Express 5.2.1 migration**.
+- `uuid` moderate: **BOUNDED to currently unused optional Storage path; keep visible and pursue supported parent remediation**.
+- `gaxios` moderate: **BOUNDED to currently unused optional Storage path for the affected older copy; keep visible and pursue supported parent remediation**.
+- `esbuild` low: **documented as development/tooling exposure**.
+- Production merge/deployment: **still requires explicit user approval** regardless of dependency status.
 
-## Public advisory references
+## Required follow-up
 
-- GitHub Advisory Database: `GHSA-4mjr-xmp4-gh2g` (`CVE-2026-82417`), patched in `qs` 6.16.0.
-- GitHub Advisory Database: `GHSA-x5fp-wj9c-mxmx` (`CVE-2026-82562`), patched in `qs` 6.16.0.
-- GitHub Advisory Database: `GHSA-w5hq-g745-h8pq` (`CVE-2026-41907`), patched in supported `uuid` lines beginning at 11.1.1 / 12.0.1 / 13.0.1.
+1. Keep the Firebase Admin Storage boundary verifier in permanent CI.
+2. Prefer a supported Firebase Admin / Google Cloud parent update when it removes the remaining affected transitive copies without regressions.
+3. Reopen dependency reachability review before adding any Storage-backed feature.
+4. Continue to prohibit forced audit fixes and speculative overrides.
