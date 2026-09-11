@@ -29,6 +29,11 @@ These can be treated as repository evidence when the exact branch head has a gre
 - Core-status transition/mutation planning safeguards.
 - Staging Core-status executor isolation and disabled-by-default guard.
 - Firebase Admin Storage non-use boundary.
+- Client/server staging Firebase fail-closed isolation.
+- Same-origin, Firebase-project-agnostic Web Push service-worker boundary.
+- Push privacy logging guard: VAPID public key, PushSubscription object and FCM token values are not written to browser logs.
+- Canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + Notification Health.
+- Synthetic execution of `npm run staging:preflight` with isolated values.
 - Leadership accessibility contracts.
 - Five-item mobile navigation contract and mobile target/safe-area guards.
 - Delivery diagnostics contracts.
@@ -41,10 +46,10 @@ These can be treated as repository evidence when the exact branch head has a gre
 
 Latest fully validated evidence before this document update:
 
-- head `93e2cdd070a7c49fb1243eb1bec2ec5f6d7afc1a`
-- `KCFC Redevelopment CI` run #770
+- head `9eafd9363e0a7be770b283ef3d801c2edd3bb222`
+- `KCFC Redevelopment CI` run **#850** / id `34570190923`
 - conclusion: **success**
-- all 33 validation/build/security steps completed successfully, including `Verify pre-registration email verification migration`.
+- all **39** validation/build/security steps completed successfully, including Firebase runtime isolation, Web Push worker boundary, push privacy logging, PWA theme/install metadata, shared iPhone/iPadOS platform detection and synthetic staging preflight.
 
 Any later code or CI change requires a fresh green run before that later head is considered validated.
 
@@ -150,6 +155,8 @@ Physical acceptance must separately record:
 2. actual OS banner/lock-screen/sound/vibration presentation;
 3. durable KCFC Inbox persistence;
 4. notification tap/deep-link result.
+
+Use `notification-acceptance-evidence-template-2026-09-11.md` as the canonical record. A case cannot be classified PASS merely because transport was accepted; ambiguous or incomplete signal sets remain INVESTIGATE.
 
 Sound alone is not a transport verdict. Focus/Silent/OS notification settings must be recorded when relevant.
 
