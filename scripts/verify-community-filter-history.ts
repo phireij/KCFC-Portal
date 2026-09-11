@@ -12,7 +12,7 @@ const required = [
   "if (nextType === 'all') next.delete('type');",
   "else next.set('type', nextType);",
   "next.delete('ministry');",
-  "next.append('ministry', ministry);",
+  "next.append('ministry', ministry)",
   "onClick={() => setMemberTypeFilter('all')}",
   "onClick={() => setMemberTypeFilter('core')}",
   "onClick={() => setMemberTypeFilter('regular')}",
