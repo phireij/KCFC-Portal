@@ -28,3 +28,4 @@ jobs:
           git add server.ts scripts/verify-webpush-registration-boundary.ts scripts/patch-webpush-registration-boundary.py
           git commit -m 'fix: harden Web Push device registration boundary'
           git push origin HEAD:redesign/mobile-first-v2
+# rerun: lint-safe registration patch
