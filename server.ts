@@ -2108,7 +2108,12 @@ async function startServer() {
     }
   });
 
-  const upload = multer();
+  const publicContactUpload = multer({
+    limits: {
+      fields: 32,
+      fieldSize: 16 * 1024,
+    },
+  });
 
   // Public endpoint to receive contact messages from external website (KCFC.COM)
   app.options("/api/public/contact", (req, res) => {
@@ -2123,7 +2128,7 @@ async function startServer() {
     res.sendStatus(204);
   });
 
-  app.post("/api/public/contact", upload.any(), async (req, res) => {
+  app.post("/api/public/contact", publicContactUpload.none(), async (req, res) => {
     const requestedHeaders = req.headers["access-control-request-headers"] || req.headers["Access-Control-Request-Headers"];
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -2242,11 +2247,14 @@ async function startServer() {
 
     logMessage(`[INBOUND CONTACT] Parsed inquiry fields: name=${name ? "present" : "missing"}, email=${email ? "present" : "missing"}, subject=${subject ? "present" : "missing"}, messageLength=${message.length}`);
 
-    if (!name || !email || !message) {
-      logMessage(`[INBOUND CONTACT ERROR] Validation failed. Missing name, email, or message.`);
-      res.status(400).json({ 
-        error: "Missing required fields: name, email, and message are required.",
-        extracted: { name, email, subject, message }
+    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const hasHeaderBreaks = /[\r\n]/.test(name) || /[\r\n]/.test(email) || /[\r\n]/.test(subject);
+    const fieldsWithinBounds = name.length <= 160 && email.length <= 320 && subject.length <= 200 && message.length <= 5000;
+
+    if (!name || !email || !message || !validEmail || hasHeaderBreaks || !fieldsWithinBounds) {
+      logMessage(`[INBOUND CONTACT ERROR] Validation failed for public inquiry payload.`);
+      res.status(400).json({
+        error: "Invalid contact inquiry. Please check the submitted fields and try again."
       });
       return;
     }
@@ -2258,6 +2266,16 @@ async function startServer() {
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASSWORD;
       const smtpFrom = process.env.SMTP_FROM || smtpUser || '"KCFC Community Portal" <no-reply@kcfc-portal.org>';
+      const escapeHtml = (value: string) => value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+      const safeName = escapeHtml(name);
+      const safeEmail = escapeHtml(email);
+      const safeSubject = escapeHtml(subject || "KCFC Portal Inquiry");
+      const safeMessage = escapeHtml(message).replace(/\n/g, "<br />");
 
       const mailOptions = {
         from: smtpFrom,
@@ -2270,15 +2288,15 @@ async function startServer() {
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40; width: 100px;">From:</td>
-                <td style="padding: 8px 0; color: #2d2d25;">${name}</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${safeName}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Email:</td>
-                <td style="padding: 8px 0; color: #2d2d25;"><a href="mailto:${email}" style="color: #8a8a65;">${email}</a></td>
+                <td style="padding: 8px 0; color: #2d2d25;"><a href="mailto:${safeEmail}" style="color: #8a8a65;">${safeEmail}</a></td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Subject:</td>
-                <td style="padding: 8px 0; color: #2d2d25;">${subject || "KCFC Portal Inquiry"}</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${safeSubject}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Submitted:</td>
@@ -2286,7 +2304,7 @@ async function startServer() {
               </tr>
             </table>
             <div style="background-color: #fafaf7; border-left: 4px solid #5A5A40; padding: 15px; border-radius: 4px; font-style: italic; font-size: 14px; line-height: 1.6; color: #333; margin-top: 10px;">
-              "${message}"
+              ${safeMessage}
             </div>
             <hr style="border: 0; border-top: 1px solid #e5e5df; margin: 25px 0;" />
             <div style="text-align: center;">
@@ -2331,7 +2349,7 @@ async function startServer() {
           subject: subject || "KCFC Portal Inquiry",
           message,
           status: "unread",
-          alertSent: true,
+          alertSent: emailSent,
           createdAt: new Date().toISOString()
         });
         firestoreWritten = true;
@@ -2349,7 +2367,7 @@ async function startServer() {
               subject: { stringValue: subject || "KCFC Portal Inquiry" },
               message: { stringValue: message },
               status: { stringValue: "unread" },
-              alertSent: { booleanValue: true },
+              alertSent: { booleanValue: emailSent },
               createdAt: { stringValue: new Date().toISOString() }
             }
           };
