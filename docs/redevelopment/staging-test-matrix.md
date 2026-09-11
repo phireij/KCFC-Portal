@@ -43,7 +43,11 @@ Use synthetic staging identities with no production member data:
 | ASSIGN-02 | STG_LEADER | Publish complete roster | Roster becomes member-visible and assigned members receive Inbox notifications |
 | ASSIGN-03 | STG_LEADER | Edit published roster | Roster returns to unpublished/review state until deliberately republished |
 | INBOX-01 | STG_REGULAR | Open Inbox on phone | List → detail flow is readable; unread state updates correctly |
+| INBOX-02 | STG_REGULAR | Open `/inbox?tab=unread` directly and reload | Unread filter remains selected and URL state survives reload |
+| INBOX-03 | STG_REGULAR | Switch All → Assignment → Availability, then use browser/mobile Back/Forward | `?tab=` follows the selected filter and Back/Forward restores the matching Inbox filter |
+| INBOX-04 | STG_REGULAR | Open an Inbox message with `?id=<notificationId>` and then change filter | Message deep-link ID is preserved while the intended `tab` query changes; opening/closing the message remains consistent |
 | UPDATE-01 | STG_ADMIN | Publish KCFC-member update | Eligible users receive Inbox record; push failure does not remove Inbox record |
+| UPDATE-02 | STG_REGULAR | Open an authorized update notification linking to `/announcements?id=<announcementId>` | The intended visible update scrolls into view, receives programmatic focus/highlight, and is identifiable to assistive technology |
 | DIR-01 | STG_REGULAR | Browse Community Directory | Private email/phone/address are absent from general cards |
 | RES-01 | STG_REGULAR | Browse Resources | Search/ministry filters work; resource links open |
 | RES-02 | STG_LEADER | Add Resource | Authorized leader can add trusted resource reference |
@@ -78,6 +82,7 @@ Use synthetic staging identities with no production member data:
 | PWA-MULTI-01 | Two registered devices for one staging member | Send one targeted test | Both valid endpoints are attempted and evidence can be correlated to the same Inbox record without claiming provider acceptance equals user-visible delivery |
 | PWA-DEEP-01 | Installed supported device with Portal already open at `/duties?view=all` | Tap notification targeting `/duties?view=mine` | Existing KCFC window navigates to the full target URL and My Ministry is visible; query state is not lost |
 | PWA-DEEP-02 | Supported device | Tap a test notification with malformed or cross-origin destination data | Portal refuses the external target and opens/focuses the same-origin KCFC Inbox fallback |
+| PWA-DEEP-03 | Installed supported device | Tap an update notification targeting `/announcements?id=<announcementId>` | Updates opens and the intended authorized update is scrolled into view and visibly/programmatically focused |
 
 ### Notification reliability interpretation
 
