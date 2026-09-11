@@ -26,6 +26,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
+- explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
 - notification-linked Updates deep-link focus;
 - notification-linked availability request/completion deep-link focus for both member and leader views;
@@ -43,7 +44,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code checkpoint: `28fcf0191f97ccf1fccfd50cd84c142bf8bc02bd`, `KCFC Redevelopment CI` run **#979** / id `34574745848`, conclusion **SUCCESS**. All **47** validation/build/security steps passed.
+Latest validated code checkpoint: `97f9b8f4baf05f1aae7d1d7d3a1a6e763050fa19`, `KCFC Redevelopment CI` run **#1001** / id `34575327421`, conclusion **SUCCESS**. All **48** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -55,6 +56,8 @@ The validated staging isolation work establishes:
 - `npm run staging:preflight` requires matching client/server Firebase project and database targets;
 - staging preflight requires explicit matching client/server VAPID public keys plus a server private key;
 - staging preflight requires all external connector flags OFF and the Core-status staging executor OFF;
+- the app shell renders an unmistakable `Staging • Test environment` badge only when `VITE_KCFC_RUNTIME_ENV=staging` is explicitly set;
+- the staging badge guard fails closed: default/production runtime has no staging badge;
 - the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets.
 
 The onboarding regression previously fixed remains covered: a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
@@ -127,9 +130,10 @@ Before any browser or physical-device QA begins against an actual staging deploy
 4. configure explicit staging VAPID keys;
 5. keep all external connectors OFF;
 6. keep the Core-status staging executor OFF unless a separately reviewed isolated test specifically requires it;
-7. run `npm run staging:preflight` and retain the PASS output as staging evidence.
+7. run `npm run staging:preflight` and retain the PASS output as staging evidence;
+8. confirm the running app visibly shows `Staging • Test environment` before entering synthetic test data or registering test devices.
 
-Automated proof of the preflight logic is complete. **Actual staging-environment preflight evidence is still required.**
+Automated proof of the preflight and staging-badge logic is complete. **Actual staging-environment preflight and visual evidence are still required.**
 
 ## Staging/device QA package
 
@@ -152,7 +156,7 @@ Every notification test separately records:
 - durable KCFC Inbox persistence; and
 - notification tap/deep-link result.
 
-The browser/device matrix now explicitly covers Schedule and Inbox history restoration, notification-linked Updates and availability focus, same-origin notification fallback, and Inbox durability/message-history behavior.
+The browser/device matrix now explicitly covers Schedule and Inbox history restoration, notification-linked Updates and availability focus, same-origin notification fallback, Inbox durability/message-history behavior, and visible staging-environment identification.
 
 The canonical `notification-acceptance-evidence-template-2026-09-11.md` requires those signals to be recorded independently before a case can be classified PASS; ambiguous outcomes remain INVESTIGATE.
 
@@ -169,6 +173,8 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - client/server target parity confirmed;
 - staging VAPID configuration confirmed;
 - connectors OFF and Core executor OFF confirmed;
+- visible `Staging • Test environment` badge confirmed on the running staging app;
+- default/production runtime confirmed not to show that staging badge;
 - synthetic test accounts/device registrations only.
 
 ### iPhone / iOS PWA
@@ -179,6 +185,7 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - background and locked-device delivery;
 - transport evidence separated from OS banner/sound/vibration behavior, including Focus/mute cases;
 - push deep links, including query-specific Schedule, Updates, and availability-request targets;
+- staging badge visible and non-obstructive in the installed staging PWA;
 - safe-area navigation and More sheet;
 - Inbox list → detail, filter-history and message-history retention;
 - Schedule All ↔ My Ministry with Back/Forward restoration.
@@ -190,6 +197,7 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - stale endpoint repair;
 - background/locked notification and notification-channel behavior;
 - push deep links, including query-specific Schedule, Updates, and availability-request targets;
+- staging badge visible and non-obstructive in the staging app;
 - navigation, Schedule, Directory and Inbox regression;
 - Inbox filter/history and message-history retention.
 
@@ -202,6 +210,7 @@ Automated contracts are not a substitute for empirical staging/device QA.
 ### Desktop / leadership
 
 - keyboard navigation;
+- staging badge visibly distinguishes test from production;
 - synthetic pre-registration;
 - pending pre-registered member first authentication while email remains unverified, then post-verification transition without UID recreation;
 - individual inquiry reply to staging/sink recipient only;
@@ -232,7 +241,7 @@ Provider/environment backup evidence and exact production deployment-artifact ro
 
 ## Production-readiness blockers still open
 
-1. Actual isolated staging environment configured and passing `npm run staging:preflight`.
+1. Actual isolated staging environment configured and passing `npm run staging:preflight`, with visible staging-environment identification confirmed.
 2. Representative browser/device QA, especially real iOS/Android notification behavior.
 3. Supported parent remediation or continued bounded disposition for the remaining optional Storage-path `uuid` / `gaxios` findings.
 4. Any further leadership decomposition only where it reduces routine LegacyAdmin use without weakening destructive-action isolation.
