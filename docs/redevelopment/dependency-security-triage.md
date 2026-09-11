@@ -2,102 +2,97 @@
 
 Status: active redevelopment security work. This record does **not** authorize production deployment.
 
-## Current measured baseline
+## Current measured state — 2026-09-11 JST
 
 The redevelopment CI records a non-blocking runtime dependency audit using:
 
 `npm audit --omit=dev --json`
 
-After the first compatible remediation batch on 2026-09-11 (JST), the measured runtime snapshot is:
+After the validated compatible + transitive remediation sequence and the separately validated Nodemailer 10 migration, the runtime audit is now:
 
-- critical: 1
-- high: 8
-- moderate: 12
-- low: 2
-- total runtime findings: 23
+- critical: 0
+- high: 0
+- moderate: 9
+- low: 1
+- total runtime findings: 10
 
-The normal install audit now reports 24 findings across runtime + development dependencies (1 critical, 9 high, 12 moderate, 2 low).
+The full installed dependency tree immediately after the Nodemailer migration reports 11 findings (1 high, 9 moderate, 1 low). The remaining high finding is outside the runtime-only audit and therefore belongs to development/tooling rather than the runtime dependency set.
 
-This is an improvement from the pre-remediation runtime baseline of 27 findings (1 critical, 12 high, 12 moderate, 2 low) and the full-install baseline of 28 findings (1 critical, 13 high, 12 moderate, 2 low). The first batch therefore removed four runtime high-severity findings and four full-install high-severity findings without using forced dependency rewriting.
+This is a material reduction from the original runtime baseline of 27 findings (1 critical, 12 high, 12 moderate, 2 low). No `npm audit fix --force` was used.
 
-## First compatible remediation batch
+## Remediation sequence completed
 
-The following direct dependencies were upgraded through supported patch/minor paths and passed TypeScript plus production-build validation before the package/lockfile commit was created:
+### Compatible direct-package batch
 
-- `multer`: `^2.2.0` → `^2.3.0`
-- `react-router-dom`: `^7.14.2` → `^7.18.3`
-- `vite`: `^6.2.0` → `^6.4.3`
-- `@vitejs/plugin-react`: `^5.0.4` → `^5.2.0`
+The first validated package family update moved:
 
-The package update also removed the duplicate runtime `vite` declaration and retains Vite only under `devDependencies`.
+- `multer` from `^2.2.0` to `^2.3.0`
+- `react-router-dom` from `^7.14.2` to `^7.18.3`
+- `vite` to `^6.4.3`
+- `@vitejs/plugin-react` to `^5.2.0`
 
-The detailed runtime audit confirms that the prior `multer`, `react-router`, `react-router-dom`, and `vite` high-severity entries are no longer present after this batch.
+The duplicate runtime Vite declaration was removed so Vite remains under development dependencies only.
 
-## Remaining critical/high runtime package chains
+### Compatible parent-package batch
 
-The post-remediation runtime audit still reports these critical/high package entries:
+The second validated package family update moved:
 
-| Package | Severity | Direct dependency | Audit fix available |
-| --- | --- | --- | --- |
-| `websocket-driver` | critical | no | yes |
-| `@grpc/grpc-js` | high | no | yes |
-| `browserslist` | high | no | yes |
-| `form-data` | high | no | yes |
-| `nanoid` | high | no | yes |
-| `nodemailer` | high | yes | major update indicated (`10.0.3`) |
-| `postcss` | high | no | yes |
-| `protobufjs` | high | no | yes |
-| `ws` | high | no | yes |
+- `firebase` to `^12.19.0`
+- `@google/genai` to `^1.52.0`
+- `autoprefixer` to `^10.5.6`
+- `@tailwindcss/vite` to `^4.3.3`
+- `tailwindcss` to `^4.3.3`
 
-`nodemailer` remains the only directly declared critical/high package in this post-remediation list, and npm reports its available remediation as a major-version transition. The other entries should be traced to their owning direct dependency families before considering overrides or broad lockfile changes.
+This removed additional vulnerable Firebase, gRPC, WebSocket and build-tool chains while preserving TypeScript and production-build compatibility.
 
-## Ownership trace for the remaining chains
+### Non-breaking transitive remediation
 
-A one-time dependency ownership trace was run against the post-remediation lockfile and then removed from the branch. The important parent relationships are:
+A branch-only `npm audit fix --omit=dev` was used without `--force`, followed by restoration of the development dependency set and full TypeScript/build validation before the lockfile change was committed.
 
-- `firebase@12.12.1` → `@firebase/database@1.1.2` → `faye-websocket@0.11.4` → `websocket-driver@0.7.4`. This is the current **critical** chain.
-- `firebase@12.12.1` → `@firebase/firestore@4.14.0` → `@grpc/grpc-js@1.9.15`. This is the vulnerable gRPC instance; the `firebase-admin` side currently resolves a newer `@grpc/grpc-js@1.14.4`.
-- `firebase-admin@13.10.0` → `@google-cloud/storage@7.19.0` → `retry-request` / `@types/request` → `form-data@2.5.5`.
-- `@google/genai@1.50.1` currently owns `ws@8.20.0` and also resolves `protobufjs@7.5.5`.
-- `@vitejs/plugin-react@5.2.0` → `@babel/core@7.29.0` → Browserslist tooling; `autoprefixer@10.5.0` also resolves `browserslist@4.28.2`.
-- `autoprefixer@10.5.0` and `vite@6.4.3` resolve `postcss@8.5.10`; that PostCSS tree currently includes `nanoid@3.3.11`.
-- `nodemailer@8.0.9` is direct and remains isolated for a separately reviewed major-version transition.
+That step removed the remaining critical `websocket-driver` chain and multiple high-severity transitive findings. After this step the runtime audit was reduced to 11 findings: 1 high, 9 moderate and 1 low. The only remaining runtime high finding was Nodemailer.
 
-These results make the next security work more targeted: the critical `websocket-driver` and vulnerable `@grpc/grpc-js` instances belong to the Firebase **client** package family, while the `form-data` path belongs to Firebase Admin / Google Cloud Storage. `ws` belongs to Google GenAI. Browserslist/PostCSS/Nanoid are currently build-tool chains rather than application-owned direct packages.
+### Nodemailer 10 migration
 
-The same runtime report also shows moderate/other findings including `@babel/core`, `@protobufjs/utf8`, `baseline-browser-mapping`, `body-parser`, `esbuild`, `qs`, and `uuid`. Several are transitive and some remediation paths imply a major `firebase-admin` update, so they remain staged behind critical/high analysis rather than being changed blindly.
+Nodemailer was then upgraded from `^8.0.9` to `^10.0.3` in an isolated branch-only probe. The current KCFC server usage is limited to the standard `createTransport(...)` and `sendMail(...)` interfaces used by the authenticated leadership broadcast endpoint. TypeScript and the production build both passed unchanged with Nodemailer 10 before the dependency update was committed.
+
+The post-upgrade runtime audit contains **no critical or high findings**.
+
+## Remaining findings
+
+The runtime audit currently reports 9 moderate and 1 low finding. The visible remaining chains include:
+
+- `qs` moderate findings;
+- `uuid` moderate findings in Firebase Admin / Google Cloud dependency chains; npm indicates that the broad remediation path may require a `firebase-admin` major update;
+- an `esbuild` advisory associated with the `tsx` development tooling chain.
+
+These remaining findings are lower severity than the original release-blocking critical/high set, but they still require review before production approval. Major Firebase Admin migration or dependency overrides will not be introduced solely to make the numeric audit count zero without compatibility analysis.
 
 ## Policy
 
-1. Do **not** run `npm audit fix --force` against this redevelopment branch. Forced dependency rewrites can introduce breaking changes in Firebase, Vite, React, Express, messaging, PWA or server behavior.
-2. Triage runtime exposure first. Identify the package/advisory chain for every critical and high runtime finding.
-3. Prefer compatible patch/minor upgrades where the package's supported range allows them.
-4. Upgrade one dependency family at a time and run the complete KCFC redevelopment CI after each change.
-5. For a finding that cannot yet be removed safely, record the affected package, advisory, reachable KCFC code path, practical exposure, compensating control, and planned remediation version/date.
-6. Production readiness requires an explicit security review of any remaining critical/high finding; a green functional CI run alone is not sufficient.
+1. Never run `npm audit fix --force` on the redevelopment branch.
+2. Prefer supported patch/minor parent updates and validated non-breaking transitive remediation.
+3. Major dependency upgrades require an isolated compatibility probe, TypeScript validation, production build validation and the normal redevelopment regression suite before acceptance.
+4. Every remaining finding must be assessed for browser, server, build-only or optional-code reachability.
+5. Production readiness is based on reviewed exposure and regression evidence, not only on a green build or a zero audit count.
 
 ## CI behavior
 
-The audit snapshot is intentionally non-blocking during redevelopment so newly disclosed advisories do not stop unrelated implementation work. Critical/high runtime findings are emitted as a visible GitHub Actions warning and summarized in the workflow run, including the affected package entries and whether npm reports a fix path.
+The permanent redevelopment workflow records the runtime audit snapshot without blocking unrelated redevelopment work. Critical/high runtime findings produce a visible GitHub Actions warning and package-chain summary. With the current dependency state, the runtime audit has no critical/high finding to warn on.
 
-This is distinct from the existing hard-fail safety checks for connector defaults, browser-secret exposure, Core-status executor isolation, TypeScript, build, governance, notification routing and accessibility contracts.
+The dependency audit is separate from the hard-fail checks for TypeScript, build, communication routing, liturgical publication, governance, Core-status executor isolation, accessibility, mobile navigation, connector defaults and browser-secret exposure.
 
-## Next remediation sequence
+## Next security work
 
-- investigate supported Firebase client patch/minor releases first because the current critical `websocket-driver` and one high `@grpc/grpc-js` chain are both under `firebase@12.12.1`;
-- investigate a compatible `@google/genai` update for the remaining `ws` chain before considering any override;
-- trace whether supported build-tool parent updates can advance Browserslist/PostCSS/Nanoid safely;
-- review `nodemailer` 10 compatibility separately, including transporter API and TypeScript compatibility, before any major-version change;
-- review Firebase Admin / Google Cloud Storage compatibility before touching the `form-data` path or any `firebase-admin` major version;
-- assess whether each remaining affected module is reachable in browser, server, build-only, or optional code paths;
-- measure the runtime audit after every remediation family rather than assuming transitive fixes;
-- only consider overrides or major-version migrations when a supported compatible remediation path is unavailable.
+- complete exposure/disposition notes for the remaining `qs`, `uuid`, `esbuild` and related moderate/low chains;
+- evaluate Firebase Admin 14 only as a separately scoped compatibility migration rather than an audit-count shortcut;
+- keep the runtime audit visible in every redevelopment CI run so newly disclosed advisories are immediately surfaced;
+- continue normal mobile/device and staging regression work while preserving the dependency release gate.
 
 ## Release gate
 
 Before requesting production merge/deployment approval:
 
-- runtime audit snapshot must be reviewed;
-- no unresolved critical/high issue may be silently accepted;
-- any exception must have documented exposure analysis and compensating controls;
-- TypeScript, production build and the complete redevelopment regression suite must remain green after remediation.
+- the latest runtime audit snapshot must be reviewed;
+- any remaining finding must have remediation or exposure/disposition evidence appropriate to its severity;
+- TypeScript, production build and the complete redevelopment regression suite must remain green;
+- production merge/deployment still requires explicit user approval regardless of audit status.
