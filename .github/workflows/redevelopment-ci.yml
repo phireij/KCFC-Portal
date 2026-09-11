@@ -90,8 +90,19 @@ jobs:
       - name: Verify current-device notification health
         run: npx tsx scripts/verify-current-device-notification-health.ts
 
-      - name: Build
-        run: npm run build
+      - name: Build and guard resolved warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/kcfc-build.log
+          if grep -q 'dynamically imported by .*fcmClient' /tmp/kcfc-build.log; then
+            echo 'Redundant fcmClient dynamic-import warning must remain resolved.' >&2
+            exit 1
+          fi
+          if grep -q 'import.meta.*not available with the "cjs" output format' /tmp/kcfc-build.log; then
+            echo 'CJS import.meta build warning must remain resolved.' >&2
+            exit 1
+          fi
 
       - name: Guard Core status staging executor default
         shell: bash
