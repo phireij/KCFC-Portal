@@ -148,6 +148,7 @@ jobs:
         run: |
           npx tsx scripts/verify-server-webpush-privacy.ts
           npx tsx scripts/verify-webpush-registration-boundary.ts
+          npx tsx scripts/verify-fcm-registration-boundary.ts
 
       - name: Verify PWA theme contract
         run: npx tsx scripts/verify-pwa-theme-contract.ts
