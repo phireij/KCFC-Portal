@@ -19,8 +19,6 @@ jobs:
           fetch-depth: 0
       - run: python3 scripts/patch-webpush-registration-boundary.py
       - run: npx tsx scripts/verify-webpush-registration-boundary.ts
-      - name: Show compiler-error neighborhood
-        run: nl -ba server.ts | sed -n '2325,2338p'
       - run: npm run lint
       - run: git diff --check
       - run: |
