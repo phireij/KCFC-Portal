@@ -50,10 +50,14 @@ Use synthetic staging identities with no production member data:
 | INBOX-04 | STG_REGULAR | Open an Inbox message with `?id=<notificationId>` and then change filter | Message deep-link ID is preserved while the intended `tab` query changes; opening/closing the message remains consistent |
 | UPDATE-01 | STG_ADMIN | Publish KCFC-member update | Eligible users receive Inbox record; push failure does not remove Inbox record |
 | UPDATE-02 | STG_REGULAR | Open an authorized update notification linking to `/announcements?id=<announcementId>` | The intended visible update scrolls into view, receives programmatic focus/highlight, and is identifiable to assistive technology |
+| UPDATE-03 | STG_ADMIN | Switch Published → All + drafts with an optional focused `?id=<announcementId>`, then reload/use Back/Forward | `?scope=all` restores the authorized scope, Published removes the scope param, and focused announcement `id` state is preserved |
+| UPDATE-04 | STG_REGULAR | Manually open `/announcements?scope=all` | Ordinary member remains limited to published updates; the URL cannot reveal drafts |
 | DIR-01 | STG_REGULAR | Browse Community Directory | Private email/phone/address are absent from general cards |
+| DIR-02 | STG_REGULAR | Select Core/Regular and one or more ministry filters, then reload/use Back/Forward | `type` + repeated `ministry` query state restores the same directory filter; invalid values fail safely to supported filters and text search remains local |
 | RES-01 | STG_REGULAR | Browse Resources | Search/ministry filters work; resource links open |
 | RES-02 | STG_LEADER | Add Resource | Authorized leader can add trusted resource reference |
 | RES-03 | STG_REGULAR | Attempt resource management | Add/delete controls unavailable or denied |
+| RES-04 | STG_REGULAR | Select a Resource category, then reload/share/use Back/Forward | `?category=` restores the category; All removes the query and free-text search remains local |
 | ACCT-01 | STG_TREASURER | Open Accounting | Existing preserved accounting engine loads inside new shell |
 | ACCT-02 | STG_REGULAR | Open Accounting URL | Access denied |
 | ADMIN-01 | STG_ADMIN | Open Admin | Focused leadership workspace loads; Advanced legacy tools remain separately labelled |
