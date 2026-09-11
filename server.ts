@@ -419,7 +419,7 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       roles: data?.roles || [],
     };
   } catch (adminErr: any) {
-    logMessage(`[DB USER FETCH WARN] dbAdmin user query for ${userId} failed: ${adminErr.message}. Attempting REST API fallback...`);
+    logMessage(`[DB USER FETCH WARN] dbAdmin user query for [redacted] failed: ${adminErr.message}. Attempting REST API fallback...`);
     try {
       const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)" 
         ? firebaseConfig.firestoreDatabaseId 
@@ -456,7 +456,7 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       }
       return null;
     } catch (restErr: any) {
-      console.error(`[DB USER FETCH ERROR] Both Admin SDK and REST API fallback failed for ${userId}:`, restErr);
+      console.error(`[DB USER FETCH ERROR] Both Admin SDK and REST API fallback failed for [redacted]:`, restErr);
       throw restErr;
     }
   }
@@ -542,7 +542,7 @@ async function startServer() {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      logMessage(`[WEBPUSH REGISTER] Successfully registered web push subscription for user ${userId}`);
+      logMessage(`[WEBPUSH REGISTER] Successfully registered web push subscription for user [redacted]`);
       res.json({ success: true });
     } catch (err: any) {
       console.error("[WEBPUSH REGISTER ERROR]", err);
@@ -632,7 +632,7 @@ async function startServer() {
       let hasPermission = false;
       if (callerEmail === "kcfc.jp@gmail.com") {
         hasPermission = true;
-        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: ${callerEmail}`);
+        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: [redacted]`);
       } else {
         logMessage(`[PROCESS] Retrieving caller profile from Firestore room database...`);
         const callerDoc = await dbAdmin.collection("users").doc(callerUid).get();
@@ -656,27 +656,27 @@ async function startServer() {
       }
 
       // 3. Delete user from Firebase Auth (Optional/Non-blocking if Identity Toolkit is disabled)
-      logMessage(`[PROCESS] Executing authAdmin.deleteUser("${targetUserId}")...`);
+      logMessage(`[PROCESS] Executing authAdmin.deleteUser("[redacted]")...`);
       let authUserDeleted = false;
       try {
         await authAdmin.deleteUser(targetUserId);
         authUserDeleted = true;
-        logMessage(`[SUCCESS] Deleted user Auth credentials for UID: ${targetUserId}`);
+        logMessage(`[SUCCESS] Deleted user Auth credentials for UID: [redacted]`);
       } catch (authError: any) {
         logMessage(`[WARN] Skipping Auth credentials purge. Auth user deletion skipped/errored (Identity Toolkit API likely unconfigured or disabled): ${authError.message}`);
       }
 
       // 4. Delete user profile doc from 'users' collection
-      logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/${targetUserId}...`);
+      logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/[redacted]...`);
       try {
         await dbAdmin.collection("users").doc(targetUserId).delete();
-        logMessage(`[SUCCESS] Deleted document from users collection for UID: ${targetUserId}`);
+        logMessage(`[SUCCESS] Deleted document from users collection for UID: [redacted]`);
       } catch (e: any) {
         logMessage(`[WARN] Firestore profile cleanup skipped/errored: ${e.message}`);
       }
 
       // 5. Clean up from all 'polls' assignments and 'responses'
-      logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: ${targetUserId}...`);
+      logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: [redacted]...`);
       try {
         const pollsSnap = await dbAdmin.collection("polls").get();
         for (const pollDoc of pollsSnap.docs) {
@@ -707,7 +707,7 @@ async function startServer() {
               batch.delete(docSnap.ref);
             });
             await batch.commit();
-            logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: ${targetUserId} in poll: ${pollDoc.id}`);
+            logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: [redacted] in poll: ${pollDoc.id}`);
           }
         }
       } catch (e: any) {
@@ -715,7 +715,7 @@ async function startServer() {
       }
 
       // 6. Delete individual 'duties' documents associated with this user
-      logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: ${targetUserId}...`);
+      logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: [redacted]...`);
       try {
         const dutiesSnap = await dbAdmin.collection("duties").where("userId", "==", targetUserId).get();
         if (!dutiesSnap.empty) {
@@ -724,7 +724,7 @@ async function startServer() {
             batch.delete(docSnap.ref);
           });
           await batch.commit();
-          logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: ${targetUserId}`);
+          logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: [redacted]`);
         }
       } catch (e: any) {
         logMessage(`[WARN] Firestore duties cleanup skipped/errored: ${e.message}`);
@@ -767,7 +767,7 @@ async function startServer() {
     }
 
     const emailTrimmed = email.trim();
-    logMessage(`[PROCESS] Requested email deletion: "${emailTrimmed}"`);
+    logMessage(`[PROCESS] Requested email deletion: "[redacted]"`);
 
     try {
       // 1. Verify caller ID token
@@ -781,7 +781,7 @@ async function startServer() {
       let hasPermission = false;
       if (callerEmail === "kcfc.jp@gmail.com") {
         hasPermission = true;
-        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: ${callerEmail}`);
+        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: [redacted]`);
       } else {
         logMessage(`[PROCESS] Retrieving caller profile from Firestore room database...`);
         const callerDoc = await dbAdmin.collection("users").doc(callerUid).get();
@@ -799,17 +799,17 @@ async function startServer() {
       }
 
       // 3. Find the user by email in Firebase Auth (or fallback to Firestore 'users' email match if Auth API is disabled)
-      logMessage(`[PROCESS] Finding user by email: "${emailTrimmed}"...`);
+      logMessage(`[PROCESS] Finding user by email: "[redacted]"...`);
       let targetUser: { uid: string; email?: string } | null = null;
       let authUserLookupError: any = null;
 
       try {
         const authUser = await authAdmin.getUserByEmail(emailTrimmed);
         targetUser = { uid: authUser.uid, email: authUser.email };
-        logMessage(`[PROCESS] Found user in Auth DB. UID: "${targetUser.uid}" | Email: "${targetUser.email}"`);
+        logMessage(`[PROCESS] Found user in Auth DB. UID: "[redacted]" | Email: "[redacted]"`);
       } catch (authError: any) {
         authUserLookupError = authError;
-        logMessage(`[WARN] Firebase Auth search failed for "${emailTrimmed}" (possibly disabled Auth API): ${authError.message}`);
+        logMessage(`[WARN] Firebase Auth search failed for "[redacted]" (possibly disabled Auth API): ${authError.message}`);
         
         if (authError.code === 'auth/user-not-found') {
           res.status(404).json({ error: `Not Found: No authentication account found for email "${emailTrimmed}"` });
@@ -819,7 +819,7 @@ async function startServer() {
 
       // Fallback search in Firestore 'users' collection
       if (!targetUser) {
-        logMessage(`[PROCESS] Trying Firestore fallback search for email: "${emailTrimmed}"...`);
+        logMessage(`[PROCESS] Trying Firestore fallback search for email: "[redacted]"...`);
         try {
           // A. Try exact email match in Firestore
           let userQuerySnap = await dbAdmin.collection("users").where("email", "==", emailTrimmed).get();
@@ -831,10 +831,10 @@ async function startServer() {
           if (!userQuerySnap.empty) {
             const firstDoc = userQuerySnap.docs[0];
             targetUser = { uid: firstDoc.id, email: firstDoc.data().email };
-            logMessage(`[SUCCESS] Found user UID "${targetUser.uid}" via Firestore 'users' search for: "${emailTrimmed}"`);
+            logMessage(`[SUCCESS] Found user UID "[redacted]" via Firestore 'users' search for: "[redacted]"`);
           } else {
             // C. Robust full scan fallback for case-insensitive and whitespace-tolerance match
-            logMessage(`[PROCESS] Checking full Firestore list of users for email: "${emailTrimmed}"...`);
+            logMessage(`[PROCESS] Checking full Firestore list of users for email: "[redacted]"...`);
             const allUsersSnap = await dbAdmin.collection("users").get();
             const matchedDoc = allUsersSnap.docs.find(doc => {
               const uEmail = doc.data().email;
@@ -843,7 +843,7 @@ async function startServer() {
 
             if (matchedDoc) {
               targetUser = { uid: matchedDoc.id, email: matchedDoc.data().email };
-              logMessage(`[SUCCESS] Found user UID "${targetUser.uid}" via Firestore scan search fallback for: "${emailTrimmed}"`);
+              logMessage(`[SUCCESS] Found user UID "[redacted]" via Firestore scan search fallback for: "[redacted]"`);
             } else {
               // No user in Auth and no user in Firestore after all three stages.
               // If the lookup failed because the Identity Toolkit API is disabled in this Google Cloud project,
@@ -857,7 +857,7 @@ async function startServer() {
               );
 
               if (isApiDisabled) {
-                logMessage(`[WARN] Identity Toolkit API is disabled, and no active Firestore user profile exists for: "${emailTrimmed}". Already clean.`);
+                logMessage(`[WARN] Identity Toolkit API is disabled, and no active Firestore user profile exists for: "[redacted]". Already clean.`);
                 res.json({
                   success: true,
                   message: `Any Firestore documents and assignments matching ${emailTrimmed} have been successfully verified as fully purged from the database. Note: Firebase Auth credentials could not be searched or deleted because the Google Cloud Identity Toolkit API is disabled in this project.`,
@@ -933,10 +933,10 @@ async function startServer() {
       }
 
       const allUidsToDelete = Array.from(uidsToDeleteSet);
-      logMessage(`[PROCESS] Collected UIDs to purge for email "${emailTrimmed}": ${JSON.stringify(allUidsToDelete)}`);
+      logMessage(`[PROCESS] Collected UIDs to purge for email "[redacted]": [redacted]`);
 
       // 4. Delete user from Firebase Auth (Optional: skip if fails due to disabled Auth API)
-      logMessage(`[PROCESS] Executing authAdmin.deleteUser("${targetUser.uid}")...`);
+      logMessage(`[PROCESS] Executing authAdmin.deleteUser("[redacted]")...`);
       let authUserDeleted = false;
       try {
         await authAdmin.deleteUser(targetUser.uid);
@@ -948,19 +948,19 @@ async function startServer() {
 
       // Loop over and delete all matching profiles and perform cascade cleanups
       for (const currentUid of allUidsToDelete) {
-        logMessage(`[PROCESS] Initiating complete cascade purge for UID: ${currentUid}...`);
+        logMessage(`[PROCESS] Initiating complete cascade purge for UID: [redacted]...`);
 
         // 5. Delete from users collection too, in case profile exists but wasn't deleted
-        logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/${currentUid}...`);
+        logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/[redacted]...`);
         try {
           await dbAdmin.collection("users").doc(currentUid).delete();
-          logMessage(`[SUCCESS] Document deleted from users collection for UID: ${currentUid}`);
+          logMessage(`[SUCCESS] Document deleted from users collection for UID: [redacted]`);
         } catch (e: any) {
-          logMessage(`[WARN] Firestore profile cleanup skipped/errored for UID ${currentUid}: ${e.message}`);
+          logMessage(`[WARN] Firestore profile cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
 
         // 6. Clean up from all 'polls' assignments and 'responses'
-        logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: ${currentUid}...`);
+        logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: [redacted]...`);
         try {
           const pollsSnap = await dbAdmin.collection("polls").get();
           for (const pollDoc of pollsSnap.docs) {
@@ -979,7 +979,7 @@ async function startServer() {
                   assignments: updatedAssignments,
                   updatedAt: new Date()
                 });
-                logMessage(`[SUCCESS] Cleaned up assignments in poll ID: ${pollDoc.id} for UID: ${currentUid}`);
+                logMessage(`[SUCCESS] Cleaned up assignments in poll ID: ${pollDoc.id} for UID: [redacted]`);
               }
             }
 
@@ -991,15 +991,15 @@ async function startServer() {
                 batch.delete(docSnap.ref);
               });
               await batch.commit();
-              logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: ${currentUid} in poll: ${pollDoc.id}`);
+              logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: [redacted] in poll: ${pollDoc.id}`);
             }
           }
         } catch (e: any) {
-          logMessage(`[WARN] Firestore polls cleanup skipped/errored for UID ${currentUid}: ${e.message}`);
+          logMessage(`[WARN] Firestore polls cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
 
         // 7. Delete individual 'duties' documents associated with this user
-        logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: ${currentUid}...`);
+        logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: [redacted]...`);
         try {
           const dutiesSnap = await dbAdmin.collection("duties").where("userId", "==", currentUid).get();
           if (!dutiesSnap.empty) {
@@ -1008,10 +1008,10 @@ async function startServer() {
               batch.delete(docSnap.ref);
             });
             await batch.commit();
-            logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: ${currentUid}`);
+            logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: [redacted]`);
           }
         } catch (e: any) {
-          logMessage(`[WARN] Firestore duties cleanup skipped/errored for UID ${currentUid}: ${e.message}`);
+          logMessage(`[WARN] Firestore duties cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
       }
 
@@ -1148,7 +1148,7 @@ async function startServer() {
               });
               successCount++;
             } catch (mailErr: any) {
-              logMessage(`[BROADCAST EMAIL ERROR] Failed to send email to ${rec.email}: ${mailErr.message}`);
+              logMessage(`[BROADCAST EMAIL ERROR] Failed to send email to [redacted]: ${mailErr.message}`);
               failCount++;
               failedRecipients.push(rec.email);
             }
@@ -1391,9 +1391,9 @@ async function startServer() {
                 await dbAdmin.collection("users").doc(u.id).update({
                   webPushSubscriptions: updatedSubs
                 });
-                logMessage(`[WEBPUSH ANNOUNCEMENT PRUNE] Pruned expired subscriptions for user ${u.id}`);
+                logMessage(`[WEBPUSH ANNOUNCEMENT PRUNE] Pruned expired subscriptions for user [redacted]`);
               } catch (pruneErr) {
-                console.error(`[WEBPUSH ANNOUNCEMENT PRUNE ERROR] Failed to prune for user ${u.id}:`, pruneErr);
+                console.error(`[WEBPUSH ANNOUNCEMENT PRUNE ERROR] Failed to prune for user [redacted]:`, pruneErr);
               }
             }
           }
@@ -1647,9 +1647,9 @@ async function startServer() {
                 await dbAdmin.collection("users").doc(u.id).update({
                   webPushSubscriptions: updatedSubs
                 });
-                logMessage(`[WEBPUSH PRUNE] Pruned expired subscriptions for user ${u.id}`);
+                logMessage(`[WEBPUSH PRUNE] Pruned expired subscriptions for user [redacted]`);
               } catch (pruneErr) {
-                console.error(`[WEBPUSH PRUNE ERROR] Failed to prune for user ${u.id}:`, pruneErr);
+                console.error(`[WEBPUSH PRUNE ERROR] Failed to prune for user [redacted]:`, pruneErr);
               }
             }
           }
