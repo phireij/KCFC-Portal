@@ -96,6 +96,9 @@ jobs:
       - name: Verify current-device notification health
         run: npx tsx scripts/verify-current-device-notification-health.ts
 
+      - name: Verify device QA snapshot contract
+        run: npx tsx scripts/verify-device-qa-snapshot.ts
+
       - name: Build and guard resolved warnings
         shell: bash
         run: |
