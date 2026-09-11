@@ -29,7 +29,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: branch head `3e6df1b8a832d23e69f11b93edb4a624e027b5cc`, `KCFC Redevelopment CI` run **#912** / id `34572080316`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: branch head `cd5b2aa232f14d250efe33dc2ed27cc95ad80839`, `KCFC Redevelopment CI` run **#914** / id `34572244658`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
