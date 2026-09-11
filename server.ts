@@ -546,7 +546,7 @@ async function startServer() {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[WEBPUSH REGISTER ERROR]", err);
-      res.status(500).json({ error: err.message || "Failed to register web push subscription" });
+      res.status(500).json({ error: "Failed to register web push subscription" });
     }
   });
 
@@ -1361,7 +1361,7 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Error sending FCM push broadcast:", error);
-      res.status(500).json({ error: error.message || "Failed to dispatch push notification" });
+      res.status(500).json({ error: "Failed to dispatch push notification" });
     }
   });
 
@@ -1647,7 +1647,7 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Error sending FCM custom push broadcast:", error);
-      res.status(500).json({ error: error.message || "Failed to dispatch custom push notification" });
+      res.status(500).json({ error: "Failed to dispatch custom push notification" });
     }
   });
 
