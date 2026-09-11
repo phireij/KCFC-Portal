@@ -65,12 +65,6 @@ if route_anchor not in server:
     raise SystemExit('FCM route anchor not found')
 server = server.replace(route_anchor, route + route_anchor, 1)
 
-old_import = 'import { doc, updateDoc, arrayUnion } from "firebase/firestore";'
-new_import = 'import { doc, updateDoc } from "firebase/firestore";'
-if old_import not in client:
-    raise SystemExit('FCM client Firestore import not found')
-client = client.replace(old_import, new_import, 1)
-
 old_block = '''    if (token) {
       // Cleanly append device token to current user's profile in Firestore using arrayUnion
       const userRef = doc(db, "users", userId);
