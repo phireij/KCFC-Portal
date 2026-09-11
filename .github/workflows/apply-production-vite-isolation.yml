@@ -1,0 +1,72 @@
+name: Apply KCFC Production Vite Isolation
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/apply-production-vite-isolation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout redevelopment branch
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Isolate Vite to development middleware branch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          server = Path('server.ts')
+          text = server.read_text()
+          static_import = 'import { createServer as createViteServer } from "vite";\n'
+          if static_import not in text:
+              raise SystemExit('Expected static Vite server import not found')
+          text = text.replace(static_import, '', 1)
+          old = '  if (process.env.NODE_ENV !== "production") {\n    const vite = await createViteServer({'
+          new = '  if (process.env.NODE_ENV !== "production") {\n    const { createServer: createViteServer } = await import("vite");\n    const vite = await createViteServer({'
+          if old not in text:
+              raise SystemExit('Expected development Vite middleware block not found')
+          server.write_text(text.replace(old, new, 1))
+          PY
+      - name: Validate TypeScript and production build
+        run: |
+          npm run lint
+          npm run build
+      - name: Verify Vite remains development-only in source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q '^import .* from "vite"' server.ts; then
+            echo 'server.ts must not statically import Vite in production bundle entry.' >&2
+            exit 1
+          fi
+          grep -q 'await import("vite")' server.ts
+      - name: Commit validated isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'phireij'
+          git config user.email 'phireij@gmail.com'
+          git add server.ts
+          if git diff --cached --quiet; then
+            echo 'No Vite isolation change to commit.'
+            exit 0
+          fi
+          git commit -m 'build: isolate Vite middleware to development'
+          git push origin HEAD:redesign/mobile-first-v2
