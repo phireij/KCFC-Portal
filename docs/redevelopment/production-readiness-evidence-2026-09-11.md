@@ -13,71 +13,66 @@ Status: **NOT production-approved.** This register collects evidence and open ga
 - Production `main` has not moved from the recorded baseline.
 - Existing production approval gates remain in force.
 
-## Automated evidence already established
+## Automated evidence
 
-The permanent `KCFC Redevelopment CI` validates:
+Permanent `KCFC Redevelopment CI` validates:
 
 - TypeScript;
 - production/runtime audit visibility;
-- communication routing and communication batches;
+- communication policy and communication batches;
 - liturgical creator/diff/publication plans;
-- leadership broadcast planning and accessibility;
-- member governance and account-status classification;
-- safe member pre-registration identity/default-state contract;
-- Core-status transition/mutation planning;
-- staging-only Core-status executor safeguards and isolation;
-- leadership accessibility contracts;
+- leadership broadcast planning/accessibility;
+- member governance, pre-registration safety and account-status classification;
+- Core-status transition/mutation planning plus staging-executor isolation;
+- Firebase Admin Storage non-use boundary;
+- leadership accessibility;
 - mobile navigation contract;
-- delivery diagnostics and current-device notification health contracts;
-- production build;
-- raw + gzip JavaScript asset-size reporting after the production build;
-- resolved-build-warning regression guards;
-- connector defaults OFF;
-- provider-secret browser exposure guard.
+- delivery diagnostics and current-device notification health;
+- production build and resolved-warning guards;
+- raw + gzip JavaScript asset-size reporting;
+- connector defaults OFF and provider-secret browser guards.
 
-Full redevelopment CI remained green through the focused leadership, bundle-reporting, staging-matrix and advisory-disposition increments. The advisory-disposition head completed PR CI run **#718** successfully before the isolated Express remediation probe was introduced.
+The full redevelopment CI was green on the accepted Express 5.2.1 branch state and again on the latest branch increments. Every later code/dependency change still requires a fresh green run before it is treated as validated evidence.
 
-Every new code/dependency increment must still obtain a fresh full CI result before being treated as accepted evidence.
+## Dependency position
 
-## Current dependency position
+Current runtime audit: **0 critical, 0 high, 2 moderate, 1 low**.
 
-- Runtime audit baseline before the active Express probe: 0 critical, 0 high, 3 moderate, 1 low.
-- `esbuild` under the `tsx` development-tooling path has an explicit low-production-exposure disposition.
-- `qs` is now advisory-mapped: the locked 6.14.2 copy is inside the affected ranges for `GHSA-4mjr-xmp4-gh2g` / `CVE-2026-82417` and `GHSA-x5fp-wj9c-mxmx` / `CVE-2026-82562`; the separate nested 6.16.0 copy is already outside both ranges.
-- `uuid` 9.0.1 is inside `GHSA-w5hq-g745-h8pq` / `CVE-2026-41907`; the advisory is specific to v3/v5/v6 caller-provided output-buffer behavior, so parent/API reachability remains open.
-- `gaxios` exists in multiple installed versions and parent paths; remediation remains parent-family based instead of using a speculative global override.
-- Forced audit fixes and speculative overrides remain prohibited.
-- A one-time isolated **Express 4.22.2** probe is active on the redevelopment branch to determine whether a supported parent update resolves the affected `qs` copy while preserving all KCFC contracts and production build behavior. No candidate package file is accepted until the probe and subsequent normal CI are green.
+- `qs` moderate: **closed** through validated Express **5.2.1** migration, which resolves the relevant parent chain to patched `qs` 6.16.0.
+- The Express migration was validated through TypeScript, all KCFC contracts, production build, actual server startup, `/api/health`, SPA fallback routing, and ordinary redevelopment CI after commit.
+- `uuid` moderate and the affected older `gaxios` copy remain under Firebase Admin's optional `@google-cloud/storage` chain.
+- KCFC source currently does not import `firebase-admin/storage`, directly import `@google-cloud/storage`, or call `getStorage()`.
+- Permanent CI now guards that Storage boundary so future activation cannot silently change the reachability assumption.
+- The remaining findings stay visible and should be removed through supported Firebase Admin / Google Cloud parent updates when available and compatible; forced overrides remain prohibited.
+- `esbuild` low remains documented as development/tooling exposure because production starts with `node dist/server.cjs`.
 
-See: `residual-dependency-disposition-2026-09-11.md`.
+See `residual-dependency-disposition-2026-09-11.md`.
 
-## Current bundle-performance position
+## Bundle-performance position
 
-Established prior measurement:
+Established earlier measurement:
 
 - original main client chunk: approximately 2.31 MB / 603.5 KB gzip;
 - after route lazy-loading: approximately 1.32 MB / 357.1 KB gzip;
-- route pages such as Admin, Duties, Polls, Accounting, Profile and Inbox load separately.
+- route pages including Admin, Duties, Polls, Accounting, Profile and Inbox load separately.
 
-Validated bundle increment:
+Additional validated work:
 
-- explicit shared-vendor boundaries now separate Firebase, charting/D3, and Motion;
-- the normal Vite 500 KiB warning remains enabled rather than being hidden through `chunkSizeWarningLimit` changes;
-- permanent CI now records raw + gzip size for every generated JavaScript asset, total JavaScript weight and the standard Vite application entry where identifiable;
-- the build asset reporting step itself is green in the full redevelopment CI.
-
-GitHub's currently available connector surface confirms the reporting step passed but does not expose the rendered `GITHUB_STEP_SUMMARY` asset table directly. No unverified size figures are copied into this evidence register.
+- explicit vendor boundaries for Firebase, Recharts/D3 and Motion;
+- normal Vite chunk-size warning remains enabled;
+- permanent CI records raw + gzip size for generated JavaScript assets, total JS weight and the standard main entry where identifiable;
+- no unverified post-split size figure is claimed in this register.
 
 ## Leadership decomposition position
 
 Focused routine workflows now exist for:
 
 - Leadership overview;
-- Website inquiries, including individual explicit-send email replies with the recipient locked to the inquiry sender;
+- Website inquiries, including individual explicit-confirmation replies locked to the inquiry sender;
 - Member communications;
 - safe member pre-registration that writes only unverified pending Firestore profiles and leaves Firebase Auth untouched;
 - Member approval;
-- Roles & ministries with pre-save change summary and UID-preservation messaging;
+- Roles & Ministries with pre-save change summary and UID preservation;
 - Member account-status overview;
 - Core-status preview/planning.
 
@@ -87,60 +82,60 @@ Still isolated in Advanced Legacy Tools:
 - account disablement;
 - profile/member removal;
 - credential purge;
-- legacy compatibility versions of pre-registration and inquiry reply while focused replacements finish staging validation;
-- other low-frequency/destructive compatibility controls.
+- low-frequency/destructive compatibility controls.
 
-Focused inquiry reply does not auto-send, does not permit changing the inquiry recipient, and does not delete the source inquiry. No live inquiry-reply QA email was sent by redevelopment work.
-
-No destructive legacy control should be moved into a routine workspace until it has a separately reviewed governed workflow and staging evidence.
+No destructive legacy control should be moved into a routine workspace without a separately reviewed governed workflow and staging evidence.
 
 ## Staging/device evidence still required
 
-Automated contract tests are not substitutes for device QA. Before production approval is requested, collect explicit staging evidence for at least:
+Automated contracts are not a substitute for real-device staging QA.
 
 ### iPhone / iOS PWA
-- Add to Home Screen flow;
-- notification permission from explicit interaction;
-- Web Push registration and repair;
-- background/locked-device notification behavior;
-- transport result recorded separately from OS-controlled banner/sound/vibration behavior, including Focus/mute scenarios;
-- test notification deep link;
-- safe-area behavior for bottom navigation and More sheet;
-- Inbox list → detail navigation;
-- Schedule All ↔ My Ministry flow.
+
+- Add to Home Screen;
+- explicit notification permission;
+- Web Push registration/repair;
+- background and locked-device delivery;
+- transport evidence separated from OS banner/sound/vibration behavior, including Focus/mute cases;
+- push deep link;
+- safe-area navigation and More sheet;
+- Inbox list → detail;
+- Schedule All ↔ My Ministry.
 
 ### Android / Chromium
-- native/manual install path;
-- permission + device registration;
-- stale-registration repair;
-- background/locked-device delivery and notification-channel behavior;
+
+- install flow;
+- permission and registration;
+- stale endpoint repair;
+- background/locked notification and notification-channel behavior;
 - push deep link;
-- mobile navigation, Schedule, Directory and Inbox regression.
+- navigation, Schedule, Directory and Inbox regression.
 
-### Multi-device notification reliability
+### Multi-device
+
 - two valid registered devices for one synthetic member;
-- one stale/expired endpoint alongside a valid endpoint;
-- delivery evidence correlated to the durable Inbox record without equating provider acceptance with user-visible delivery.
+- one stale endpoint plus a valid endpoint;
+- transport evidence correlated to durable KCFC Inbox without treating provider acceptance as proof of user-visible delivery.
 
-### Desktop
-- leadership tab keyboard navigation;
-- focused member pre-registration using synthetic staging data only;
-- focused individual inquiry reply using a staging/sink recipient only;
+### Desktop / leadership
+
+- keyboard navigation;
+- synthetic pre-registration;
+- individual inquiry reply to staging/sink recipient only;
 - governed role/ministry change preview + save;
-- confirmation that destructive account/Core controls are absent from focused routine surfaces;
-- accounting compatibility surface;
-- Schedule/roster publication visibility rules;
-- Inbox desktop split view;
-- unauthorized-role denial paths.
+- destructive controls absent from focused routine surfaces;
+- accounting compatibility;
+- Schedule/roster visibility rules;
+- Inbox split view;
+- unauthorized-role denial.
 
 ## Production-readiness blockers still open
 
-1. Complete and disposition the isolated Express 4.22.2 parent-remediation probe; if accepted, rerun normal CI on the actual package/lockfile change.
-2. Parent/API reachability or supported remediation closure for the remaining `uuid` / `gaxios` moderate chain after `qs` disposition.
-3. Representative staging/device QA evidence, especially real iOS/Android notification behavior.
-4. Any further leadership decomposition only where it reduces routine use of LegacyAdmin without weakening destructive-action isolation.
-5. Backup/rollback evidence before any production request.
-6. Explicit user approval for production merge/deploy and every separately gated production-sensitive action.
+1. Representative staging/device QA, especially real iOS/Android notification behavior.
+2. Supported parent remediation or continued bounded disposition for the remaining optional Storage-path `uuid` / `gaxios` findings.
+3. Any further leadership decomposition only where it reduces routine LegacyAdmin use without weakening destructive-action isolation.
+4. Backup/rollback evidence before a production request.
+5. Explicit user approval for production merge/deploy and every separately gated production-sensitive action.
 
 ## Explicitly prohibited without approval
 
