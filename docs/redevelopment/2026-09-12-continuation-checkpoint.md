@@ -26,7 +26,22 @@ Branch-only change `1250ea8e460e64899f897680236e77de553160cb` now:
 
 The bounded implementation helper validated the targeted Leadership contract, TypeScript and a production build before committing the branch change, then removed itself. The normal branch now contains only the permanent read-only redevelopment CI workflow.
 
-The bot-authored code commit produced a GitHub Actions `action_required` record with zero jobs rather than an ordinary permanent-CI execution. That record is **not** counted as release validation. This documentation checkpoint intentionally provides a normal branch event so the permanent CI can validate the exact current code state. The first successful ordinary permanent CI after `1250ea8e...` is the required validation evidence for this optimization.
+The bot-authored code commit produced a GitHub Actions `action_required` record with zero jobs rather than an ordinary permanent-CI execution. That record is **not** counted as release validation. A normal documentation checkpoint then triggered the permanent workflow against the same code state.
+
+### Permanent validation and measured result
+
+`KCFC Redevelopment CI` run **#1592** / id `34621542523` completed **SUCCESS** on checkpoint head `d5785717887260a561005a6d6d7f7473a9cf8d2b`, with all **58** named validation/build/security checks green. The retained build-manifest artifact is `kcfc-build-manifest-d5785717887260a561005a6d6d7f7473a9cf8d2b`.
+
+Compared with the clean pre-change manifest on `147d5eed2d0acda2abeb1d29ab1319141ed82ad1`:
+
+- routine `Admin` route chunk: **174,006 bytes (169.9 KiB) → 110,127 bytes (107.6 KiB)**;
+- reduction in the routine Leadership chunk: **63,879 bytes raw / 36.7%**;
+- on-demand `LegacyAdmin` chunk: **65,972 bytes (64.4 KiB)**;
+- JavaScript asset count: **49 → 51** because the advanced compatibility surface is now independently loadable;
+- total JavaScript raw size: **2,329,069 → 2,331,337 bytes** (approximately +2.2 KiB), so this is intentionally a route-loading improvement rather than a total-weight claim; and
+- standard main entry remains effectively unchanged at about **332.1 KiB raw**.
+
+The preserved legacy surface therefore no longer increases the routine Leadership route payload for leaders who do not open Advanced tools.
 
 ## Dependency disposition re-check
 
