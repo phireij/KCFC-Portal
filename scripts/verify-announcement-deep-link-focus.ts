@@ -4,7 +4,7 @@ const source = fs.readFileSync('src/pages/Announcements.tsx', 'utf8');
 
 const required = [
   "import { useSearchParams } from 'react-router-dom';",
-  'const [searchParams] = useSearchParams();',
+  'const [searchParams, setSearchParams] = useSearchParams();',
   "const focusedAnnouncementId = searchParams.get('id');",
   "document.getElementById(`announcement-${focusedAnnouncementId}`)",
   "target.scrollIntoView({ behavior: 'smooth', block: 'center' });",
