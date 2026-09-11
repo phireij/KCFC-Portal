@@ -31,6 +31,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - staging application URL isolation: explicit HTTPS `APP_URL` is required and production Portal hostnames are rejected by both preflight and server startup;
 - staging admin mass-email broadcasts are simulation-only even when SMTP credentials are present;
 - staging public-inquiry notification and authorized inquiry-alert SMTP are suppressed/simulated so QA cannot notify the production KCFC mailbox;
+- staging verification-email SMTP is suppressed even when SMTP credentials are inherited; the route returns the generated verification link for synthetic onboarding QA instead of sending mail;
 - inquiry diagnostics do not persist submitted name/email/message content or Firestore REST URLs containing API-key query parameters, and public inquiry responses do not return internal backend error detail;
 - staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
@@ -54,7 +55,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated clean branch checkpoint: `8f8979b75d46d20d883876bcbd0d9ebedcc06a5a`, `KCFC Redevelopment CI` run **#1231** / id `34585740307`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
+Latest validated clean branch checkpoint: `716e920ba685dfab8f9148513847c4f5fc59d517`, `KCFC Redevelopment CI` run **#1247** / id `34586303040`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 

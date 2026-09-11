@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize creation o
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Latest validated staging-contract checkpoint: `8f8979b75d46d20d883876bcbd0d9ebedcc06a5a`, with `KCFC Redevelopment CI` run **#1231** / id `34585740307` completing successfully with all **57** validation/build/security steps green.
+Latest validated staging-contract checkpoint: `716e920ba685dfab8f9148513847c4f5fc59d517`, with `KCFC Redevelopment CI` run **#1247** / id `34586303040` completing successfully with all **57** validation/build/security steps green.
 
 ## Non-negotiable isolation rules
 
@@ -112,7 +112,7 @@ VITE_KCFC_VIBER_CONNECTOR_ENABLED=false
 
 Provider credentials for LINE, Telegram, WhatsApp or Viber are not needed for baseline staging QA and should remain absent.
 
-For baseline staging, the admin mass-email broadcast endpoint remains simulation-only even if SMTP credentials are present. Public-inquiry notification email and the authorized inquiry-alert SMTP endpoint are also suppressed/simulated in staging, so inquiry QA cannot notify the production KCFC mailbox. Inquiry records may still be persisted in the isolated staging Firestore project for workflow testing. Any separately tested reply/verification email flow must use synthetic/test recipients under the applicable approval boundary.
+For baseline staging, all server SMTP delivery is fail-safe: admin mass-email broadcast is simulation-only; public-inquiry notification email and authorized inquiry-alert SMTP are suppressed/simulated; and custom verification-email SMTP is suppressed even if SMTP credentials are inherited. The verification route still returns the generated verification link when email is not sent, allowing synthetic onboarding QA without external delivery. Inquiry records may still be persisted in the isolated staging Firestore project for workflow testing. Any future real SMTP acceptance test remains a separately approved action using synthetic/test recipients.
 
 ## Pre-deployment gate
 
