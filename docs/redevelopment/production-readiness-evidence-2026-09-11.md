@@ -29,10 +29,13 @@ Permanent `KCFC Redevelopment CI` validates:
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
 - notification-linked Updates deep-link focus;
+- Updates Published / All + drafts URL-history navigation while preserving focused announcement `id` state;
 - notification-linked availability request/completion deep-link focus for both member and leader views;
 - Inbox deep-link boundary, including same-origin route enforcement;
 - Inbox message-history preservation for notification records;
 - Inbox URL-backed filter/history navigation while preserving message deep-link state;
+- Resource category URL/history navigation while keeping free-text search local;
+- Community Directory member-type/ministry URL/history navigation while keeping free-text search local;
 - browser push privacy logging guard preventing VAPID key, PushSubscription and FCM token values from being logged;
 - canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + notification health;
 - synthetic execution of the staging preflight contract;
@@ -44,7 +47,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code checkpoint: `97f9b8f4baf05f1aae7d1d7d3a1a6e763050fa19`, `KCFC Redevelopment CI` run **#1001** / id `34575327421`, conclusion **SUCCESS**. All **48** validation/build/security steps passed.
+Latest validated code checkpoint: `470cad404e112c3a4b0afe3fd76a8257ac049a44`, `KCFC Redevelopment CI` run **#1043** / id `34576876886`, conclusion **SUCCESS**. All **51** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -62,7 +65,7 @@ The validated staging isolation work establishes:
 
 The onboarding regression previously fixed remains covered: a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 
-Notification/navigation now has permanent automated boundaries: notification records retain their history; Inbox links are constrained to authorized same-origin Portal destinations; query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation; notification-linked Updates can focus/highlight the intended authorized update; availability notification links can focus/highlight the intended member request or expanded leader request; and Inbox filters are URL-backed so reload/Back/Forward can restore the intended filter while preserving selected-message query state.
+Notification/navigation now has permanent automated boundaries: notification records retain their history; Inbox links are constrained to authorized same-origin Portal destinations; query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation; notification-linked Updates can focus/highlight the intended authorized update; availability notification links can focus/highlight the intended member request or expanded leader request; Inbox filters are URL-backed; Resource categories and Community Directory member/ministry filters are URL-backed; and authorized Updates scope can restore Published versus All + drafts through browser history while preserving a focused announcement `id`. Free-text search remains intentionally local on Resources, Community and Updates so typing does not create one browser-history entry per keystroke.
 
 Every later code/dependency change still requires a fresh green run before it is treated as validated evidence. Documentation-only evidence refreshes do not substitute for code CI.
 
@@ -156,7 +159,7 @@ Every notification test separately records:
 - durable KCFC Inbox persistence; and
 - notification tap/deep-link result.
 
-The browser/device matrix now explicitly covers Schedule and Inbox history restoration, notification-linked Updates and availability focus, same-origin notification fallback, Inbox durability/message-history behavior, and visible staging-environment identification.
+The browser/device matrix now explicitly covers Schedule and Inbox history restoration, notification-linked Updates and availability focus, Resources category history, Community Directory type/ministry history, authorized Updates scope history, same-origin notification fallback, Inbox durability/message-history behavior, and visible staging-environment identification.
 
 The canonical `notification-acceptance-evidence-template-2026-09-11.md` requires those signals to be recorded independently before a case can be classified PASS; ambiguous outcomes remain INVESTIGATE.
 
@@ -188,7 +191,8 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - staging badge visible and non-obstructive in the installed staging PWA;
 - safe-area navigation and More sheet;
 - Inbox list → detail, filter-history and message-history retention;
-- Schedule All ↔ My Ministry with Back/Forward restoration.
+- Schedule All ↔ My Ministry with Back/Forward restoration;
+- Resource category, Community Directory type/ministry, and authorized Updates scope Back/Forward restoration.
 
 ### Android / Chromium
 
@@ -198,8 +202,9 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - background/locked notification and notification-channel behavior;
 - push deep links, including query-specific Schedule, Updates, and availability-request targets;
 - staging badge visible and non-obstructive in the staging app;
-- navigation, Schedule, Directory and Inbox regression;
-- Inbox filter/history and message-history retention.
+- navigation, Schedule, Directory, Resources, Updates and Inbox regression;
+- Inbox filter/history and message-history retention;
+- Resource category, Community Directory type/ministry, and authorized Updates scope Back/Forward restoration.
 
 ### Multi-device
 
@@ -219,6 +224,8 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - accounting compatibility;
 - Schedule/roster visibility rules;
 - Inbox split view, filter history and message-history behavior;
+- Resource category and Community Directory filter-history behavior;
+- authorized Updates Published / All + drafts history behavior while preserving focused notification `id` state;
 - notification-linked Updates focus;
 - notification-linked availability completion focus/expanded leader request;
 - unauthorized-role denial.
