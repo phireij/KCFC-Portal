@@ -28,4 +28,4 @@ jobs:
           git commit -m 'fix: derive broadcast push recipients server-side'
           git push origin HEAD:redesign/mobile-first-v2
 
-# retrigger after matching live announcement block
+# retrigger after matching live custom block
