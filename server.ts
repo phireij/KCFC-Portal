@@ -107,6 +107,10 @@ async function initializeWebPush() {
     const envPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || "";
     const envPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY || "";
 
+    if (runtimeEnvironment === "staging" && (!envPublicKey || !envPrivateKey)) {
+      throw new Error("KCFC staging safety guard: staging Web Push requires explicit WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY.");
+    }
+
     if (envPublicKey && envPrivateKey) {
       vapidPublicKey = envPublicKey;
       vapidPrivateKey = envPrivateKey;
