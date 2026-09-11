@@ -66,6 +66,9 @@ jobs:
       - name: Verify member pre-registration safety
         run: npx tsx scripts/verify-member-pre-registration.ts
 
+      - name: Verify pre-registration email verification migration
+        run: npx tsx scripts/verify-preregistration-email-verification-migration.ts
+
       - name: Verify member account status summary
         run: npx tsx scripts/verify-member-account-status.ts
 
