@@ -138,6 +138,9 @@ jobs:
       - name: Verify mobile navigation contract
         run: npx tsx scripts/verify-mobile-navigation-contract.ts
 
+      - name: Verify schedule view history navigation
+        run: npx tsx scripts/verify-schedule-view-history.ts
+
       - name: Verify delivery diagnostics
         run: npx tsx scripts/verify-delivery-diagnostics.ts
 
