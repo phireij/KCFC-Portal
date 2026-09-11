@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../App';
 import {
   addDoc,
@@ -97,10 +98,12 @@ const resourceIcon = (resource: Resource) => {
 
 export default function Resources() {
   const { profile, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
-  const [category, setCategory] = useState('All');
+  const categoryParam = searchParams.get('category');
+  const category = categories.includes(categoryParam || '') ? categoryParam! : 'All';
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ResourceForm>(initialForm);
@@ -170,8 +173,21 @@ export default function Resources() {
     }
   };
 
+  const setResourceCategory = (nextCategory: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextCategory === 'All') next.delete('category');
+      else next.set('category', nextCategory);
+      return next;
+    });
+  };
+
   const resetFilters = () => {
-    setCategory('All');
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('category');
+      return next;
+    });
     setSearchText('');
   };
 
@@ -224,7 +240,7 @@ export default function Resources() {
               <button
                 key={item}
                 type="button"
-                onClick={() => setCategory(item)}
+                onClick={() => setResourceCategory(item)}
                 className={cn(
                   'min-h-10 shrink-0 rounded-xl px-3.5 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
                   category === item
