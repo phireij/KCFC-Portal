@@ -1,0 +1,44 @@
+name: KCFC Dependency Probe
+
+on:
+  push:
+    branches:
+      - 'redesign/mobile-first-v2'
+    paths:
+      - '.github/workflows/dependency-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Probe compatible security upgrade targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'react-router-dom latest:'
+          npm view react-router-dom version
+          echo 'react-router-dom 7.x latest:'
+          npm view 'react-router-dom@7' version --json | tail -n 12
+          echo 'multer latest:'
+          npm view multer version
+          echo 'vite latest:'
+          npm view vite version
+          echo 'vite 6.x latest:'
+          npm view 'vite@6' version --json | tail -n 12
+          echo '@vitejs/plugin-react latest:'
+          npm view @vitejs/plugin-react version
+          echo '@vitejs/plugin-react 5.x latest:'
+          npm view '@vitejs/plugin-react@5' version --json | tail -n 12
+          echo 'nodemailer latest:'
+          npm view nodemailer version
