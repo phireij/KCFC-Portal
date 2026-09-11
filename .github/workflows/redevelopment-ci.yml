@@ -96,6 +96,9 @@ jobs:
       - name: Verify Inbox deep-link boundary
         run: npx tsx scripts/verify-inbox-deep-link-boundary.ts
 
+      - name: Verify Inbox message history
+        run: npx tsx scripts/verify-inbox-message-history.ts
+
       - name: Verify push privacy logging
         run: npx tsx scripts/verify-push-privacy-logging.ts
 
