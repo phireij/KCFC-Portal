@@ -27,17 +27,20 @@ Permanent `KCFC Redevelopment CI` validates:
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
+- Inbox deep-link boundary, including same-origin route enforcement;
+- Inbox message-history preservation for notification records;
 - browser push privacy logging guard preventing VAPID key, PushSubscription and FCM token values from being logged;
 - canonical PWA theme/install metadata and shared modern iPhone/iPadOS platform detection across install + notification health;
 - synthetic execution of the staging preflight contract;
 - leadership accessibility;
 - mobile navigation contract;
+- Schedule URL/history navigation and Home roster-publication privacy boundary;
 - delivery diagnostics, current-device notification health, privacy-safe device QA snapshots and self-test recipient isolation;
 - production build and resolved-warning guards;
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated exact-head checkpoint before this documentation-only refresh: `967894f0eecbd53c80cffbc9b5e3461390217c98`, `KCFC Redevelopment CI` run **#845** / id `34567540510`, conclusion **SUCCESS**. All 39 validation/build/security steps passed.
+Latest validated exact-head checkpoint: `609c2af7274d10b2e130f21ea46899a10b001068`, `KCFC Redevelopment CI` run **#934** / id `34572845014`, conclusion **SUCCESS**. All **44** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -52,6 +55,8 @@ The validated staging isolation work establishes:
 - the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets.
 
 The onboarding regression previously fixed remains covered: a pending pre-registered member is not automatically marked email-verified merely because the pending profile exists. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
+
+Notification/Inbox navigation now also has permanent automated boundaries: notification records retain their history, Inbox links are constrained to authorized same-origin Portal destinations, and query-specific Schedule targets such as `/duties?view=mine` are preserved rather than collapsed to pathname-only navigation.
 
 Every later code/dependency change still requires a fresh green run before it is treated as validated evidence. Documentation-only evidence refreshes do not substitute for code CI.
 
@@ -168,10 +173,10 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - Web Push registration/repair;
 - background and locked-device delivery;
 - transport evidence separated from OS banner/sound/vibration behavior, including Focus/mute cases;
-- push deep link;
+- push deep link, including query-specific Schedule targets;
 - safe-area navigation and More sheet;
-- Inbox list → detail;
-- Schedule All ↔ My Ministry.
+- Inbox list → detail and message-history retention;
+- Schedule All ↔ My Ministry with Back/Forward restoration.
 
 ### Android / Chromium
 
@@ -179,8 +184,9 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - permission and registration;
 - stale endpoint repair;
 - background/locked notification and notification-channel behavior;
-- push deep link;
-- navigation, Schedule, Directory and Inbox regression.
+- push deep link, including query-specific Schedule targets;
+- navigation, Schedule, Directory and Inbox regression;
+- Inbox message-history retention.
 
 ### Multi-device
 
@@ -198,7 +204,7 @@ Automated contracts are not a substitute for empirical staging/device QA.
 - destructive controls absent from focused routine surfaces;
 - accounting compatibility;
 - Schedule/roster visibility rules;
-- Inbox split view;
+- Inbox split view and message-history behavior;
 - unauthorized-role denial.
 
 ## Backup / rollback readiness
