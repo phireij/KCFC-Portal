@@ -51,7 +51,7 @@ Before asking the physical tester to participate, verify at representative iPhon
 - Mobile navigation order and tap targets.
 - More-sheet usability.
 - Safe-area handling.
-- Schedule All Schedule ↔ My Ministry behavior.
+- Schedule All Schedule ↔ My Ministry behavior, including direct `?view=` URLs and browser Back/Forward restoration.
 - Search/filter reset and no-results recovery.
 - Community Directory privacy presentation and scanability.
 - Updates and Inbox list/detail behavior.
@@ -64,7 +64,7 @@ Before asking the physical tester to participate, verify at representative iPhon
 - Notification Health diagnostics.
 - Send Test control is clearly staging/test scoped.
 - Inbox persistence and unread/read behavior.
-- Notification deep-link destination handling.
+- Notification deep-link destination handling, including query-specific navigation when a different Schedule view is already open and same-origin fallback for malformed/external targets.
 - Stale endpoint repair behavior in controlled test data.
 - No automatic broadcast/reply behavior.
 

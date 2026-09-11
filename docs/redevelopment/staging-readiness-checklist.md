@@ -29,7 +29,7 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: `KCFC Redevelopment CI` run **#803**, conclusion **SUCCESS**, including all 35 validation/build/security steps.
+Latest exact-head automated evidence before this checklist update: branch head `1b4d60853361e1a0b9b362c510c1d85c1130011f`, `KCFC Redevelopment CI` run **#905** / id `34571875380`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
@@ -80,6 +80,8 @@ Validate on representative widths and real devices where possible:
 - [ ] Bottom navigation has exactly Home / Schedule / Community / Updates / More.
 - [ ] More sheet is usable with safe-area insets.
 - [ ] Schedule can switch All Schedule ↔ My Ministry quickly.
+- [ ] Direct `/duties?view=all|mine|manage` URLs open the matching Schedule subview.
+- [ ] Browser/mobile Back and Forward restore the previous Schedule subview rather than resetting local-only state.
 - [ ] Search/filter reset is obvious when no results are found.
 - [ ] Upcoming and History views are readable.
 - [ ] Published assignment highlighting makes the member's own role obvious.
@@ -126,7 +128,8 @@ Validate on representative widths and real devices where possible:
 - [ ] Device registration succeeds.
 - [ ] Notification Health shows installed state, permission and endpoint count correctly.
 - [ ] Test notification can be sent to the authenticated staging tester only.
-- [ ] Test notification opens the intended Portal deep link where applicable.
+- [ ] Test notification opens the intended Portal deep link where applicable, including query-specific routes such as `/duties?view=mine`.
+- [ ] Malformed/cross-origin notification destinations fail closed to same-origin KCFC Inbox.
 - [ ] Background/locked presentation is observed separately from transport acceptance and Inbox persistence.
 
 ### Android / Chromium

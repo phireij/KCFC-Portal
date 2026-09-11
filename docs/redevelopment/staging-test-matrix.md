@@ -27,7 +27,10 @@ Use synthetic staging identities with no production member data:
 | AUTH-03 | STG_DISABLED | Sign in | Disabled account cannot use protected Portal |
 | NAV-01 | STG_REGULAR | Phone-width navigation | Exactly Home / Schedule / Community / Updates / More; no horizontal scrolling |
 | NAV-02 | STG_REGULAR | Open More | Resources, Inbox, Profile visible; leadership/accounting only when authorized |
-| HOME-01 | STG_LECTOR | Home with published assignment | Next assignment is prominent and links to My Ministry |
+| NAV-03 | STG_LECTOR | Open `/duties?view=mine` directly | My Ministry is selected and the URL remains shareable/reload-safe |
+| NAV-04 | STG_LEADER | Switch All Schedule → My Ministry → Manage, then use browser Back/Forward | `?view=all|mine|manage` tracks each subview and Back/Forward restores the matching view |
+| HOME-01 | STG_LECTOR | Home with published assignment | Next assignment is prominent and links directly to `/duties?view=mine` |
+| HOME-02 | STG_LECTOR | Explicit-publication roster is complete/closed but `rosterPublished=false` | Home does not expose the member assignment and does not label the roster published |
 | SCH-01 | STG_LECTOR | My Ministry | Upcoming assignment shows date/Mass/ministry/role; history accessible |
 | SCH-02 | STG_REGULAR | Entire Schedule search/filter | Search/filter works; empty state offers reset |
 | SCH-03 | STG_LECTOR | Where I Serve filter | Only Masses containing the signed-in member are shown |
@@ -73,6 +76,8 @@ Use synthetic staging identities with no production member data:
 | PWA-REPAIR-01 | Supported device | Permission granted but no endpoint | Health shows repair-needed state and refresh action restores registration |
 | PWA-REPAIR-02 | Supported device | Remove/expire one synthetic endpoint, keep another valid endpoint | Invalid endpoint is reported/cleaned without preventing delivery to the valid device or removing the Inbox record |
 | PWA-MULTI-01 | Two registered devices for one staging member | Send one targeted test | Both valid endpoints are attempted and evidence can be correlated to the same Inbox record without claiming provider acceptance equals user-visible delivery |
+| PWA-DEEP-01 | Installed supported device with Portal already open at `/duties?view=all` | Tap notification targeting `/duties?view=mine` | Existing KCFC window navigates to the full target URL and My Ministry is visible; query state is not lost |
+| PWA-DEEP-02 | Supported device | Tap a test notification with malformed or cross-origin destination data | Portal refuses the external target and opens/focuses the same-origin KCFC Inbox fallback |
 
 ### Notification reliability interpretation
 
