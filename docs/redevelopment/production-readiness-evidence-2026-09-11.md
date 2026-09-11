@@ -26,6 +26,8 @@ Permanent `KCFC Redevelopment CI` validates:
 - Core-status transition/mutation planning plus staging-executor isolation;
 - Firebase Admin Storage non-use boundary;
 - client/server Firebase runtime isolation for staging;
+- non-secret `/api/health` runtime identity (runtime + Firebase project + Firestore database only);
+- staging Web Push runtime fail-closed enforcement requiring explicit server VAPID public/private keys before any cache/Firestore/generated-key fallback;
 - staging environment template parity, including explicit server-side VAPID public/private variables and browser/server public-key matching;
 - explicit staging-only environment badge boundary, with default/production runtime rendering no staging badge;
 - same-origin, Firebase-project-agnostic Web Push service-worker boundary;
@@ -48,7 +50,7 @@ Permanent `KCFC Redevelopment CI` validates:
 - raw + gzip JavaScript asset-size reporting;
 - connector defaults OFF and provider-secret browser guards.
 
-Latest validated code checkpoint: `b4baee6cb1611cf67eacf2b570a7c3db29196549`, `KCFC Redevelopment CI` run **#1088** / id `34578756178`, conclusion **SUCCESS**. All **54** validation/build/security steps passed.
+Latest validated code checkpoint: `b67f1e8767276830c74a08850199040046441f30`, `KCFC Redevelopment CI` run **#1141** / id `34581079376`, conclusion **SUCCESS**. All **57** validation/build/security steps passed.
 
 The validated staging isolation work establishes:
 
@@ -62,7 +64,9 @@ The validated staging isolation work establishes:
 - staging preflight requires all external connector flags OFF and the Core-status staging executor OFF;
 - the app shell renders an unmistakable `Staging • Test environment` badge only when `VITE_KCFC_RUNTIME_ENV=staging` is explicitly set;
 - the staging badge guard fails closed: default/production runtime has no staging badge;
-- the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets.
+- the preflight itself is exercised in CI with synthetic isolated values and prints environment identifiers/status only, not secrets;
+- `/api/health` exposes only status/time plus runtime, Firebase project ID and Firestore database ID so operators can prove the deployed target without exposing API keys, VAPID material, tokens, credentials or app identifiers;
+- when `KCFC_RUNTIME_ENV=staging`, the server now refuses to start Web Push with missing explicit server VAPID keys instead of falling through to cached, Firestore, or generated credentials.
 
 Email-verification migration is now guarded in both authenticated bootstrap migration and the Login/Google profile creation path: a pending profile or newly created profile cannot be marked email-verified by an unconditional fallback. Bootstrap admin remains the explicit exception; otherwise migration respects Firebase Auth `emailVerified` or an already-true pending value.
 

@@ -32,10 +32,12 @@ The KCFC Portal already has registered members and operational records. Redevelo
 - [x] Notification-linked Updates, Inbox filters/history, member/leader availability-request deep links, Resources category history, Community filter history, Updates scope history, and Leadership workspace URL/history navigation are covered by permanent automated guards.
 - [x] Login/Google profile creation preserves real email-verification state; forced-true verification fallbacks are prohibited by CI.
 - [ ] Real staging environment passes `npm run staging:preflight` with the actual isolated staging configuration.
+- [ ] Running `/api/health` shows `runtime=staging` and the expected isolated Firebase project/database IDs; no secret fields are present.
+- [ ] Staging server starts only with explicit `WEB_PUSH_VAPID_PUBLIC_KEY` + `WEB_PUSH_VAPID_PRIVATE_KEY`; missing keys fail closed before fallback initialization.
 - [ ] Real staging build visibly shows the staging environment badge before test data/device registration begins.
 - [ ] Legacy fallback pages remain available for critical workflows still being migrated.
 
-Latest exact-head automated evidence before this checklist update: code head `b4baee6cb1611cf67eacf2b570a7c3db29196549`, `KCFC Redevelopment CI` run **#1088** / id `34578756178`, conclusion **SUCCESS**, with all **54** validation/build/security steps green. This includes staging environment-template parity, Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
+Latest exact-head automated evidence before this checklist update: code head `b67f1e8767276830c74a08850199040046441f30`, `KCFC Redevelopment CI` run **#1141** / id `34581079376`, conclusion **SUCCESS**, with all **57** validation/build/security steps green. This includes staging environment-template parity, Login email-verification migration safety, Leadership workspace URL/history navigation, staging-only environment identification, Schedule URL/history navigation, full-URL same-origin notification tap handling, Updates focus/scope history, Inbox deep-link/history/filter navigation, Resource/Community history navigation, availability member/leader deep-link focus, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards.
 
 ## Gate B — Data compatibility
 
