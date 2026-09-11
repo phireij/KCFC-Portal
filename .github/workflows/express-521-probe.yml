@@ -55,6 +55,7 @@ jobs:
           npm audit --omit=dev --json > /tmp/kcfc-express5-probe-audit.json
           audit_status=$?
           set -e
+          cp /tmp/kcfc-express5-probe-audit.json express5-probe-audit.json
           node scripts/report-npm-audit.mjs /tmp/kcfc-express5-probe-audit.json "$GITHUB_STEP_SUMMARY" "$audit_status"
 
       - name: Typecheck candidate
@@ -102,21 +103,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          NODE_ENV=production timeout 20s node dist/server.cjs > /tmp/kcfc-express5-server.log 2>&1 &
+          read -r VAPID_PUBLIC VAPID_PRIVATE < <(
+            node - <<'NODE'
+          const webpush = require('web-push');
+          const keys = webpush.generateVAPIDKeys();
+          console.log(keys.publicKey, keys.privateKey);
+          NODE
+          )
+          WEB_PUSH_VAPID_PUBLIC_KEY="$VAPID_PUBLIC" \
+          WEB_PUSH_VAPID_PRIVATE_KEY="$VAPID_PRIVATE" \
+          NODE_ENV=production \
+            timeout 20s node dist/server.cjs > /tmp/kcfc-express5-server.log 2>&1 &
           pid=$!
           cleanup() { kill "$pid" 2>/dev/null || true; }
           trap cleanup EXIT
-          for attempt in $(seq 1 20); do
+          ready=false
+          for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:3000/api/health > /tmp/kcfc-health.json; then
+              ready=true
               break
             fi
             sleep 0.5
           done
+          if [ "$ready" != true ]; then
+            echo 'Express 5 candidate server failed to become ready.' >&2
+            cat /tmp/kcfc-express5-server.log >&2 || true
+            exit 1
+          fi
           cat /tmp/kcfc-health.json
           curl --fail --silent http://127.0.0.1:3000/nonexistent-spa-route > /tmp/kcfc-spa.html
           grep -qi '<!doctype html' /tmp/kcfc-spa.html
 
       - name: Upload candidate files
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: express-521-candidate-files
@@ -124,5 +143,6 @@ jobs:
             package.json
             package-lock.json
             server.ts
+            express5-probe-audit.json
           if-no-files-found: error
           retention-days: 1
