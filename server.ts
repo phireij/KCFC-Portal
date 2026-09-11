@@ -2104,7 +2104,8 @@ async function startServer() {
 
       res.json({ success: true, logs });
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error("[ADMIN DIAGNOSTIC LOG READ ERROR] Failed to read diagnostic service logs.", error);
+      res.status(500).json({ error: "Failed to read diagnostic service logs" });
     }
   });
 

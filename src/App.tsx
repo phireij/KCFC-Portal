@@ -167,7 +167,7 @@ export default function App() {
 
                       // Delete old pending document
                       await deleteDoc(pendingDocRef);
-                      console.log(`Successfully migrated pre-registered pending document ${pendingDocId} to real UID ${authenticatedUser.uid}`);
+                      console.log("Successfully migrated pre-registered pending member profile to the authenticated account.");
                       migrated = true;
                     }
                   } catch (migrationErr) {
@@ -205,7 +205,7 @@ export default function App() {
                   } else {
                     // Past grace period, meaning the admin deleted their document from Firestore.
                     // Sign out immediately to prevent recreating the document and clean up the zombie session.
-                    console.warn("User document deleted from Firestore. Force signing out zombie session:", authenticatedUser.uid);
+                    console.warn("User profile was removed from Firestore. Force signing out stale authenticated session.");
                     setProfile(null);
                     auth.signOut().catch((err) => {
                       console.error("Force sign out failed:", err);
