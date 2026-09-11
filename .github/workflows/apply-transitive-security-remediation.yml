@@ -35,6 +35,8 @@ jobs:
           audit_status=$?
           set -e
           echo "npm audit fix exit status: ${audit_status}; continuing because remaining unresolved findings intentionally keep npm non-zero."
+      - name: Restore development dependencies after runtime-only audit fix
+        run: npm install --include=dev
       - name: Validate TypeScript and production build
         run: |
           npm run lint
