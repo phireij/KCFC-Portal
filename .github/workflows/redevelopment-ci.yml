@@ -145,7 +145,9 @@ jobs:
         run: npx tsx scripts/verify-push-privacy-logging.ts
 
       - name: Verify server Web Push privacy logging
-        run: npx tsx scripts/verify-server-webpush-privacy.ts
+        run: |
+          npx tsx scripts/verify-server-webpush-privacy.ts
+          npx tsx scripts/verify-webpush-registration-boundary.ts
 
       - name: Verify PWA theme contract
         run: npx tsx scripts/verify-pwa-theme-contract.ts
