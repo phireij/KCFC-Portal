@@ -27,3 +27,5 @@ jobs:
           git add src/pages/Members.tsx scripts/patch-community-filter-history.py
           git commit -m 'fix: preserve Community filters in URL history'
           git push origin HEAD:redesign/mobile-first-v2
+
+# rerun after verifier matcher correction
