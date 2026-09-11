@@ -1,0 +1,35 @@
+name: Apply browser/admin diagnostic privacy
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/apply-browser-admin-diagnostic-privacy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/patch-browser-admin-diagnostic-privacy.py
+      - run: npx tsx scripts/verify-browser-admin-diagnostic-privacy.ts
+      - run: npm run lint
+      - run: git diff --check
+      - run: |
+          rm scripts/patch-browser-admin-diagnostic-privacy.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx server.ts scripts/verify-browser-admin-diagnostic-privacy.ts scripts/patch-browser-admin-diagnostic-privacy.py
+          git commit -m 'fix: redact browser and admin diagnostic errors'
+          git push origin HEAD:redesign/mobile-first-v2
