@@ -2116,11 +2116,10 @@ async function startServer() {
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Requested-With, Accept, Authorization");
     }
 
-    // Unified server-side diagnostic logging of incoming public inquiries
-    const inboundHeaders = JSON.stringify(req.headers);
-    const inboundBody = JSON.stringify(req.body);
-    const inboundQuery = JSON.stringify(req.query);
-    logMessage(`[INBOUND CONTACT] Received request. Headers: ${inboundHeaders} | Body: ${inboundBody} | Query: ${inboundQuery}`);
+    // Privacy-safe request metadata only. Never persist raw headers/body/query for public inquiries.
+    const inboundBodyFieldCount = req.body && typeof req.body === "object" ? Object.keys(req.body).length : 0;
+    const inboundQueryFieldCount = req.query && typeof req.query === "object" ? Object.keys(req.query).length : 0;
+    logMessage(`[INBOUND CONTACT] Received request. method=${req.method} contentType=${req.get("content-type") || "unknown"} bodyFields=${inboundBodyFieldCount} queryFields=${inboundQueryFieldCount}`);
 
     const body = req.body || {};
     const query = req.query || {};

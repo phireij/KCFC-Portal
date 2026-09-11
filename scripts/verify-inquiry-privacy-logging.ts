@@ -6,6 +6,10 @@ const forbiddenMarkers = [
   'Extracted fields => name:',
   'POSTing to REST endpoint: ${firestoreUrl}',
   'errorDetails: errorDetails || undefined',
+  'const inboundHeaders = JSON.stringify(req.headers);',
+  'const inboundBody = JSON.stringify(req.body);',
+  'const inboundQuery = JSON.stringify(req.query);',
+  'Headers: ${inboundHeaders} | Body: ${inboundBody} | Query: ${inboundQuery}',
 ];
 
 for (const marker of forbiddenMarkers) {
@@ -19,6 +23,7 @@ const requiredMarkers = [
   'messageLength=${message.length}',
   '[INBOUND CONTACT] Attempting Firestore REST fallback write.',
   'res.json({ success: true, emailSent, firestoreWritten });',
+  'bodyFields=${inboundBodyFieldCount} queryFields=${inboundQueryFieldCount}',
 ];
 
 for (const marker of requiredMarkers) {
