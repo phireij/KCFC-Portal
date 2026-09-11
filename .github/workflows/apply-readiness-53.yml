@@ -26,3 +26,5 @@ jobs:
           git add docs/redevelopment/production-readiness-evidence-2026-09-11.md docs/redevelopment/staging-readiness-checklist.md docs/redevelopment/staging-test-matrix.md scripts/patch-readiness-53.py
           git commit -m 'docs: sync readiness to 53-check checkpoint'
           git push origin HEAD:redesign/mobile-first-v2
+
+# rerun after aligning evidence matchers
