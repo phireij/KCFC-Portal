@@ -1,0 +1,80 @@
+name: One-shot navigation QA docs refresh
+
+on:
+  push:
+    branches: [redesign/mobile-first-v2]
+    paths:
+      - '.github/workflows/refresh-navigation-qa-docs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+      - name: Refresh staging navigation evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          matrix = Path('docs/redevelopment/staging-test-matrix.md')
+          s = matrix.read_text()
+          nav_marker = "| NAV-02 | STG_REGULAR | Open More | Resources, Inbox, Profile visible; leadership/accounting only when authorized |\n| HOME-01 | STG_LECTOR | Home with published assignment | Next assignment is prominent and links to My Ministry |"
+          nav_replacement = "| NAV-02 | STG_REGULAR | Open More | Resources, Inbox, Profile visible; leadership/accounting only when authorized |\n| NAV-03 | STG_LECTOR | Open `/duties?view=mine` directly | My Ministry is selected and the URL remains shareable/reload-safe |\n| NAV-04 | STG_LEADER | Switch All Schedule → My Ministry → Manage, then use browser Back/Forward | `?view=all|mine|manage` tracks each subview and Back/Forward restores the matching view |\n| HOME-01 | STG_LECTOR | Home with published assignment | Next assignment is prominent and links directly to `/duties?view=mine` |\n| HOME-02 | STG_LECTOR | Explicit-publication roster is complete/closed but `rosterPublished=false` | Home does not expose the member assignment and does not label the roster published |"
+          if s.count(nav_marker) != 1:
+              raise SystemExit(f'matrix navigation marker count={s.count(nav_marker)}')
+          s = s.replace(nav_marker, nav_replacement)
+
+          pwa_marker = "| PWA-MULTI-01 | Two registered devices for one staging member | Send one targeted test | Both valid endpoints are attempted and evidence can be correlated to the same Inbox record without claiming provider acceptance equals user-visible delivery |"
+          pwa_replacement = pwa_marker + "\n| PWA-DEEP-01 | Installed supported device with Portal already open at `/duties?view=all` | Tap notification targeting `/duties?view=mine` | Existing KCFC window navigates to the full target URL and My Ministry is visible; query state is not lost |\n| PWA-DEEP-02 | Supported device | Tap a test notification with malformed or cross-origin destination data | Portal refuses the external target and opens/focuses the same-origin KCFC Inbox fallback |"
+          if s.count(pwa_marker) != 1:
+              raise SystemExit(f'matrix PWA marker count={s.count(pwa_marker)}')
+          matrix.write_text(s.replace(pwa_marker, pwa_replacement))
+
+          checklist = Path('docs/redevelopment/staging-readiness-checklist.md')
+          s = checklist.read_text()
+          old_evidence = "Latest exact-head automated evidence before this checklist update: `KCFC Redevelopment CI` run **#803**, conclusion **SUCCESS**, including all 35 validation/build/security steps."
+          new_evidence = "Latest exact-head automated evidence before this checklist update: branch head `1b4d60853361e1a0b9b362c510c1d85c1130011f`, `KCFC Redevelopment CI` run **#905** / id `34571875380`, conclusion **SUCCESS**, with all **42** validation/build/security steps green. This includes Schedule URL/history navigation, full-URL same-origin notification tap handling, Home explicit-roster publication privacy, staging isolation/preflight, and the existing governance/build guards."
+          if s.count(old_evidence) != 1:
+              raise SystemExit(f'checklist evidence marker count={s.count(old_evidence)}')
+          s = s.replace(old_evidence, new_evidence)
+          old_schedule = "- [ ] Schedule can switch All Schedule ↔ My Ministry quickly."
+          new_schedule = "- [ ] Schedule can switch All Schedule ↔ My Ministry quickly.\n- [ ] Direct `/duties?view=all|mine|manage` URLs open the matching Schedule subview.\n- [ ] Browser/mobile Back and Forward restore the previous Schedule subview rather than resetting local-only state."
+          if s.count(old_schedule) != 1:
+              raise SystemExit(f'checklist schedule marker count={s.count(old_schedule)}')
+          s = s.replace(old_schedule, new_schedule)
+          old_deep = "- [ ] Test notification opens the intended Portal deep link where applicable."
+          new_deep = "- [ ] Test notification opens the intended Portal deep link where applicable, including query-specific routes such as `/duties?view=mine`.\n- [ ] Malformed/cross-origin notification destinations fail closed to same-origin KCFC Inbox."
+          if s.count(old_deep) != 1:
+              raise SystemExit(f'checklist deep link marker count={s.count(old_deep)}')
+          checklist.write_text(s.replace(old_deep, new_deep))
+
+          package = Path('docs/redevelopment/staging-device-qa-package-2026-09-11.md')
+          s = package.read_text()
+          old = "- Schedule All Schedule ↔ My Ministry behavior;"
+          new = "- Schedule All Schedule ↔ My Ministry behavior, including direct `?view=` URLs and browser Back/Forward restoration;"
+          if s.count(old) != 1:
+              raise SystemExit(f'device QA schedule marker count={s.count(old)}')
+          s = s.replace(old, new)
+          old2 = "- notification deep-link routes;"
+          new2 = "- notification deep-link routes, including query-specific navigation when a different Schedule view is already open and same-origin fallback for malformed/external targets;"
+          if s.count(old2) != 1:
+              raise SystemExit(f'device QA deep-link marker count={s.count(old2)}')
+          package.write_text(s.replace(old2, new2))
+          PY
+          git diff --check
+          git diff -- docs/redevelopment/staging-test-matrix.md docs/redevelopment/staging-readiness-checklist.md docs/redevelopment/staging-device-qa-package-2026-09-11.md
+      - name: Commit docs refresh
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/redevelopment/staging-test-matrix.md docs/redevelopment/staging-readiness-checklist.md docs/redevelopment/staging-device-qa-package-2026-09-11.md
+          git commit -m 'docs: refresh navigation and publication QA evidence'
+          git push origin HEAD:redesign/mobile-first-v2
