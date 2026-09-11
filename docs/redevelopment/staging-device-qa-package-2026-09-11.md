@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-11  
 **Scope:** isolated staging only  
-**Purpose:** final notification/PWA acceptance using browser emulation first, then physical iPhone + Android tablet/phone  
+**Purpose:** final notification/PWA acceptance using browser emulation first, then the available physical iPhone + Android tablet  
 **Status:** test package only — **no production messaging or cutover authorization**
 
 ## Test strategy
@@ -10,11 +10,13 @@
 Use the lowest-risk, highest-coverage sequence:
 
 1. Automated CI/contracts.
-2. Browser responsive/mobile emulation.
-3. Android Emulator where useful.
+2. Browser responsive/mobile emulation for representative iPhone and Android phone/tablet widths.
+3. Android Emulator where it adds coverage.
 4. Physical iPhone acceptance.
 5. Physical Android tablet acceptance.
-6. Physical Android phone acceptance from a KCFC member when available.
+6. Optional supplemental Android phone acceptance from a KCFC member when one becomes available.
+
+A Mac/iOS Simulator is **not required** for the planned KCFC acceptance path. Browser/mobile emulation covers layout and logic first; the physical iPhone provides the iOS/PWA/Web Push evidence that browser emulation cannot prove.
 
 Physical-device QA is intentionally narrow: it verifies behavior that browsers/emulators cannot fully prove, especially real Web Push delivery, lock-screen presentation, sound/vibration, Focus/Silent behavior, background/suspended PWA behavior, and notification tap/deep-link handling.
 
@@ -30,21 +32,30 @@ Physical-device QA is intentionally narrow: it verifies behavior that browsers/e
 
 ## Signals to record separately
 
-Every notification test records three independent outcomes:
+Every notification test records four independent outcomes:
 
 1. **Transport acceptance** — server/provider accepted the push and endpoint was considered valid.
 2. **OS presentation** — notification banner/lock screen/sound/vibration actually appeared or did not appear.
 3. **Durable Inbox persistence** — the message exists in KCFC Inbox regardless of OS presentation.
+4. **Tap/deep-link result** — tapping the notification opens the intended authorized KCFC destination.
 
 Do not mark a push as failed solely because sound is absent. On iOS in particular, audible presentation is controlled by device/system settings.
 
 ## Browser/emulation pass
 
-Before asking a physical tester to participate, verify:
+Before asking the physical tester to participate, verify at representative iPhone, Android-phone and Android-tablet viewport sizes:
 
+- Home readability and card hierarchy.
 - Mobile navigation order and tap targets.
-- iPhone and Android viewport responsiveness.
+- More-sheet usability.
 - Safe-area handling.
+- Schedule All Schedule ↔ My Ministry behavior.
+- Search/filter reset and no-results recovery.
+- Community Directory privacy presentation and scanability.
+- Updates and Inbox list/detail behavior.
+- Profile/notification setup at normal and large text sizes.
+- Resource Library mobile behavior.
+- Dark-mode readability where supported.
 - Install/help copy and notification-permission guidance.
 - Enable Alerts flow.
 - Device Registration/Repair UI.
@@ -54,6 +65,8 @@ Before asking a physical tester to participate, verify:
 - Notification deep-link destination handling.
 - Stale endpoint repair behavior in controlled test data.
 - No automatic broadcast/reply behavior.
+
+Browser/emulator evidence should be captured separately from physical evidence and labeled `BROWSER`, `RESPONSIVE EMULATION`, or `ANDROID EMULATOR` as appropriate.
 
 ## Physical iPhone acceptance
 
@@ -87,7 +100,9 @@ Run these cases:
 - Repeat one controlled test with Focus/Silent conditions noted.
 - Do not treat suppressed sound as transport failure when system settings explain the suppression.
 
-## Physical Android tablet/phone acceptance
+## Physical Android tablet acceptance
+
+The Android tablet is the planned first physical Android baseline. It is sufficient to validate the Android/Chromium PWA notification path even though it does not represent every Android phone manufacturer.
 
 Tester setup:
 
@@ -111,7 +126,7 @@ Run these cases:
 - Record banner, sound/vibration where allowed, Inbox, and tap behavior.
 
 ### AND-03 — Locked
-- Lock the device.
+- Lock the tablet.
 - Send one test notification.
 - Record lock-screen presentation, sound/vibration, Inbox, and deep link.
 
@@ -119,21 +134,25 @@ Run these cases:
 - Check Chrome/PWA notification permission and applicable Android notification-channel settings.
 - If presentation is missing but transport succeeded, record the OS setting before classifying the app path as failed.
 
+### AND-05 — Tablet layout sanity
+- In both portrait and landscape, confirm the installed PWA remains usable and does not expose desktop-only leadership actions to an unauthorized test member.
+- This is a supplemental layout check; phone-sized responsive behavior remains covered in browser/Android emulation.
+
 ## Multi-device acceptance
 
-Use one synthetic staging member registered on at least two physical devices when practical, for example:
-
-- iPhone + Android tablet, or
-- iPhone + KCFC member Android phone.
+Use one synthetic staging member registered on the available physical iPhone + Android tablet.
 
 Test:
 
-1. Send one targeted staging notification to the synthetic member.
-2. Verify delivery independently on each registered device.
-3. Verify the KCFC Inbox has one durable logical message rather than duplicated user-visible content caused by multiple device endpoints.
-4. Invalidate/remove one staging device endpoint through the approved test mechanism.
-5. Send another targeted test.
-6. Verify the still-valid device succeeds and the stale endpoint is detected/repairable without breaking the valid device.
+1. Register the same synthetic member on both physical devices.
+2. Send one targeted staging notification to that member.
+3. Verify delivery independently on each registered device.
+4. Verify KCFC Inbox has one durable logical message rather than duplicate user-visible messages caused by multiple device endpoints.
+5. Invalidate/remove one staging device endpoint through the approved test mechanism.
+6. Send another targeted test.
+7. Verify the still-valid device succeeds and the stale endpoint is detected/repairable without breaking the valid device.
+
+An additional Android phone can later be added as supplemental manufacturer/form-factor evidence without invalidating the iPhone + tablet baseline.
 
 ## Tester evidence form
 
@@ -170,15 +189,14 @@ A representative device passes when:
 - no unrelated member receives the test;
 - no production data/action is touched.
 
-## Recommended representative set
+## Planned representative set
 
-Initial production-readiness evidence should include at minimum:
+The planned initial KCFC physical acceptance set is:
 
 - one physical iPhone;
-- one physical Android device (tablet is acceptable for the first pass);
-- preferably one additional KCFC member Android phone for real-world Android coverage.
+- one physical Android tablet.
 
-An Android phone is preferred as supplemental evidence, but lack of one does not block branch development or browser/emulator testing.
+This is sufficient for the initial production-readiness baseline when combined with automated contracts plus browser/Android-emulator phone-size coverage. A physical Android phone remains **recommended supplemental evidence**, not a prerequisite for continuing branch development or preparing the initial acceptance package.
 
 ## Stop conditions
 
