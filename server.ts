@@ -1287,7 +1287,7 @@ async function startServer() {
           }
         }
       } else {
-        logMsgText = `[FCM SIMULATION] (No registered real browser push tokens found). Announcement broadcast simulation completed:\n  Title: "${title}"\n  Body preview: "${body.substring(0, 100)}..."`;
+        logMsgText = `[FCM SIMULATION] No registered real browser push tokens found. Announcement broadcast simulation completed without message-content logging.`;
         logMessage(logMsgText);
       }
 
@@ -1532,7 +1532,7 @@ async function startServer() {
           }
         }
       } else {
-        logMsgText = `[FCM SIMULATION] (No registered real browser push tokens found for targeted users). Custom broadcast simulation completed:\n  Title: "${title}"\n  Body preview: "${body.substring(0, 100)}..."`;
+        logMsgText = `[FCM SIMULATION] No registered real browser push tokens found for targeted users. Custom broadcast simulation completed without message-content logging.`;
         logMessage(logMsgText);
       }
 
