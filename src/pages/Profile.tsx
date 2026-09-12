@@ -1,17 +1,64 @@
 import React, { useState } from 'react';
 import { useAuth } from '../App';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { motion } from 'motion/react';
-import { User, Mail, Phone, Home, Calendar, AtSign, Save, ShieldCheck, BellRing, Palette } from 'lucide-react';
+import {
+  AtSign,
+  BellRing,
+  Calendar,
+  Camera,
+  CheckCircle2,
+  CircleDashed,
+  Home,
+  Link2,
+  Mail,
+  MessageCircle,
+  Palette,
+  Phone,
+  Save,
+  ShieldCheck,
+  Smartphone,
+  User,
+} from 'lucide-react';
 import { cn } from '../lib/utils';
 import InstallPWA from '../components/InstallPWA';
+import NotificationHealth from '../components/NotificationHealth';
+import { ConnectedCommunicationApp } from '../types';
+
+type Provider = ConnectedCommunicationApp['provider'];
+
+const providerMeta: Record<Provider, { label: string; detail: string; priority: string; available: boolean }> = {
+  line: {
+    label: 'LINE',
+    detail: 'First optional secondary channel for members in Japan.',
+    priority: 'Priority 1',
+    available: false,
+  },
+  telegram: {
+    label: 'Telegram',
+    detail: 'Optional no-cost secondary messaging connector.',
+    priority: 'Priority 2',
+    available: false,
+  },
+  whatsapp: {
+    label: 'WhatsApp',
+    detail: 'Future connector after current onboarding and pricing are verified.',
+    priority: 'Future',
+    available: false,
+  },
+  viber: {
+    label: 'Viber',
+    detail: 'Low-priority optional connector because new bots are commercial.',
+    priority: 'Later',
+    available: false,
+  },
+};
 
 export default function Profile() {
   const { profile, user } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -24,81 +71,117 @@ export default function Profile() {
       announcements: true,
       duties: true,
       broadcasts: true,
+      availability: true,
+      assignments: true,
+      urgentNotices: true,
+      emailPartner: true,
+      optionalChannels: {
+        line: false,
+        telegram: false,
+        whatsapp: false,
+        viber: false,
+      },
       darkMode: false,
       fontSize: 'normal' as 'small' | 'normal' | 'medium' | 'big',
-    }
+    },
   });
 
   React.useEffect(() => {
-    if (profile) {
-      setFormData({
-        displayName: profile.displayName || '',
-        nickname: profile.nickname || '',
-        phoneNumber: profile.phoneNumber || '',
-        homeAddress: profile.homeAddress || '',
-        birthdate: profile.birthdate || '',
-        preferences: {
-          announcements: profile.preferences?.announcements ?? true,
-          duties: profile.preferences?.duties ?? true,
-          broadcasts: profile.preferences?.broadcasts ?? true,
-          darkMode: profile.preferences?.darkMode ?? false,
-          fontSize: profile.preferences?.fontSize ?? 'normal',
-        }
-      });
-    }
+    if (!profile) return;
+    setFormData({
+      displayName: profile.displayName || '',
+      nickname: profile.nickname || '',
+      phoneNumber: profile.phoneNumber || '',
+      homeAddress: profile.homeAddress || '',
+      birthdate: profile.birthdate || '',
+      preferences: {
+        announcements: profile.preferences?.announcements ?? true,
+        duties: profile.preferences?.duties ?? true,
+        broadcasts: profile.preferences?.broadcasts ?? true,
+        availability: profile.preferences?.availability ?? true,
+        assignments: profile.preferences?.assignments ?? true,
+        urgentNotices: profile.preferences?.urgentNotices ?? true,
+        emailPartner: profile.preferences?.emailPartner ?? true,
+        optionalChannels: {
+          line: profile.preferences?.optionalChannels?.line ?? false,
+          telegram: profile.preferences?.optionalChannels?.telegram ?? false,
+          whatsapp: profile.preferences?.optionalChannels?.whatsapp ?? false,
+          viber: profile.preferences?.optionalChannels?.viber ?? false,
+        },
+        darkMode: profile.preferences?.darkMode ?? false,
+        fontSize: profile.preferences?.fontSize ?? 'normal',
+      },
+    });
   }, [profile]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const updatePreference = (
+    key: 'announcements' | 'duties' | 'broadcasts' | 'availability' | 'assignments' | 'urgentNotices' | 'emailPartner' | 'darkMode' | 'fontSize',
+    value: boolean | string,
+  ) => {
+    setFormData((current) => ({
+      ...current,
+      preferences: { ...current.preferences, [key]: value },
+    }));
+  };
+
+  const updateOptionalChannel = (provider: Provider, value: boolean) => {
+    setFormData((current) => ({
+      ...current,
+      preferences: {
+        ...current.preferences,
+        optionalChannels: {
+          ...current.preferences.optionalChannels,
+          [provider]: value,
+        },
+      },
+    }));
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!user) return;
-
-    if (!window.confirm('Are you sure you want to save these changes?')) {
-      return;
-    }
-
-    setLoading(true);
+    setSaving(true);
     setMessage(null);
-
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        ...formData,
-        updatedAt: serverTimestamp()
+      await updateDoc(doc(db, 'users', user.uid), {
+        displayName: formData.displayName,
+        nickname: formData.nickname,
+        phoneNumber: formData.phoneNumber,
+        homeAddress: formData.homeAddress,
+        birthdate: formData.birthdate,
+        preferences: formData.preferences,
+        updatedAt: serverTimestamp(),
       });
-      setMessage({ type: 'success', text: 'Profile updated successfully!' });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Failed to update profile.' });
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      setMessage({ type: 'success', text: 'Your profile and communication preferences were saved.' });
+    } catch (error) {
+      console.error(error);
+      setMessage({ type: 'error', text: 'We could not save your changes. Please try again.' });
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file || !user) return;
-
-    // Check file size (limit to 500KB for base64 storage)
     if (file.size > 500 * 1024) {
-      alert("Image is too large. Please choose an image smaller than 500KB.");
+      alert('Please choose an image smaller than 500 KB.');
       return;
     }
 
     setUploading(true);
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64String = reader.result as string;
       try {
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          photoURL: base64String,
-          updatedAt: serverTimestamp()
+        await updateDoc(doc(db, 'users', user.uid), {
+          photoURL: reader.result as string,
+          updatedAt: serverTimestamp(),
         });
-        setMessage({ type: 'success', text: 'Profile picture updated!' });
-      } catch (err) {
-        console.error(err);
-        setMessage({ type: 'error', text: 'Failed to update photo.' });
+        setMessage({ type: 'success', text: 'Profile photo updated.' });
+      } catch (error) {
+        console.error(error);
+        setMessage({ type: 'error', text: 'We could not update your photo.' });
       } finally {
         setUploading(false);
       }
@@ -106,331 +189,238 @@ export default function Profile() {
     reader.readAsDataURL(file);
   };
 
+  const connectedApps = profile?.connectedCommunicationApps || [];
+  const roleLabel = (profile?.roles || []).map((role) => role.replaceAll('_', ' ')).join(' • ') || 'KCFC member';
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      <header>
-        <h1 className="text-4xl font-serif text-[#1a1a1a] dark:text-white">My Profile</h1>
-        <p className="text-gray-500 font-serif italic mt-2">Manage your personal information and community presence.</p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Profile Card */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white dark:bg-[#1e1e1a] rounded-[40px] p-8 shadow-sm border border-gray-100 dark:border-white/5 flex flex-col items-center text-center">
-            <div className="relative group">
-              <div className={cn(
-                "w-32 h-32 rounded-full border-4 border-gray-50 shadow-inner overflow-hidden",
-                uploading && "animate-pulse"
-              )}>
-                <img 
-                  src={profile?.photoURL || `https://ui-avatars.com/api/?name=${profile?.displayName}&background=5A5A40&color=fff`} 
-                  alt={profile?.displayName} 
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer disabled:cursor-not-allowed"
-              >
-                <span className="text-white text-[10px] font-bold uppercase tracking-widest">
-                  {uploading ? 'Processing...' : 'Change Photo'}
-                </span>
-              </button>
-              <input 
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept="image/*"
-                className="hidden"
-              />
-            </div>
-            
-            <h2 className="mt-6 text-xl font-bold text-gray-900 dark:text-[#f5f5f0]">{profile?.displayName}</h2>
-            <p className="text-gray-400 dark:text-gray-500 text-sm">{profile?.email}</p>
-            
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {(profile?.roles || []).map(role => (
-                <span key={role} className="px-3 py-1 bg-[#5A5A40]/10 text-[#5A5A40] text-[10px] font-bold uppercase tracking-widest rounded-full">
-                  {role}
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-8 w-full pt-8 border-t border-gray-50 dark:border-white/10 space-y-4">
-              <div className="flex items-center gap-3 text-left">
-                <div className="w-8 h-8 bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-500 rounded-lg flex items-center justify-center">
-                  <ShieldCheck size={18} />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Member Status</div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-[#f5f5f0]">
-                    {profile?.email === 'kcfc.jp@gmail.com' ? (
-                      <span className="text-purple-600 font-bold tracking-tight">SUPER MEMBER</span>
-                    ) : (
-                      profile?.isVerified ? (profile?.isCoreMember ? 'Core Member' : 'Regular Member') : 'Pending Verification'
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {(profile?.ministries && profile.ministries.length > 0) && (
-                <div className="space-y-4 pt-4 border-t border-gray-50 dark:border-white/10">
-                  <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] text-left">Committees & Affiliations</h3>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {profile.ministries.map(m => {
-                      const mStr = m as string;
-                      if ((mStr === 'cleaning' || mStr === 'cleaning_leader') && ((profile.ministries as any)?.includes('cleaning_toilet_ok') || (profile.ministries as any)?.includes('cleaning_toilet_ng'))) {
-                        return null;
-                      }
-                      
-                      let label = m.replace(/_/g, ' ');
-                      let colorClass = "bg-blue-50 text-blue-600";
-                      
-                      if (m === 'cleaning_toilet_ok') {
-                        label = "Cleaning: Toilet OK";
-                        colorClass = "bg-green-100 text-green-700 border border-green-200";
-                      } else if (m === 'cleaning_toilet_ng') {
-                        label = "Cleaning: Toilet NG";
-                        colorClass = "bg-red-100 text-red-700 border border-red-200";
-                      }
-
-                      return (
-                        <span key={m} className={cn("px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-lg", colorClass)}>
-                          {label}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+    <div className="kcfc-page space-y-5 pb-4">
+      <section className="overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-[#123B66] via-[#174E83] to-[#2563EB] p-5 text-white shadow-[0_18px_45px_rgba(18,59,102,0.18)] sm:p-7">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-[26px] border-2 border-white/30 bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            aria-label="Change profile photo"
+          >
+            <img
+              src={profile?.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.displayName || 'KCFC')}&background=123B66&color=fff`}
+              alt=""
+              className={cn('h-full w-full object-cover', uploading && 'opacity-50')}
+            />
+            <span className="absolute inset-0 flex items-center justify-center bg-slate-950/45 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              <Camera className="h-6 w-6" />
+            </span>
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-blue-100">My KCFC Profile</p>
+            <h1 className="mt-1 truncate text-[28px] font-extrabold tracking-[-0.03em] sm:text-[34px]">{profile?.displayName || 'KCFC Member'}</h1>
+            <p className="mt-1 truncate text-[13px] text-blue-50/85">{profile?.email}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold capitalize text-white">{roleLabel}</span>
+              <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold text-white">{profile?.isVerified ? (profile?.isCoreMember ? 'Core Member' : 'Verified Member') : 'Pending Verification'}</span>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Edit Form */}
-        <div className="lg:col-span-2">
-          <motion.form 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            onSubmit={handleSubmit}
-            className="bg-white dark:bg-[#1e1e1a] rounded-[40px] p-8 md:p-10 shadow-sm border border-gray-100 dark:border-white/5 space-y-8"
-          >
-            {message && (
-              <div className={cn(
-                "p-4 rounded-2xl text-sm font-medium",
-                message.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-              )}>
-                {message.text}
-              </div>
-            )}
+      <NotificationHealth />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Full Name</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    required
-                    value={formData.displayName}
-                    onChange={e => setFormData({ ...formData, displayName: e.target.value })}
-                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] transition-all text-gray-900 dark:text-[#f5f5f0] outline-none"
-                  />
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {message && (
+          <div className={cn(
+            'rounded-2xl border px-4 py-3 text-[13px] font-semibold',
+            message.type === 'success'
+              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-400/20 dark:bg-green-500/10 dark:text-green-300'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300',
+          )}>
+            {message.text}
+          </div>
+        )}
+
+        <section className="kcfc-surface overflow-hidden">
+          <SectionHeader icon={User} title="Personal information" body="Your private profile details are not displayed in the general Community Directory." />
+          <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+            <Field label="Full name" icon={User}><input required value={formData.displayName} onChange={(event) => setFormData({ ...formData, displayName: event.target.value })} className="kcfc-input" /></Field>
+            <Field label="Nickname" icon={AtSign}><input value={formData.nickname} onChange={(event) => setFormData({ ...formData, nickname: event.target.value })} className="kcfc-input" /></Field>
+            <Field label="Phone number" icon={Phone}><input type="tel" value={formData.phoneNumber} onChange={(event) => setFormData({ ...formData, phoneNumber: event.target.value })} className="kcfc-input" /></Field>
+            <Field label="Birthdate" icon={Calendar}><input type="date" value={formData.birthdate} onChange={(event) => setFormData({ ...formData, birthdate: event.target.value })} className="kcfc-input" /></Field>
+            <Field label="Home address" icon={Home} wide><textarea rows={2} value={formData.homeAddress} onChange={(event) => setFormData({ ...formData, homeAddress: event.target.value })} className="kcfc-input resize-none py-3" /></Field>
+          </div>
+        </section>
+
+        <section className="kcfc-surface overflow-hidden">
+          <SectionHeader icon={BellRing} title="What should KCFC alert me about?" body="Inbox keeps the durable record. These preferences control which routine alerts should also reach your notification channels." />
+          <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 sm:p-5">
+            <PreferenceCard label="Announcements" detail="Community news and published notices" checked={formData.preferences.announcements} onChange={(value) => updatePreference('announcements', value)} />
+            <PreferenceCard label="Availability requests" detail="When leaders ask when you can serve" checked={formData.preferences.availability} onChange={(value) => updatePreference('availability', value)} />
+            <PreferenceCard label="Assignments" detail="Published ministry assignments and changes" checked={formData.preferences.assignments} onChange={(value) => updatePreference('assignments', value)} />
+            <PreferenceCard label="Community duties" detail="Kitchen, cleaning and other service duties" checked={formData.preferences.duties} onChange={(value) => updatePreference('duties', value)} />
+            <PreferenceCard label="Broadcasts" detail="Messages sent to groups you belong to" checked={formData.preferences.broadcasts} onChange={(value) => updatePreference('broadcasts', value)} />
+            <PreferenceCard label="Urgent notices" detail="Important operational or schedule changes" checked={formData.preferences.urgentNotices} onChange={(value) => updatePreference('urgentNotices', value)} recommended />
+          </div>
+
+          <div className="border-t border-slate-100 p-4 sm:p-5 dark:border-white/10">
+            <div className="flex flex-col gap-3 rounded-2xl bg-[#F7F9FC] p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-white/5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#123B66] shadow-sm dark:bg-white/10 dark:text-blue-200"><Mail className="h-5 w-5" /></div>
+                <div>
+                  <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">Email partner channel</p>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Keep email paired with important KCFC alerts. PWA push remains the primary alert channel.</p>
                 </div>
               </div>
+              <Toggle checked={formData.preferences.emailPartner} onChange={(value) => updatePreference('emailPartner', value)} label="Email partner" />
+            </div>
+          </div>
+        </section>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Nickname</label>
-                <div className="relative">
-                  <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    value={formData.nickname}
-                    onChange={e => setFormData({ ...formData, nickname: e.target.value })}
-                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] transition-all text-gray-900 dark:text-[#f5f5f0] outline-none"
-                  />
-                </div>
-              </div>
+        <section className="kcfc-surface overflow-hidden" id="communication-apps">
+          <SectionHeader icon={Link2} title="Connected Communication Apps" body="Optional secondary channels can reinforce important KCFC alerts. None of these apps will ever be required for membership." />
+          <div className="grid gap-3 p-4 sm:p-5 lg:grid-cols-2">
+            {(Object.keys(providerMeta) as Provider[]).map((provider) => {
+              const meta = providerMeta[provider];
+              const connection = connectedApps.find((item) => item.provider === provider);
+              const enabled = formData.preferences.optionalChannels[provider];
+              const connected = connection?.status === 'connected';
+              return (
+                <div key={provider} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><MessageCircle className="h-5 w-5" /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[14px] font-extrabold text-[#172033] dark:text-white">{meta.label}</p>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-300">{meta.priority}</span>
+                        {connected && <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-green-700 dark:bg-green-500/15 dark:text-green-300"><CheckCircle2 className="h-3 w-3" /> Connected</span>}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">{meta.detail}</p>
+                      {connection?.displayName && <p className="mt-1 truncate text-[10px] font-bold text-slate-400">Linked as {connection.displayName}</p>}
+                    </div>
+                  </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Phone Number</label>
-                <div className="relative">
-                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="tel"
-                    value={formData.phoneNumber}
-                    onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })}
-                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] transition-all text-gray-900 dark:text-[#f5f5f0] outline-none"
-                  />
-                </div>
-              </div>
+                  <div className="mt-4 flex flex-col gap-2 rounded-xl bg-[#F7F9FC] p-3 sm:flex-row sm:items-center sm:justify-between dark:bg-white/5">
+                    <div>
+                      <p className="text-[11px] font-bold text-[#172033] dark:text-white">Use for KCFC alerts</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Only after your account is securely linked.</p>
+                    </div>
+                    <Toggle checked={enabled} onChange={(value) => updateOptionalChannel(provider, value)} label={`${meta.label} alerts`} disabled={!connected} />
+                  </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Birthdate</label>
-                <div className="relative">
-                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="date"
-                    value={formData.birthdate}
-                    onChange={e => setFormData({ ...formData, birthdate: e.target.value })}
-                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] transition-all text-gray-900 dark:text-[#f5f5f0] outline-none"
-                  />
+                  {!connected && (
+                    <button
+                      type="button"
+                      disabled
+                      className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-400 disabled:cursor-not-allowed dark:border-white/10 dark:bg-white/5"
+                    >
+                      <CircleDashed className="h-4 w-4" /> Secure connection coming after server setup
+                    </button>
+                  )}
                 </div>
-              </div>
+              );
+            })}
+          </div>
+          <div className="border-t border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+            <div className="flex items-start gap-3 rounded-2xl bg-blue-50/60 p-4 dark:bg-blue-500/5">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#123B66] dark:text-blue-200" />
+              <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">External account IDs and connector credentials will be mapped server-side to your Firebase UID. Tokens and secrets will never be stored in browser-visible profile fields.</p>
+            </div>
+          </div>
+        </section>
 
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Home Address</label>
-                <div className="relative">
-                  <Home className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <textarea
-                    rows={2}
-                    value={formData.homeAddress}
-                    onChange={e => setFormData({ ...formData, homeAddress: e.target.value })}
-                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] transition-all text-gray-900 dark:text-[#f5f5f0] outline-none"
-                  />
-                </div>
+        <section className="kcfc-surface overflow-hidden">
+          <SectionHeader icon={Palette} title="Appearance" body="Choose a comfortable reading experience across phone, tablet and desktop." />
+          <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[.75fr_1.25fr]">
+            <div className="rounded-2xl bg-[#F7F9FC] p-4 dark:bg-white/5">
+              <div className="flex items-center justify-between gap-4">
+                <div><p className="text-[13px] font-bold text-[#172033] dark:text-white">Dark mode</p><p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Use a darker Portal canvas.</p></div>
+                <Toggle checked={formData.preferences.darkMode} onChange={(value) => updatePreference('darkMode', value)} label="Dark mode" />
               </div>
             </div>
-
-            {/* Notification Preferences */}
-            <div className="space-y-6 pt-8 border-t border-gray-50 dark:border-white/10">
-              <div className="flex items-center gap-3">
-                <BellRing className="text-[#5A5A40]" size={20} />
-                <h3 className="text-sm font-bold text-gray-900 dark:text-[#f5f5f0] uppercase tracking-widest">Notification Preferences</h3>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[
-                  { id: 'announcements', label: 'Announcements', desc: 'New community posts' },
-                  { id: 'duties', label: 'Duties', desc: 'Assignment reminders' },
-                  { id: 'broadcasts', label: 'Broadcasts', desc: 'Direct group messages' }
-                ].map((pref) => (
-                  <label 
-                    key={pref.id}
-                    className="flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d2d25] transition-all border border-transparent has-[:checked]:border-[#5A5A40]/30 has-[:checked]:bg-[#5A5A40]/5 dark:has-[:checked]:bg-[#5A5A40]/10 min-h-[6.5rem] justify-between"
+            <div className="rounded-2xl bg-[#F7F9FC] p-4 dark:bg-white/5">
+              <p className="text-[13px] font-bold text-[#172033] dark:text-white">Reading size</p>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {(['small', 'normal', 'medium', 'big'] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => updatePreference('fontSize', size)}
+                    className={cn(
+                      'min-h-11 rounded-xl px-2 text-[11px] font-bold capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                      formData.preferences.fontSize === size
+                        ? 'bg-[#123B66] text-white'
+                        : 'bg-white text-slate-500 dark:bg-white/5 dark:text-slate-300',
+                    )}
                   >
-                    <div className="flex items-start justify-between gap-3 mb-1.5">
-                      <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0] break-words leading-tight">{pref.label}</span>
-                      <input 
-                        type="checkbox"
-                        checked={(formData.preferences as any)[pref.id]}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          preferences: {
-                            ...formData.preferences,
-                            [pref.id]: e.target.checked
-                          }
-                        })}
-                        className="w-4 h-4 rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] shrink-0 mt-0.5"
-                      />
-                    </div>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-serif italic leading-tight block">{pref.desc}</span>
-                  </label>
+                    {size}
+                  </button>
                 ))}
               </div>
             </div>
+          </div>
+        </section>
 
-            {/* Appearance settings */}
-            <div className="space-y-6 pt-8 border-t border-gray-50 dark:border-white/10">
-              <div className="flex items-center gap-3">
-                <Palette className="text-[#5A5A40]" size={20} />
-                <h3 className="text-sm font-bold text-gray-900 dark:text-[#f5f5f0] uppercase tracking-widest">Appearance Settings</h3>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <label 
-                  className="flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d2d25] transition-all border border-transparent has-[:checked]:border-[#5A5A40]/30 has-[:checked]:bg-[#5A5A40]/5 dark:has-[:checked]:bg-[#5A5A40]/10 h-full min-h-[6.5rem] justify-between"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                    <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0] break-words leading-tight">Dark Mode</span>
-                    <input 
-                      type="checkbox"
-                      checked={formData.preferences?.darkMode ?? false}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        preferences: {
-                          ...formData.preferences,
-                          darkMode: e.target.checked
-                        }
-                      })}
-                      className="w-4 h-4 rounded border-gray-300 dark:border-white/10 text-[#5A5A40] focus:ring-[#5A5A40] shrink-0 mt-0.5"
-                    />
-                  </div>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-550 font-serif italic leading-tight block">Use dark canvas and background panels</span>
-                </label>
-
-                {/* Font Size Setting Card */}
-                <div className="lg:col-span-2 flex flex-col p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl border border-transparent">
-                  <span className="text-xs font-bold text-gray-900 dark:text-[#f5f5f0] mb-3">Font Size setting</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { id: 'small', label: 'Small', desc: 'Smaller than normal' },
-                      { id: 'normal', label: 'Normal', desc: 'Normal size' },
-                      { id: 'medium', label: 'Medium', desc: 'Bigger than normal' },
-                      { id: 'big', label: 'Big', desc: 'Bigger than medium' }
-                    ].map((opt) => {
-                      const isSelected = (formData.preferences?.fontSize || 'normal') === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setFormData({
-                            ...formData,
-                            preferences: {
-                              ...formData.preferences,
-                              fontSize: opt.id as any
-                            }
-                          })}
-                          className={cn(
-                            "flex flex-col items-center justify-between p-3 rounded-xl border transition-all text-center cursor-pointer min-h-[5.5rem] h-full",
-                            isSelected 
-                              ? "bg-[#5A5A40] text-white border-[#5A5A40] shadow-xs"
-                              : "bg-white dark:bg-[#1e1e1a] text-gray-700 dark:text-gray-300 border-gray-150 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-[#2d2d25]"
-                          )}
-                        >
-                          <span className={cn(
-                            "text-xs font-bold leading-none block",
-                            opt.id === 'small' && "text-[11px]",
-                            opt.id === 'normal' && "text-[13px]",
-                            opt.id === 'medium' && "text-[15px]",
-                            opt.id === 'big' && "text-[17px]"
-                          )}>
-                            {opt.label}
-                          </span>
-                          <span className={cn(
-                            "text-[8px] mt-1.5 font-serif italic block leading-tight break-words max-w-full",
-                            isSelected ? "text-white/85" : "text-gray-400 dark:text-gray-500"
-                          )}>
-                            {opt.desc}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-6">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full md:w-auto px-12 py-4 bg-[#5A5A40] text-white rounded-2xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-3 hover:bg-[#4a4a35] transition-all disabled:opacity-50 shadow-lg shadow-[#5A5A40]/20"
-              >
-                {loading ? 'Updating...' : (
-                  <>
-                    <Save size={18} />
-                    Save Changes
-                  </>
-                )}
-              </button>
-            </div>
-          </motion.form>
+        <div className="sticky bottom-[82px] z-20 flex justify-end xl:bottom-4">
+          <button type="submit" disabled={saving} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#123B66] px-5 text-[13px] font-bold text-white shadow-lg shadow-blue-950/15 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+            <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save profile'}
+          </button>
         </div>
-      </div>
+      </form>
+
+      <section className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-400/10 dark:bg-blue-500/5">
+        <div className="flex items-start gap-3">
+          <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-[#123B66] dark:text-blue-200" />
+          <div>
+            <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">Recommended member setup</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Install KCFC Portal → enable notifications → send a test notification. This remains separate from optional LINE or Telegram connections.</p>
+          </div>
+        </div>
+      </section>
 
       <InstallPWA />
     </div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, body }: { icon: React.ComponentType<{ className?: string }>; title: string; body: string }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Icon className="h-5 w-5" /></div>
+      <div>
+        <h2 className="text-[17px] font-extrabold tracking-tight text-[#172033] dark:text-white">{title}</h2>
+        <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, icon: Icon, wide = false, children }: { label: string; icon: React.ComponentType<{ className?: string }>; wide?: boolean; children: React.ReactNode }) {
+  return (
+    <label className={cn('space-y-1.5', wide && 'sm:col-span-2')}>
+      <span className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400"><Icon className="h-3.5 w-3.5" />{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function PreferenceCard({ label, detail, checked, onChange, recommended = false }: { label: string; detail: string; checked: boolean; onChange: (value: boolean) => void; recommended?: boolean }) {
+  return (
+    <div className="flex min-h-[92px] items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-bold text-[#172033] dark:text-white">{label}</p>
+        <p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{detail}</p>
+        {recommended && <p className="mt-1 text-[9px] font-bold text-amber-600 dark:text-amber-300">Recommended on</p>}
+      </div>
+      <Toggle checked={checked} onChange={onChange} label={label} />
+    </div>
+  );
+}
+
+function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (value: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <label className={cn('relative inline-flex h-7 w-12 shrink-0 items-center', disabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer')}>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="peer sr-only" aria-label={label} disabled={disabled} />
+      <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-[#2563EB] peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2 dark:bg-white/15" />
+      <span className="relative ml-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+    </label>
   );
 }

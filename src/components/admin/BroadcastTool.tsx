@@ -26,6 +26,8 @@ import {
 import { UserProfile, MinistryType } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
+import { buildLeadershipBroadcastCreatorPlan, shouldDispatchPwaForPlan } from '../../lib/broadcastCreatorPlan';
+import { appendCommunicationNotificationsToBatch, persistCommunicationDeliveryOutcome } from '../../lib/communicationFirestore';
 
 export default function BroadcastTool() {
   const [selectedTargets, setSelectedTargets] = useState<string[]>(['all']);
@@ -107,7 +109,7 @@ export default function BroadcastTool() {
         allMatched.set(u.uid, u);
       });
     });
-    return Array.from(allMatched.values());
+    return Array.from(allMatched.values()).filter(u => !u.isDisabled);
   };
 
   const filteredRecipients = getFilteredRecipients();
@@ -136,7 +138,7 @@ export default function BroadcastTool() {
 
     const targetLabel = getTargetLabel();
     const channels = [];
-    if (sendInPortal) channels.push("Portal notifications");
+    if (sendInPortal) channels.push("PWA/Portal alerts");
     if (sendByEmail) channels.push("Emails");
 
     if (!confirm(`Send this broadcast to ${filteredRecipients.length} members (${targetLabel}) via ${channels.join(" and ")}?`)) {
@@ -144,45 +146,35 @@ export default function BroadcastTool() {
     }
 
     setSending(true);
+    const broadcastId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const creatorPlan = buildLeadershipBroadcastCreatorPlan({
+      recipients: filteredRecipients,
+      broadcastId,
+      title,
+      message,
+      allowPwa: sendInPortal,
+      allowEmail: sendByEmail,
+    });
+    let notificationIdsByUser: Record<string, string[]> = {};
     try {
-      // 1. Send via Portal (Firestore notifications & FCM Smartphone Alerts)
-      if (sendInPortal) {
+      // 1. Always create the durable KCFC Inbox record; secondary channels remain preference-aware.
+      {
         const batch = writeBatch(db);
-        filteredRecipients.forEach(u => {
-          // Respect notification preference
-          if (u.preferences?.broadcasts === false) return;
-
-          const userDisplayName = u.displayName || 'Member';
-          const userNickname = u.nickname || userDisplayName;
-          const personalizedMsg = message
-            .replace(/\[name\]/gi, userDisplayName)
-            .replace(/\{name\}/gi, userDisplayName)
-            .replace(/\[nickname\]/gi, userNickname)
-            .replace(/\{nickname\}/gi, userNickname);
-
-          const noteRef = doc(collection(db, 'notifications'));
-          batch.set(noteRef, {
-            userId: u.uid,
-            title: `Broadcast: ${title}`,
-            message: personalizedMsg,
-            type: 'broadcast',
-            status: 'unread',
-            link: `/inbox?id=${noteRef.id}`,
-            createdAt: serverTimestamp()
-          });
-        });
+        const persistedPlan = appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
         await batch.commit();
+        notificationIdsByUser = persistedPlan.notificationIdsByUser;
 
-        // 1b. Trigger native smartphone alert (FCM Push Notification)
-        try {
+        // Trigger native smartphone alert only when the leader selected Portal/PWA delivery.
+        if (sendInPortal) {
+          try {
           const currentUser = auth.currentUser;
-          if (currentUser) {
+          if (currentUser && shouldDispatchPwaForPlan(creatorPlan)) {
             const idToken = await currentUser.getIdToken();
             const fcmBody = message
-              .replace(/\[name\]/gi, "Member")
-              .replace(/\{name\}/gi, "Member")
-              .replace(/\[nickname\]/gi, "Member")
-              .replace(/\{nickname\}/gi, "Member");
+              .replace(/\[name\]/gi, 'Member')
+              .replace(/\{name\}/gi, 'Member')
+              .replace(/\[nickname\]/gi, 'Member')
+              .replace(/\{nickname\}/gi, 'Member');
 
             const pResponse = await fetch('/api/admin/broadcast-custom-push', {
               method: 'POST',
@@ -191,26 +183,32 @@ export default function BroadcastTool() {
                 'Authorization': `Bearer ${idToken}`
               },
               body: JSON.stringify({
-                userIds: filteredRecipients.map(u => u.uid),
-                recipientTokens: filteredRecipients.flatMap(u => u.fcmTokens || []),
+                userIds: creatorPlan.pushRecipientIds,
+                recipientTokens: creatorPlan.pushTokens,
+                notificationIdsByUser: persistedPlan.notificationIdsByUser,
                 title: `Broadcast: ${title}`,
                 body: fcmBody,
                 clickAction: '/inbox'
               })
             });
             const pResult = await pResponse.json();
-            console.info("FCM smartphone alerts dispatch completed:", pResult);
+            console.info('FCM smartphone alerts dispatch completed:', pResult);
+            if (typeof pResult.persistedDeliveryRecords === 'number') {
+              console.info('KCFC Inbox PWA delivery evidence persisted for records:', pResult.persistedDeliveryRecords);
+            }
           }
-        } catch (pushErr) {
-          console.error("FCM smartphone alerts dispatch failed:", pushErr);
+          } catch (pushErr) {
+            console.error('FCM smartphone alerts dispatch failed:', pushErr);
+          }
         }
       }
 
       // 2. Send via Email (Direct Gmail API integration)
       let emailStats = "";
       if (sendByEmail) {
+        const emailRecipientIds = new Set(creatorPlan.emailRecipientIds);
         const recipientList = filteredRecipients
-          .filter(u => !!u.email && u.email.includes('@'));
+          .filter(u => emailRecipientIds.has(u.uid) && !!u.email && u.email.includes('@'));
 
         if (recipientList.length === 0) {
           throw new Error("No recipients with valid email addresses found for this target group.");
@@ -235,24 +233,50 @@ export default function BroadcastTool() {
 
             // Construct beautifully styled HTML email matching the Liturgical Scheduler aesthetic
             const personalizedHtml = `
-              <div style="font-family: sans-serif; padding: 30px; max-width: 600px; margin: 0 auto; background-color: #fcfcf9; border: 1px solid #e5e5df; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-                <div style="background-color: #5A5A40; color: white; padding: 25px; border-radius: 12px; text-align: center; margin-bottom: 25px;">
+              <div style="font-family: sans-serif; padding: 30px; max-width: 600px; margin: 0 auto; background-color: #F7F9FC; border: 1px solid #DDE5EE; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                <div style="background-color: #123B66; color: white; padding: 25px; border-radius: 12px; text-align: center; margin-bottom: 25px;">
                   <h1 style="margin: 0; font-size: 20px; font-weight: normal; font-family: serif; letter-spacing: 0.5px;">KCFC Community Portal</h1>
                   <p style="margin: 5px 0 0 0; font-size: 11px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">Official Community Broadcast</p>
                 </div>
-                <h2 style="color: #4A4A30; border-bottom: 2px solid #5A5A40; padding-bottom: 12px; margin-top: 0; font-family: serif; font-size: 18px; line-height: 1.4;">${title}</h2>
-                <div style="font-size: 14px; line-height: 1.6; color: #2d2d25; white-space: pre-wrap; margin-top: 20px; margin-bottom: 25px;">${personalizedBody}</div>
-                <hr style="border: 0; border-top: 1px solid #e5e5df; margin: 25px 0;" />
-                <p style="font-size: 11px; color: #8a8a80; font-style: italic; margin-bottom: 0; line-height: 1.4; text-align: center;">
+                <h2 style="color: #172033; border-bottom: 2px solid #123B66; padding-bottom: 12px; margin-top: 0; font-family: serif; font-size: 18px; line-height: 1.4;">${title}</h2>
+                <div style="font-size: 14px; line-height: 1.6; color: #172033; white-space: pre-wrap; margin-top: 20px; margin-bottom: 25px;">${personalizedBody}</div>
+                <hr style="border: 0; border-top: 1px solid #DDE5EE; margin: 25px 0;" />
+                <p style="font-size: 11px; color: #64748B; font-style: italic; margin-bottom: 0; line-height: 1.4; text-align: center;">
                   This broadcast email was dispatched to you on behalf of the KCFC community. If you do not want to receive these broadcasts, you can update your notification preferences in My Profile.
                 </p>
               </div>
             `;
 
             await sendGmail(recipientEmail, title, personalizedHtml);
+            const notificationIds = notificationIdsByUser[u.uid] || [];
+            if (notificationIds.length > 0) {
+              await persistCommunicationDeliveryOutcome({
+                firestore: db,
+                notificationIds,
+                userId: u.uid,
+                channel: 'email',
+                status: 'sent',
+                detail: 'Accepted by the authorized Gmail send path.',
+              });
+            }
             successCount++;
           } catch (mailErr: any) {
             console.error(`Failed to send email to ${u.email}:`, mailErr);
+            const notificationIds = notificationIdsByUser[u.uid] || [];
+            if (notificationIds.length > 0) {
+              try {
+                await persistCommunicationDeliveryOutcome({
+                  firestore: db,
+                  notificationIds,
+                  userId: u.uid,
+                  channel: 'email',
+                  status: 'failed',
+                  detail: mailErr?.message || 'Gmail send failed.',
+                });
+              } catch (evidenceErr) {
+                console.error('Failed to persist Gmail delivery evidence:', evidenceErr);
+              }
+            }
             failCount++;
             failedRecipients.push(u.email || 'Unknown Email');
           }
@@ -319,14 +343,14 @@ export default function BroadcastTool() {
   ];
 
   return (
-    <section className="bg-white dark:bg-[#1e1e1a] rounded-[40px] p-8 md:p-10 shadow-sm border border-gray-100 dark:border-white/5">
+    <section className="kcfc-surface overflow-hidden p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-8">
-        <div className="w-12 h-12 bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
           <Megaphone size={24} />
         </div>
         <div>
-          <h2 className="text-2xl font-serif text-[#1a1a1a] dark:text-[#f5f5f0]">Broadcast System</h2>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Send notifications inside the portal or via direct emails.</p>
+          <h2 className="text-[22px] font-extrabold tracking-tight text-[#172033] dark:text-white">Broadcast System</h2>
+          <p className="mt-1 text-[13px] leading-5 text-slate-500 dark:text-slate-400">Every broadcast keeps a durable KCFC Inbox copy; PWA and email are secondary alerts.</p>
         </div>
       </div>
 
@@ -335,7 +359,7 @@ export default function BroadcastTool() {
         <div className="space-y-3">
           <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-1 block">Target Audience Group ({filteredRecipients.length} members selected)</span>
           
-          <div className="space-y-4 bg-gray-50/50 dark:bg-[#11110f]/20 p-5 rounded-3xl border border-gray-150 dark:border-white/5">
+          <div className="space-y-4 bg-gray-50/50 dark:bg-slate-950/30 p-5 rounded-3xl border border-gray-150 dark:border-white/5">
             {/* Standard filters */}
             <div>
               <span className="text-[8px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest block mb-2 font-medium">Standard Roles (Click to select/toggle)</span>
@@ -344,10 +368,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('all')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer",
                     selectedTargets.includes('all') 
-                      ? "bg-[#5A5A40] border-[#5A5A40] text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-gray-150 dark:border-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2c2c26]"
+                      ? "bg-[#123B66] border-[#123B66] text-white shadow-xs" 
+                      : "bg-white dark:bg-slate-900 border-gray-150 dark:border-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
                   )}
                 >
                   All Members ({users.length})
@@ -357,10 +381,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('core_members')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer",
                     selectedTargets.includes('core_members') 
                       ? "bg-orange-600 border-orange-600 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-orange-100/30 dark:border-orange-950/20 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                      : "bg-white dark:bg-slate-900 border-orange-100/30 dark:border-orange-950/20 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20"
                   )}
                 >
                   Core Members ({users.filter(u => u.isCoreMember === true).length})
@@ -370,10 +394,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('regular_members')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer",
                     selectedTargets.includes('regular_members') 
                       ? "bg-blue-600 border-blue-600 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-blue-100/30 dark:border-blue-950/20 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20"
+                      : "bg-white dark:bg-slate-900 border-blue-100/30 dark:border-blue-950/20 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20"
                   )}
                 >
                   Regular Members ({users.filter(u => !u.isCoreMember).length})
@@ -383,10 +407,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('individuals')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
                     selectedTargets.includes('individuals') 
                       ? "bg-green-600 border-green-600 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-green-100/30 dark:border-green-950/20 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/20"
+                      : "bg-white dark:bg-slate-900 border-green-100/30 dark:border-green-950/20 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/20"
                   )}
                 >
                   <Users size={12} />
@@ -397,16 +421,16 @@ export default function BroadcastTool() {
 
             {/* Profile incompleteness filters */}
             <div className="pt-2 border-t border-gray-100 dark:border-white/5">
-              <span className="text-[8px] font-bold text-[#8a8a65] dark:text-[#8a8a65] uppercase tracking-widest block mb-2 font-medium">Profile completeness actions</span>
+              <span className="text-[8px] font-bold text-[#64748B] dark:text-slate-400 uppercase tracking-widest block mb-2 font-medium">Profile completeness actions</span>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => toggleTarget('missing_fullname')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
                     selectedTargets.includes('missing_fullname') 
                       ? "bg-red-650 border-red-650 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-red-100/30 dark:border-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
+                      : "bg-white dark:bg-slate-900 border-red-100/30 dark:border-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
                   )}
                 >
                   <UserX size={12} />
@@ -417,10 +441,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('missing_nickname')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
                     selectedTargets.includes('missing_nickname') 
                       ? "bg-amber-600 border-amber-600 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-amber-100/30 dark:border-amber-950/20 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                      : "bg-white dark:bg-slate-900 border-amber-100/30 dark:border-amber-950/20 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20"
                   )}
                 >
                   <Smile size={12} />
@@ -431,10 +455,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('missing_phone')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
                     selectedTargets.includes('missing_phone') 
                       ? "bg-teal-600 border-teal-600 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-[#5A5A40]/10 dark:border-teal-950/20 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20"
+                      : "bg-white dark:bg-slate-900 border-[#123B66]/10 dark:border-teal-950/20 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20"
                   )}
                 >
                   <PhoneOff size={12} />
@@ -453,10 +477,10 @@ export default function BroadcastTool() {
                     type="button"
                     onClick={() => toggleTarget(val)}
                     className={cn(
-                      "px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border cursor-pointer",
+                      "min-h-11 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer",
                       selectedTargets.includes(val) 
-                        ? "bg-purple-600 border-purple-600 text-white shadow-xs" 
-                        : "bg-white dark:bg-[#1e1e1a] border-gray-150 dark:border-white/5 text-gray-550 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2c2c26]"
+                        ? "bg-[#2563EB] border-[#2563EB] text-white shadow-xs" 
+                        : "bg-white dark:bg-slate-900 border-gray-150 dark:border-white/5 text-gray-550 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
                     )}
                   >
                     {label} ({users.filter(u => u.ministries?.includes(val as MinistryType)).length})
@@ -468,10 +492,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('lector_only')}
                   className={cn(
-                    "px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer",
                     selectedTargets.includes('lector_only')
                       ? "bg-indigo-600 border-indigo-600 text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-indigo-100/30 dark:border-indigo-950/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                      : "bg-white dark:bg-slate-900 border-indigo-100/30 dark:border-indigo-950/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
                   )}
                 >
                   Lectors Only ({users.filter(u => u.ministries?.includes('lector_commentator') && u.lcRoles?.some(r => r.toLowerCase().includes('lector'))).length})
@@ -481,10 +505,10 @@ export default function BroadcastTool() {
                   type="button"
                   onClick={() => toggleTarget('commentator_only')}
                   className={cn(
-                    "px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border cursor-pointer",
+                    "min-h-11 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer",
                     selectedTargets.includes('commentator_only')
                       ? "bg-[#1d4ed8] border-[#1d4ed8] text-white shadow-xs" 
-                      : "bg-white dark:bg-[#1e1e1a] border-blue-100/30 dark:border-blue-950/20 text-blue-600 dark:text-[#60a5fa] hover:bg-blue-50 dark:hover:bg-blue-950/20"
+                      : "bg-white dark:bg-slate-900 border-blue-100/30 dark:border-blue-950/20 text-blue-600 dark:text-[#60a5fa] hover:bg-blue-50 dark:hover:bg-blue-950/20"
                   )}
                 >
                   Commentators Only ({users.filter(u => u.ministries?.includes('lector_commentator') && u.lcRoles?.some(r => r.toLowerCase().includes('commentator'))).length})
@@ -506,13 +530,14 @@ export default function BroadcastTool() {
                       return (
                         <span 
                           key={uid} 
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-[#5A5A40] text-white shadow-xs"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-[#123B66] text-white shadow-xs"
                         >
                           {u.displayName || u.email}
                           <button 
-                            type="button" 
+                            type="button"
+                            aria-label={`Remove ${u.displayName || u.email || 'member'} from selection`}
                             onClick={() => setSelectedIndividualIds(selectedIndividualIds.filter(id => id !== uid))}
-                            className="p-0.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
+                            className="min-h-11 min-w-11 inline-flex items-center justify-center hover:bg-white/20 rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                           >
                             <X size={10} />
                           </button>
@@ -527,16 +552,17 @@ export default function BroadcastTool() {
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
+                    aria-label="Search members by name or email"
                     placeholder="Search member by name or email..."
                     value={individualSearch}
                     onChange={(e) => setIndividualSearch(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-white dark:bg-[#1e1e1a] border border-gray-200 dark:border-white/5 rounded-2xl text-xs focus:ring-1 focus:ring-green-500 outline-none text-gray-900 dark:text-[#f5f5f0]"
+                    className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/5 rounded-2xl text-xs focus:ring-1 focus:ring-green-500 outline-none text-gray-900 dark:text-white"
                   />
                 </div>
 
                 {/* Search Results list */}
                 {individualSearch.trim().length > 0 && (
-                  <div className="max-h-40 overflow-y-auto divide-y divide-gray-100 dark:divide-white/5 border border-gray-200 dark:border-white/5 rounded-2xl bg-white dark:bg-[#1c1c18]">
+                  <div className="max-h-40 overflow-y-auto divide-y divide-gray-100 dark:divide-white/5 border border-gray-200 dark:border-white/5 rounded-2xl bg-white dark:bg-slate-900">
                     {users
                       .filter(u => {
                         const searchLower = individualSearch.toLowerCase();
@@ -548,8 +574,10 @@ export default function BroadcastTool() {
                       .map(u => {
                         const isSelected = selectedIndividualIds.includes(u.uid);
                         return (
-                          <div 
+                          <button
+                            type="button"
                             key={u.uid}
+                            aria-pressed={isSelected}
                             onClick={() => {
                               if (isSelected) {
                                 setSelectedIndividualIds(selectedIndividualIds.filter(id => id !== u.uid));
@@ -558,7 +586,7 @@ export default function BroadcastTool() {
                               }
                             }}
                             className={cn(
-                              "p-2.5 text-xs flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5",
+                              "min-h-11 w-full p-2.5 text-left text-xs flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                               isSelected && "bg-green-500/5"
                             )}
                           >
@@ -572,7 +600,7 @@ export default function BroadcastTool() {
                             )}>
                               {isSelected && <span className="text-[10px]">✓</span>}
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                   </div>
@@ -587,44 +615,48 @@ export default function BroadcastTool() {
           <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-1 block">Broadcast Distribution Channels</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
+              type="button"
+              aria-pressed={sendInPortal}
               onClick={() => setSendInPortal(!sendInPortal)}
               className={cn(
-                "p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer",
+                "min-h-16 p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                 sendInPortal 
-                  ? "bg-purple-50 dark:bg-purple-950/10 border-purple-200 dark:border-purple-950/40 text-purple-900 dark:text-purple-200" 
-                  : "bg-white dark:bg-[#1e1e1a] border-gray-150 dark:border-white/5 text-gray-500 dark:text-gray-400"
+                  ? "bg-[#EAF3FF] dark:bg-blue-500/10 border-blue-200 dark:border-blue-400/20 text-[#123B66] dark:text-blue-200" 
+                  : "bg-white dark:bg-slate-900 border-gray-150 dark:border-white/5 text-gray-500 dark:text-gray-400"
               )}
             >
               <div className={cn(
                 "p-2 rounded-xl",
-                sendInPortal ? "bg-purple-500 text-white" : "bg-gray-100 dark:bg-[#252520] text-gray-400"
+                sendInPortal ? "bg-[#2563EB] text-white" : "bg-gray-100 dark:bg-slate-800 text-gray-400"
               )}>
                 <Globe size={18} />
               </div>
               <div>
-                <div className="font-bold text-xs uppercase tracking-wider">In-Portal Alert</div>
-                <div className="text-[10px] font-serif italic mt-1 text-gray-400 dark:text-gray-500">Pushes an instant notification notice inside the portal dashboard.</div>
+                <div className="font-bold text-xs uppercase tracking-wider">PWA / Portal Alert</div>
+                <div className="text-[10px] font-serif italic mt-1 text-gray-400 dark:text-gray-500">Sends the member a PWA alert while the KCFC Inbox remains the durable copy.</div>
               </div>
             </button>
 
             <button
+              type="button"
+              aria-pressed={sendByEmail}
               onClick={() => setSendByEmail(!sendByEmail)}
               className={cn(
-                "p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer",
+                "min-h-16 p-4 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                 sendByEmail 
                   ? "bg-blue-50 dark:bg-blue-950/10 border-blue-200 dark:border-blue-950/40 text-blue-905 dark:text-blue-200" 
-                  : "bg-white dark:bg-[#1e1e1a] border-gray-150 dark:border-white/5 text-gray-500 dark:text-gray-400"
+                  : "bg-white dark:bg-slate-900 border-gray-150 dark:border-white/5 text-gray-500 dark:text-gray-400"
               )}
             >
               <div className={cn(
                 "p-2 rounded-xl",
-                sendByEmail ? "bg-blue-500 text-white" : "bg-gray-100 dark:bg-[#252520] text-gray-400"
+                sendByEmail ? "bg-blue-500 text-white" : "bg-gray-100 dark:bg-slate-800 text-gray-400"
               )}>
                 <Mail size={18} />
               </div>
               <div>
-                <div className="font-bold text-xs uppercase tracking-wider">Direct E-mail Broadcast</div>
-                <div className="text-[10px] font-serif italic mt-1 text-gray-400 dark:text-gray-500">Sends directly to recipients' Google/Registered email accounts.</div>
+                <div className="font-bold text-xs uppercase tracking-wider">Email Partner Alert</div>
+                <div className="text-[10px] font-serif italic mt-1 text-gray-400 dark:text-gray-500">Sends to eligible members' registered email while retaining the KCFC Inbox copy.</div>
               </div>
             </button>
           </div>
@@ -637,7 +669,7 @@ export default function BroadcastTool() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] border border-transparent rounded-2xl focus:ring-1 focus:ring-purple-500 hover:bg-gray-100/50 dark:hover:bg-[#252520]/80 transition-all font-medium text-gray-900 dark:text-[#f5f5f0] outline-none placeholder-gray-400 dark:placeholder-gray-600 text-sm"
+            className="w-full px-6 py-4 bg-gray-50 dark:bg-slate-800 border border-transparent rounded-2xl focus:ring-1 focus:ring-blue-500 hover:bg-gray-100/50 dark:hover:bg-slate-700 transition-all font-medium text-gray-900 dark:text-white outline-none placeholder-gray-400 dark:placeholder-gray-600 text-sm"
             placeholder="e.g. Action Required: Fill Out Member Verification..."
           />
         </div>
@@ -652,7 +684,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('[name]')}
-                className="text-[9px] bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-md hover:bg-purple-100 transition-colors font-bold cursor-pointer"
+                className="min-h-11 text-[10px] bg-[#EAF3FF] dark:bg-blue-500/10 text-[#2563EB] dark:text-blue-300 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors font-bold cursor-pointer"
                 title="Inserts personalized full name"
               >
                 + [name]
@@ -660,7 +692,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('[nickname]')}
-                className="text-[9px] bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md hover:bg-indigo-100 transition-colors font-bold cursor-pointer"
+                className="min-h-11 text-[10px] bg-[#EAF3FF] dark:bg-blue-500/10 text-[#2563EB] dark:text-blue-300 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors font-bold cursor-pointer"
                 title="Inserts personalized nickname"
               >
                 + [nickname]
@@ -669,17 +701,17 @@ export default function BroadcastTool() {
           </div>
 
           <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 flex items-center gap-1 flex-wrap">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
             Use <code className="bg-gray-150 dark:bg-white/5 px-1 py-0.5 rounded font-mono font-bold">[name]</code> or <code className="bg-gray-150 dark:bg-white/5 px-1 py-0.5 rounded font-mono font-bold">[nickname]</code> anywhere to automatically address members directly in portal alerts and email boxes!
           </p>
 
-          <div className="bg-gray-50 dark:bg-[#252520] rounded-2xl overflow-hidden border border-gray-150 dark:border-white/5 focus-within:ring-1 focus-within:ring-purple-500">
+          <div className="bg-gray-50 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-150 dark:border-white/5 focus-within:ring-1 focus-within:ring-blue-500">
             {/* Rich text formatting helper toolbar */}
-            <div className="flex items-center gap-1 p-2 bg-gray-100 dark:bg-[#1a1a16] border-b border-gray-200 dark:border-white/5 flex-wrap">
+            <div className="flex items-center gap-1 p-2 bg-gray-100 dark:bg-slate-950 border-b border-gray-200 dark:border-white/5 flex-wrap">
               <button
                 type="button"
                 onClick={() => insertText('**', '**')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Bold"
               >
                 <Bold size={14} />
@@ -687,7 +719,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('*', '*')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Italic"
               >
                 <Italic size={14} />
@@ -695,7 +727,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('\n### ', '')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Header"
               >
                 <Heading size={14} />
@@ -703,7 +735,7 @@ export default function BroadcastTool() {
               <button
                 type="button"
                 onClick={() => insertText('\n- ', '')}
-                className="p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400"
+                className="min-h-11 min-w-11 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400"
                 title="Bullet List"
               >
                 <List size={14} />
@@ -716,8 +748,8 @@ export default function BroadcastTool() {
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                 className={cn(
-                  "p-1 px-2 rounded-lg hover:bg-gray-200 dark:hover:bg-[#252520] text-gray-600 dark:text-gray-400 flex items-center gap-1 text-[11px] font-bold cursor-pointer",
-                  showEmojiPicker && "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400"
+                  "min-h-11 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400 flex items-center gap-1 text-[11px] font-bold cursor-pointer",
+                  showEmojiPicker && "bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"
                 )}
                 title="Insert Emojis"
               >
@@ -728,7 +760,7 @@ export default function BroadcastTool() {
 
             {/* Emoji Selector Tray */}
             {showEmojiPicker && (
-              <div className="p-3 bg-white dark:bg-[#1e1e1a] border-b border-gray-200 dark:border-white/5 grid grid-cols-8 sm:grid-cols-12 gap-1.5 max-h-28 overflow-y-auto">
+              <div className="p-3 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-white/5 grid grid-cols-8 sm:grid-cols-12 gap-1.5 max-h-28 overflow-y-auto">
                 {emojis.map(emoji => (
                   <button
                     key={emoji}
@@ -736,7 +768,7 @@ export default function BroadcastTool() {
                     onClick={() => {
                       insertText(emoji);
                     }}
-                    className="p-1 text-center hover:bg-gray-150 dark:hover:bg-[#252520] rounded-lg text-lg transition-transform hover:scale-115 cursor-pointer"
+                    className="min-h-11 min-w-11 p-2 text-center hover:bg-gray-150 dark:hover:bg-slate-800 rounded-lg text-lg transition-transform hover:scale-110 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
                     {emoji}
                   </button>
@@ -749,7 +781,7 @@ export default function BroadcastTool() {
               rows={5}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              className="w-full px-6 py-4 bg-transparent border-none outline-none resize-none text-gray-900 dark:text-[#f5f5f0] placeholder-gray-400 dark:placeholder-gray-600 text-sm leading-relaxed"
+              className="w-full px-6 py-4 bg-transparent border-none outline-none resize-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 text-sm leading-relaxed"
               placeholder="e.g. Dear members, we noticed some profiles are incomplete. Please visit My Profile using the top menu to complete your full name, nickname and contact number. Thank you! 📢"
             />
           </div>
@@ -780,13 +812,14 @@ export default function BroadcastTool() {
           </div>
 
           <button
+            type="button"
             onClick={handleSend}
             disabled={sending || !title || !message || (!sendInPortal && !sendByEmail)}
             className={cn(
               "flex items-center gap-3 px-8 py-4 rounded-2xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg cursor-pointer",
               success 
                 ? "bg-green-500 text-white shadow-green-500/20" 
-                : "bg-purple-600 text-white shadow-purple-600/20 hover:bg-purple-700 disabled:opacity-40"
+                : "bg-[#123B66] text-white shadow-blue-900/20 hover:bg-[#0f3156] disabled:opacity-40"
             )}
           >
             {sending ? (

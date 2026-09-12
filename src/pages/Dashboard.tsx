@@ -1,463 +1,607 @@
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '../App';
-import { collection, query, getDocs, where, getCountFromServer, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { motion } from 'motion/react';
-import { Users, ClipboardCheck, CalendarRange, FolderOpen, AlertCircle, ArrowRight, UserCheck, Wallet, Database as DatabaseIcon, CheckCircle2 as CheckCircle, Loader2, Trash2 } from 'lucide-react';
-import { UserProfile, Poll, Resource, Announcement, MinistryType, Transaction } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
-import { seedDatabase, purgeAllDummyData } from '../lib/seeder';
+import {
+  ArrowRight,
+  BellRing,
+  BookOpen,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  Inbox,
+  Megaphone,
+  ShieldCheck,
+  Sparkles,
+  UserCheck,
+  UsersRound,
+} from 'lucide-react';
+import { collection, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from '../App';
+import { Announcement, DutyAssignment, Poll, UserProfile } from '../types';
+import { cn } from '../lib/utils';
 
-const formatSafeDate = (val: any, formatStr: string, fallback: string = '') => {
-  if (!val) return fallback;
+type HomeAssignment = {
+  key: string;
+  dateValue: string;
+  parsedDate: Date | null;
+  role: string;
+  title: string;
+  source: 'liturgical' | 'community';
+};
+
+type UpcomingMass = {
+  key: string;
+  dateValue: string;
+  parsedDate: Date | null;
+  title: string;
+  rosterPublished: boolean;
+};
+
+const primaryLiturgicalMinistries = ['lector_commentator', 'usher', 'altar_server'];
+
+const parseDateValue = (value?: string): Date | null => {
+  if (!value) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const startOfToday = () => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const formatDate = (date: Date | null, fallback: string, compact = false) => {
+  if (!date) return fallback;
+  return new Intl.DateTimeFormat(undefined, compact
+    ? { month: 'short', day: 'numeric' }
+    : { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
+};
+
+const formatTimestamp = (value: unknown) => {
   try {
-    let dateObj: Date;
-    if (typeof val.toDate === 'function') {
-      dateObj = val.toDate();
-    } else if (val.seconds !== undefined) {
-      dateObj = new Date(val.seconds * 1000);
-    } else {
-      dateObj = new Date(val);
+    if (!value) return '';
+    if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+      return formatDate(((value as { toDate: () => Date }).toDate()), '');
     }
-    if (isNaN(dateObj.getTime())) return fallback;
-    return format(dateObj, formatStr);
-  } catch (err) {
-    return fallback;
+    const date = new Date(value as string | number | Date);
+    if (Number.isNaN(date.getTime())) return '';
+    return formatDate(date, '');
+  } catch {
+    return '';
   }
 };
 
+const dutyLabel = (duty: DutyAssignment) => {
+  if (duty.type === 'kitchen') return duty.slot || 'Kitchen Duty';
+  if (duty.type === 'cleaning') return duty.slot || 'Cleaning Duty';
+  return duty.slot || 'Ministry Duty';
+};
+
+const isDashboardRosterPublished = (poll: Poll) => {
+  if (poll.publicationMode === 'explicit') return poll.rosterPublished === true;
+  const completed = poll.completedAssignments || [];
+  return poll.status === 'closed' && ['lector', 'altar_server', 'usher'].every((ministry) => completed.includes(ministry));
+};
+
 export default function Dashboard() {
-  const { profile } = useAuth();
-  const [stats, setStats] = useState({
-    members: 0,
-    activePolls: 0,
-    resources: 0,
-    pendingUsers: 0
-  });
-  const [pendingList, setPendingList] = useState<UserProfile[]>([]);
+  const { profile, user } = useAuth();
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [duties, setDuties] = useState<DutyAssignment[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [committeeCounts, setCommitteeCounts] = useState<{ [key: string]: number }>({});
-  const [balance, setBalance] = useState<number | null>(null);
-  const [upcomingAssignments, setUpcomingAssignments] = useState<{ type: string, date: string, slot?: string, id?: string, tab?: 'core' | 'liturgical' }[]>([]);
+  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [availabilityResponses, setAvailabilityResponses] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
 
-  // Database initialization states
-  const [seeding, setSeeding] = useState(false);
-  const [seedSuccess, setSeedSuccess] = useState(false);
-  const [purging, setPurging] = useState(false);
-  const [purgeSuccess, setPurgeSuccess] = useState(false);
-
-  const isAdmin = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
-  const isAccountingAuthorized = (profile?.roles || []).some(r => ['admin', 'president', 'treasurer'].includes(r));
-
-  const handleSeedDatabase = async () => {
-    if (!profile?.uid) return;
-    setSeeding(true);
-    try {
-      await seedDatabase(profile.uid, profile.email || '');
-      setSeedSuccess(true);
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    } catch (err: any) {
-      console.error("Failed to seed database:", err);
-      alert("Error initializing database: " + err.message);
-    } finally {
-      setSeeding(false);
-    }
-  };
-
-  const handlePurgeAllDummyData = async () => {
-    if (!profile?.uid) return;
-    if (!window.confirm("Are you absolutely sure you want to permanently delete all sample/dummy records (including mock members, mock templates, active polls, contact messages, and sample accounting transactions) from this temporary database? This will NOT affect portal.kcfcjp.com.")) {
-      return;
-    }
-    setPurging(true);
-    try {
-      await purgeAllDummyData(profile.uid);
-      setPurgeSuccess(true);
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    } catch (err: any) {
-      console.error("Failed to purge database:", err);
-      alert("Error purging database: " + err.message);
-    } finally {
-      setPurging(false);
-    }
-  };
+  const isAdmin = (profile?.roles || []).some((role) =>
+    ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(role),
+  );
 
   useEffect(() => {
-    if (!profile) return;
+    let readyCount = 0;
+    const markReady = () => {
+      readyCount += 1;
+      if (readyCount >= 4) setLoading(false);
+    };
 
-    // Real-time listener for pending users if admin
-    let unsubscribePending = () => {};
-    if (isAdmin) {
-      unsubscribePending = onSnapshot(query(collection(db, 'users'), where('isVerified', '==', false)), (snap) => {
-        const pending = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
-        setPendingList(pending);
-        setStats(prev => ({ ...prev, pendingUsers: pending.length }));
-      }, (err) => {
-        console.error("Error listing pending users on Dashboard:", err);
-      });
-    }
-
-    // Real-time listener for latest published announcements
-    const qAnnouncements = query(
-      collection(db, 'announcements'), 
-      where('status', '==', 'published'),
-      orderBy('createdAt', 'desc'),
-      limit(3)
+    const unsubPolls = onSnapshot(
+      collection(db, 'polls'),
+      (snapshot) => {
+        setPolls(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Poll)));
+        markReady();
+      },
+      (error) => {
+        console.error('Home: failed to load polls', error);
+        markReady();
+      },
     );
-    const unsubscribeAnnouncements = onSnapshot(qAnnouncements, (snap) => {
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
-    }, (err) => {
-      console.error("Error listening to announcements on Dashboard:", err);
-    });
 
-    // Real-time listener for users to compute committee stats
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      const users = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(u => u.email !== 'kcfc.jp@gmail.com');
-      const counts: { [key: string]: number } = {};
-      
-      users.forEach(u => {
-        u.ministries?.forEach(m => {
-          counts[m] = (counts[m] || 0) + 1;
-        });
-      });
-      
-      setCommitteeCounts(counts);
-      setStats(prev => ({ ...prev, members: users.length }));
-    }, (err) => {
-      console.error("Error listing users on Dashboard:", err);
-    });
+    const unsubDuties = onSnapshot(
+      collection(db, 'duties'),
+      (snapshot) => {
+        setDuties(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as DutyAssignment)));
+        markReady();
+      },
+      (error) => {
+        console.error('Home: failed to load duties', error);
+        markReady();
+      },
+    );
 
-    let unsubscribeAccounting = () => {};
-    if (isAccountingAuthorized) {
-      unsubscribeAccounting = onSnapshot(collection(db, 'accounting'), (snap) => {
-        const trans = snap.docs.map(d => d.data() as Transaction);
-        const bal = trans.reduce((acc, t) => acc + (t.type === 'income' ? t.amount : -t.amount), 0);
-        setBalance(bal);
-      }, (err) => {
-        console.error("Error listening to accounting on Dashboard:", err);
-      });
-    }
+    const unsubAnnouncements = onSnapshot(
+      collection(db, 'announcements'),
+      (snapshot) => {
+        const published = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() } as Announcement))
+          .filter((announcement) => announcement.status === 'published')
+          .sort((a, b) => {
+            const aDate = parseDateValue(a.publishedAt || a.createdAt)?.getTime() || 0;
+            const bDate = parseDateValue(b.publishedAt || b.createdAt)?.getTime() || 0;
+            return bDate - aDate;
+          })
+          .slice(0, 3);
+        setAnnouncements(published);
+        markReady();
+      },
+      (error) => {
+        console.error('Home: failed to load announcements', error);
+        markReady();
+      },
+    );
 
-    const fetchOtherStats = async () => {
-      try {
-        const [pollsSnap, resourcesCount] = await Promise.all([
-          getDocs(query(collection(db, 'polls'), where('status', '==', 'active'))),
-          getDocs(collection(db, 'resources'))
-        ]);
-
-        setStats(prev => ({
-          ...prev,
-          activePolls: pollsSnap.size,
-          resources: resourcesCount.size
-        }));
-      } catch (err) {
-        console.error("Dashboard Stats Error: ", err);
-      }
-    };
-
-    fetchOtherStats();
-
-    // Fetch user's upcoming assignments
-    const fetchUpcoming = async () => {
-      if (!profile?.uid) return;
-      try {
-        const assignments: { type: string, date: string, slot?: string, id?: string, tab? : 'core' | 'liturgical' }[] = [];
-        const now = new Date().toISOString();
-
-        // 1. Check duties collection
-        const dutiesQ = query(
-          collection(db, 'duties'),
-          where('userId', '==', profile.uid),
-          where('date', '>=', now),
-          orderBy('date', 'asc'),
-          limit(5)
-        );
-        const dutiesSnap = await getDocs(dutiesQ);
-        dutiesSnap.docs.forEach(d => {
-          const data = d.data();
-          assignments.push({
-            type: data.type === 'kitchen' ? 'Kitchen Duty' : data.type === 'cleaning' ? 'Cleaning Duty' : 'Ministry Duty',
-            date: data.date,
-            slot: data.slot,
-            id: data.pollId,
-            tab: (data.type === 'kitchen' || data.type === 'cleaning') ? 'core' : 'liturgical'
-          });
-        });
-
-        // 2. Check polls for liturgical assignments
-        const pollsQ = query(collection(db, 'polls'), where('status', '==', 'active'));
-        const pollsSnap = await getDocs(pollsQ);
-        pollsSnap.docs.forEach(d => {
-          const poll = d.data() as Poll;
-          if (poll.assignments) {
-            Object.entries(poll.assignments).forEach(([date, dateAssignments]) => {
-              if (date >= now && dateAssignments[profile.uid]) {
-                assignments.push({
-                  type: 'Liturgical: ' + dateAssignments[profile.uid],
-                  date: date,
-                  slot: poll.title,
-                  id: d.id,
-                  tab: 'liturgical'
-                });
-              }
-            });
-          }
-        });
-
-        // Sort and take top 2
-        const sorted = assignments.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 2);
-        setUpcomingAssignments(sorted);
-      } catch (err) {
-        console.error("Error fetching upcoming assignments:", err);
-      }
-    };
-
-    fetchUpcoming();
+    const unsubMembers = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        setMembers(snapshot.docs.map((item) => ({ uid: item.id, ...item.data() } as UserProfile)));
+        markReady();
+      },
+      (error) => {
+        console.error('Home: failed to load members', error);
+        markReady();
+      },
+    );
 
     return () => {
-      unsubscribePending();
-      unsubscribeAnnouncements();
-      unsubscribeUsers();
-      unsubscribeAccounting();
+      unsubPolls();
+      unsubDuties();
+      unsubAnnouncements();
+      unsubMembers();
     };
-  }, [profile, isAdmin, isAccountingAuthorized]);
+  }, []);
 
-  const MINISTRY_LABELS: { [key in MinistryType]: string } = {
-    choir_a: 'Choir A',
-    choir_b: 'Choir B',
-    lector_commentator: 'Lectors/Comm.',
-    usher: 'Ushers',
-    altar_server: 'Altar Servers',
-    kitchen: 'Kitchen',
-    cleaning: 'Cleaning',
-    cleaning_toilet_ok: 'Toilet OK',
-    cleaning_toilet_ng: 'Toilet NG'
-  };
+  const activeAvailabilityPolls = useMemo(() => {
+    if (!profile) return [];
+    const isEligible = (profile.ministries || []).some((ministry) => primaryLiturgicalMinistries.includes(ministry));
+    if (!isEligible && !isAdmin) return [];
 
-  const liturgicalCommittees = ['choir_a', 'choir_b', 'lector_commentator', 'usher', 'altar_server'];
-  const choreCommittees = ['kitchen', 'cleaning'];
+    const now = new Date();
+    return polls
+      .filter((poll) => {
+        if (poll.category !== 'committee' || poll.status !== 'active') return false;
+        const end = parseDateValue(poll.endDate);
+        return !end || end >= now;
+      })
+      .sort((a, b) => {
+        const aEnd = parseDateValue(a.endDate)?.getTime() || Number.MAX_SAFE_INTEGER;
+        const bEnd = parseDateValue(b.endDate)?.getTime() || Number.MAX_SAFE_INTEGER;
+        return aEnd - bEnd;
+      });
+  }, [isAdmin, polls, profile]);
 
-  const statCards = [
-    { label: 'Community Members', value: stats.members, icon: Users, color: 'blue', path: '/members' },
-    { label: 'Pending Approval', value: stats.pendingUsers, icon: UserCheck, color: 'orange', hidden: !isAdmin, path: '/admin' },
-    { label: 'Treasury Balance', value: balance === null ? '...' : `¥${balance.toLocaleString()}`, icon: Wallet, color: 'green', hidden: !isAccountingAuthorized, path: '/accounting' },
-    { label: 'Active Polls', value: stats.activePolls, icon: ClipboardCheck, color: 'green', path: '/polls' },
-    { label: 'Library Items', value: stats.resources, icon: FolderOpen, color: 'purple', path: '/resources' },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadResponseState = async () => {
+      if (!user || activeAvailabilityPolls.length === 0) {
+        if (!cancelled) setAvailabilityResponses({});
+        return;
+      }
+
+      const pairs = await Promise.all(
+        activeAvailabilityPolls.map(async (poll) => {
+          try {
+            const responseQuery = query(
+              collection(db, 'polls', poll.id, 'responses'),
+              where('userId', '==', user.uid),
+              limit(1),
+            );
+            const snapshot = await getDocs(responseQuery);
+            return [poll.id, !snapshot.empty] as const;
+          } catch (error) {
+            console.error(`Home: failed to check availability response for ${poll.id}`, error);
+            return [poll.id, false] as const;
+          }
+        }),
+      );
+
+      if (!cancelled) setAvailabilityResponses(Object.fromEntries(pairs));
+    };
+
+    loadResponseState();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAvailabilityPolls, user]);
+
+  const upcomingMasses = useMemo<UpcomingMass[]>(() => {
+    const today = startOfToday();
+    const masses: UpcomingMass[] = [];
+
+    polls
+      .filter((poll) => poll.category === 'committee' && poll.status !== 'draft')
+      .forEach((poll) => {
+        const options = poll.massDates?.length
+          ? poll.massDates
+          : poll.massDate
+            ? [{ date: poll.massDate, description: poll.description }]
+            : [];
+        const rosterPublished = isDashboardRosterPublished(poll);
+
+        options.forEach((option, index) => {
+          const parsedDate = parseDateValue(option.date);
+          if (parsedDate && parsedDate < today) return;
+          masses.push({
+            key: `${poll.id}-${option.date}-${index}`,
+            dateValue: option.date,
+            parsedDate,
+            title: option.description || poll.title || 'KCFC Mass',
+            rosterPublished,
+          });
+        });
+      });
+
+    return masses
+      .sort((a, b) => {
+        if (!a.parsedDate && !b.parsedDate) return a.dateValue.localeCompare(b.dateValue);
+        if (!a.parsedDate) return 1;
+        if (!b.parsedDate) return -1;
+        return a.parsedDate.getTime() - b.parsedDate.getTime();
+      })
+      .slice(0, 4);
+  }, [polls]);
+
+  const upcomingAssignments = useMemo<HomeAssignment[]>(() => {
+    if (!user) return [];
+    const today = startOfToday();
+    const assignments: HomeAssignment[] = [];
+
+    polls
+      .filter((poll) => poll.category === 'committee' && poll.status === 'closed')
+      .forEach((poll) => {
+        if (!isDashboardRosterPublished(poll) || !poll.assignments) return;
+
+        Object.entries(poll.assignments).forEach(([dateValue, dateAssignments]) => {
+          const role = dateAssignments[user.uid];
+          if (!role) return;
+          const normalizedRole = role.toLowerCase();
+          if (!normalizedRole.includes('lector') && !normalizedRole.includes('commentator') && !normalizedRole.includes('usher') && !normalizedRole.includes('altar')) return;
+          const parsedDate = parseDateValue(dateValue);
+          if (parsedDate && parsedDate < today) return;
+          const option = poll.massDates?.find((item) => item.date === dateValue);
+          assignments.push({
+            key: `liturgical-${poll.id}-${dateValue}-${role}`,
+            dateValue,
+            parsedDate,
+            role,
+            title: option?.description || poll.title,
+            source: 'liturgical',
+          });
+        });
+      });
+
+    duties
+      .filter((duty) => duty.userId === user.uid)
+      .forEach((duty) => {
+        const parsedDate = parseDateValue(duty.date);
+        if (parsedDate && parsedDate < today) return;
+        assignments.push({
+          key: `duty-${duty.id || `${duty.userId}-${duty.date}-${duty.type}`}`,
+          dateValue: duty.date,
+          parsedDate,
+          role: dutyLabel(duty),
+          title: duty.type === 'kitchen' ? 'KCFC Kitchen' : duty.type === 'cleaning' ? 'KCFC Cleaning' : 'KCFC Duty',
+          source: 'community',
+        });
+      });
+
+    return assignments.sort((a, b) => {
+      if (!a.parsedDate && !b.parsedDate) return a.dateValue.localeCompare(b.dateValue);
+      if (!a.parsedDate) return 1;
+      if (!b.parsedDate) return -1;
+      return a.parsedDate.getTime() - b.parsedDate.getTime();
+    });
+  }, [duties, polls, user]);
+
+  const pendingAvailability = activeAvailabilityPolls.filter((poll) => !availabilityResponses[poll.id]);
+  const nextAssignment = upcomingAssignments[0];
+  const nextMass = upcomingMasses[0];
+  const pendingMembers = members.filter((member) => !member.isVerified && member.email !== 'kcfc.jp@gmail.com');
+  const displayName = profile?.nickname?.trim() || profile?.displayName || 'KCFC Member';
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-12">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-serif text-[#1a1a1a] dark:text-white">Welcome back, {profile?.nickname?.trim() || profile?.displayName}</h1>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic mt-1">Here's what's happening in the community.</p>
+    <div className="kcfc-page space-y-5 pb-4">
+      <section className="rounded-[26px] border border-blue-100 bg-gradient-to-br from-white via-[#F8FBFF] to-[#EAF3FF] p-5 shadow-[0_16px_42px_rgba(15,23,42,0.06)] sm:p-7 dark:border-white/10 dark:from-[#10243a] dark:via-[#10243a] dark:to-[#123B66]/50">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[#2563EB]">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.13em]">KCFC Member Home</span>
+            </div>
+            <h1 className="text-[28px] font-extrabold leading-tight tracking-[-0.03em] text-[#172033] sm:text-[36px] dark:text-white">
+              Welcome, {displayName}
+            </h1>
+            <p className="mt-2 max-w-xl text-[14px] leading-6 text-slate-500 dark:text-slate-300">
+              Everything you need for Mass, ministry service and community updates — without hunting through multiple pages.
+            </p>
+          </div>
+          <Link
+            to="/duties"
+            className="inline-flex min-h-12 w-fit items-center gap-2 rounded-2xl bg-[#123B66] px-4 py-3 text-[13px] font-bold text-white shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          >
+            <CalendarDays className="h-4 w-4" />
+            Open my schedule
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
-        <div className="flex gap-2">
-          {(profile?.roles || []).map(role => {
-            const displayRole = (role === 'member' && profile?.isCoreMember) ? 'Core Member' : role;
-            return (
-              <span key={role} className="px-3 py-1 bg-[#5A5A40] text-white text-[10px] uppercase tracking-wider rounded-full font-bold">
-                {displayRole.replace('_', ' ')}
-              </span>
-            );
-          })}
-        </div>
-      </header>
+      </section>
 
-      {isAdmin && stats.pendingUsers > 0 && (
-        <section className="bg-yellow-50/50 dark:bg-yellow-950/10 border border-yellow-100 dark:border-yellow-500/20 rounded-[32px] overflow-hidden">
-          <div className="p-6 border-b border-yellow-100 dark:border-yellow-500/20 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-950/30 rounded-full flex items-center justify-center text-yellow-700 dark:text-yellow-400">
-                <AlertCircle size={20} />
+      {pendingAvailability.length > 0 && (
+        <section className="overflow-hidden rounded-[22px] border border-amber-200 bg-amber-50/70 dark:border-amber-400/20 dark:bg-amber-500/10">
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+                <CircleAlert className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="font-bold text-yellow-900 dark:text-yellow-200">Membership Requests</h2>
-                <p className="text-xs text-yellow-600 dark:text-yellow-400/85">{stats.pendingUsers} {stats.pendingUsers === 1 ? 'person is' : 'people are'} waiting for your approval.</p>
+                <p className="text-[12px] font-extrabold uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">Action needed</p>
+                <h2 className="mt-0.5 text-[16px] font-extrabold text-[#172033] dark:text-white">
+                  {pendingAvailability.length === 1 ? 'Your ministry availability is waiting' : `${pendingAvailability.length} availability requests are waiting`}
+                </h2>
+                <p className="mt-1 text-[12px] leading-5 text-slate-600 dark:text-slate-300">Tell your ministry leaders which upcoming Masses you can serve.</p>
               </div>
             </div>
-            <Link to="/admin" className="text-xs font-bold text-yellow-700 dark:text-yellow-400 hover:underline flex items-center gap-1 group">
-              View All <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+            <Link
+              to="/polls"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-[12px] font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            >
+              Respond now
+              <ChevronRight className="h-4 w-4" />
             </Link>
-          </div>
-          <div className="p-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {pendingList.slice(0, 3).map(user => (
-              <Link 
-                key={user.uid} 
-                to={`/admin?uid=${user.uid}`}
-                className="bg-white dark:bg-[#1e1e1a] hover:bg-[#5A5A40]/5 dark:hover:bg-[#8a8a65]/5 transition-all p-4 rounded-2xl flex items-center justify-between border border-yellow-101/50 dark:border-yellow-500/10 cursor-pointer block"
-              >
-                <div className="flex items-center gap-3">
-                  <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full border border-gray-100 dark:border-white/5" referrerPolicy="no-referrer" />
-                  <div>
-                    <div className="text-sm font-bold truncate max-w-[120px] text-gray-900 dark:text-[#f5f5f0]">{user.displayName}</div>
-                    <div className="text-[10px] text-gray-400 dark:text-gray-550 truncate max-w-[120px]">{user.email}</div>
-                  </div>
-                </div>
-                <div className="p-2 text-[#5A5A40] dark:text-[#8a8a65] hover:bg-gray-100 dark:hover:bg-[#252520] rounded-lg transition-colors">
-                  <UserCheck size={18} />
-                </div>
-              </Link>
-            ))}
           </div>
         </section>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.filter(s => !s.hidden).map((stat, i) => (
-          <Link
-            key={stat.label}
-            to={stat.path}
-            className="block"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-white dark:bg-[#1e1e1a] p-6 rounded-[24px] shadow-sm border border-gray-100 dark:border-white/5 flex items-start gap-4 hover:border-[#5A5A40] hover:shadow-md transition-all h-full"
-            >
-              <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#252520]">
-                <stat.icon className="w-6 h-6 text-[#5A5A40]" />
+      {isAdmin && pendingMembers.length > 0 && (
+        <section className="rounded-[22px] border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-400/20 dark:bg-blue-500/10 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#123B66] shadow-sm dark:bg-white/10 dark:text-blue-200">
+                <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-[#f5f5f0]">{stat.value}</div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider font-medium">{stat.label}</div>
+                <p className="text-[12px] font-extrabold uppercase tracking-[0.08em] text-[#2563EB]">Leadership attention</p>
+                <h2 className="mt-0.5 text-[15px] font-extrabold text-[#172033] dark:text-white">{pendingMembers.length} membership {pendingMembers.length === 1 ? 'request needs' : 'requests need'} review</h2>
               </div>
-            </motion.div>
-          </Link>
-        ))}
-      </div>
+            </div>
+            <Link to="/admin" className="inline-flex min-h-10 items-center gap-1 text-[12px] font-bold text-[#123B66] dark:text-blue-200">
+              Review requests <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </section>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <section className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-sm">
-            <h2 className="text-xl font-serif mb-6 flex items-center gap-2 text-gray-900 dark:text-white">
-              <span className="w-2 h-8 bg-[#5A5A40] rounded-full"></span>
-              Recent Announcements
-            </h2>
-            <div className="space-y-4">
-              {announcements.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 dark:text-gray-500 italic text-sm">No recent announcements.</div>
-              ) : announcements.map(announcement => (
-                <Link key={announcement.id} to="/announcements" className="block p-4 bg-gray-50 dark:bg-[#252520] rounded-2xl hover:bg-gray-100 dark:hover:bg-[#2c2c25] transition-all border-l-4 border-[#5A5A40]">
-                  <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-sm text-gray-900 dark:text-white">{announcement.title}</h3>
-                    <span className="text-[9px] text-gray-400 dark:text-gray-500 uppercase font-bold whitespace-nowrap ml-2">
-                       {formatSafeDate(announcement.publishedAt, 'MMM d')}
-                    </span>
+      <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <HomeStatusCard
+          icon={UserCheck}
+          label="My next assignment"
+          value={nextAssignment ? formatDate(nextAssignment.parsedDate, nextAssignment.dateValue, true) : 'Nothing scheduled'}
+          body={nextAssignment ? `${nextAssignment.role} • ${nextAssignment.title}` : 'No upcoming published service assignment.'}
+          path="/duties?view=mine"
+          accent={Boolean(nextAssignment)}
+        />
+        <HomeStatusCard
+          icon={CalendarDays}
+          label="Next KCFC Mass"
+          value={nextMass ? formatDate(nextMass.parsedDate, nextMass.dateValue, true) : 'No date yet'}
+          body={nextMass ? `${nextMass.title} • ${nextMass.rosterPublished ? 'Roster published' : 'Roster being prepared'}` : 'Upcoming Mass dates will appear here.'}
+          path="/duties"
+        />
+        <HomeStatusCard
+          icon={BellRing}
+          label="Availability"
+          value={pendingAvailability.length ? `${pendingAvailability.length} to answer` : 'Up to date'}
+          body={activeAvailabilityPolls.length ? 'Your active ministry availability requests are tracked here.' : 'No active request for your ministry.'}
+          path="/polls"
+          attention={pendingAvailability.length > 0}
+        />
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="kcfc-surface overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+            <div>
+              <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Coming up</h2>
+              <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">The next dates from the KCFC liturgical schedule.</p>
+            </div>
+            <Link to="/duties" className="inline-flex min-h-10 items-center gap-1 rounded-xl px-2 text-[12px] font-bold text-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+              Full schedule <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="space-y-2 p-4 sm:p-5">
+              {[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />)}
+            </div>
+          ) : upcomingMasses.length === 0 ? (
+            <HomeEmpty icon={CalendarDays} title="No upcoming Mass dates" body="Future Mass dates will appear when they are included in a published availability cycle." />
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-white/10">
+              {upcomingMasses.map((mass) => (
+                <Link
+                  key={mass.key}
+                  to="/duties"
+                  className="flex min-h-[76px] items-center gap-3 px-4 py-3 transition-colors hover:bg-blue-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 sm:px-5 dark:hover:bg-blue-500/10"
+                >
+                  <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wide">{mass.parsedDate ? new Intl.DateTimeFormat(undefined, { month: 'short' }).format(mass.parsedDate) : 'Date'}</span>
+                    <span className="text-[18px] font-black leading-5">{mass.parsedDate ? mass.parsedDate.getDate() : mass.dateValue.slice(-2)}</span>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{announcement.content}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-extrabold text-[#172033] dark:text-white">{mass.title}</p>
+                    <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{formatDate(mass.parsedDate, mass.dateValue)} • {mass.rosterPublished ? 'Ministry roster published' : 'Assignment planning in progress'}</p>
+                  </div>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-slate-300 dark:text-slate-600" />
                 </Link>
               ))}
-              {announcements.length > 0 && (
-                <Link to="/announcements" className="text-xs font-bold text-[#5A5A40] dark:text-[#8a8a65] hover:underline flex items-center justify-center gap-1 mt-4">
-                  View All Announcements <ArrowRight size={14} />
-                </Link>
-              )}
             </div>
-          </section>
+          )}
+        </div>
 
-          <section className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-sm">
-            <h2 className="text-xl font-serif mb-6 flex items-center gap-2 text-gray-900 dark:text-white">
-              <span className="w-2 h-8 bg-[#5A5A40] rounded-full"></span>
-              My Upcoming Assignments
-            </h2>
-            <div className="space-y-4">
-              {upcomingAssignments.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 dark:text-gray-500 italic font-serif">
-                  No upcoming assignments found.
-                </div>
-              ) : (
-                upcomingAssignments.map((assignment, i) => (
-                  <div key={i} className="flex flex-col md:flex-row md:items-center justify-between p-6 bg-gray-50 dark:bg-[#252520] rounded-2xl border-l-4 border-[#5A5A40] gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-white dark:bg-[#1e1e1a] rounded-2xl flex items-center justify-center text-[#5A5A40] dark:text-[#f5f5f0] shadow-sm font-bold text-center leading-none">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] uppercase">{format(new Date(assignment.date), 'MMM')}</span>
-                          <span className="text-lg">{format(new Date(assignment.date), 'dd')}</span>
-                        </div>
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-gray-900 dark:text-white">{assignment.type}</h3>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 font-medium uppercase tracking-widest">{assignment.slot || 'Regular Assignment'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs font-medium text-gray-400 dark:text-gray-500">
-                      <div className="flex items-center gap-1.5">
-                        <CalendarRange size={14} />
-                        {format(new Date(assignment.date), 'EEEE, MMMM dd')}
-                      </div>
-                      <Link 
-                        to={assignment.tab === 'liturgical' 
-                          ? `/duties?tab=liturgical&pollId=${assignment.id}` 
-                          : `/duties?tab=core&pollId=${assignment.id}`} 
-                        className="text-[#5A5A40] dark:text-[#8a8a65] font-bold hover:underline"
-                      >
-                        View Details
-                      </Link>
+        <div className="kcfc-surface overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+            <div>
+              <div className="flex items-center gap-2">
+                <Megaphone className="h-5 w-5 text-[#2563EB]" />
+                <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Latest updates</h2>
+              </div>
+              <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">Important community announcements.</p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="space-y-2 p-4 sm:p-5">
+              {[0, 1].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />)}
+            </div>
+          ) : announcements.length === 0 ? (
+            <HomeEmpty icon={Megaphone} title="No announcements yet" body="Published KCFC updates will appear here." />
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-white/10">
+              {announcements.map((announcement) => (
+                <Link
+                  key={announcement.id || announcement.title}
+                  to="/announcements"
+                  className="block px-4 py-4 transition-colors hover:bg-blue-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 sm:px-5 dark:hover:bg-blue-500/10"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#2563EB]" />
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-[14px] font-extrabold leading-5 text-[#172033] dark:text-white">{announcement.title}</p>
+                      <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-slate-500 dark:text-slate-400">{announcement.content}</p>
+                      <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">{formatTimestamp(announcement.publishedAt || announcement.createdAt)}</p>
                     </div>
                   </div>
-                ))
-              )}
+                </Link>
+              ))}
+              <Link to="/announcements" className="flex min-h-11 items-center justify-center gap-1 text-[12px] font-bold text-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+                View all updates <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
-          </section>
+          )}
         </div>
+      </section>
 
-        <div className="space-y-8">
-          <section className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-sm">
-            <h2 className="text-xl font-serif mb-6 flex items-center gap-2 text-gray-900 dark:text-white">
-              <span className="w-2 h-8 bg-[#5A5A40] rounded-full"></span>
-              Committee Summary
-            </h2>
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">Liturgical Committee</h3>
-                <div className="space-y-3">
-                  {liturgicalCommittees.map(m => (
-                    <div key={m} className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-600 dark:text-[#f5f5f0]">{MINISTRY_LABELS[m as MinistryType]}</span>
-                      <div className="flex items-center gap-2 flex-1 justify-end">
-                        <div className="w-24 h-1.5 bg-gray-50 dark:bg-[#252520] rounded-full overflow-hidden">
-                          <div 
-                            className="bg-blue-400 h-full transition-all duration-1000" 
-                            style={{ width: `${Math.min(100, ((committeeCounts[m] || 0) / stats.members) * 100)}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 min-w-[20px] text-right">{committeeCounts[m] || 0}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <QuickLink icon={UsersRound} label="Community" detail={`${Math.max(0, members.filter((member) => member.isVerified && member.email !== 'kcfc.jp@gmail.com').length)} members`} path="/members" />
+        <QuickLink icon={Inbox} label="Inbox" detail="Messages & notices" path="/inbox" />
+        <QuickLink icon={BookOpen} label="Resources" detail="Ministry library" path="/resources" />
+        <QuickLink icon={CheckCircle2} label="Availability" detail={pendingAvailability.length ? 'Response needed' : 'You are up to date'} path="/polls" />
+      </section>
+    </div>
+  );
+}
 
-              <div>
-                <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">Chore Committee</h3>
-                <div className="space-y-3">
-                  {choreCommittees.map(m => (
-                    <div key={m} className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-600 dark:text-[#f5f5f0]">{MINISTRY_LABELS[m as MinistryType]}</span>
-                      <div className="flex items-center gap-2 flex-1 justify-end">
-                        <div className="w-24 h-1.5 bg-gray-50 dark:bg-[#252520] rounded-full overflow-hidden">
-                          <div 
-                            className="bg-orange-400 h-full transition-all duration-1000" 
-                            style={{ width: `${Math.min(100, ((committeeCounts[m] || 0) / stats.members) * 100)}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 min-w-[20px] text-right">{committeeCounts[m] || 0}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
+function HomeStatusCard({
+  icon: Icon,
+  label,
+  value,
+  body,
+  path,
+  accent = false,
+  attention = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  body: string;
+  path: string;
+  accent?: boolean;
+  attention?: boolean;
+}) {
+  return (
+    <Link
+      to={path}
+      className={cn(
+        'kcfc-surface group block p-4 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:p-5',
+        accent && 'border-blue-200 bg-blue-50/35 dark:border-blue-400/20 dark:bg-blue-500/10',
+        attention && 'border-amber-200 bg-amber-50/60 dark:border-amber-400/20 dark:bg-amber-500/10',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl',
+          attention
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+            : 'bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200',
+        )}>
+          <Icon className="h-5 w-5" />
         </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-slate-400">{label}</p>
+          <p className="mt-1 truncate text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">{value}</p>
+          <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-slate-500 dark:text-slate-400">{body}</p>
+        </div>
+        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-1 dark:text-slate-600" />
       </div>
+    </Link>
+  );
+}
+
+function QuickLink({
+  icon: Icon,
+  label,
+  detail,
+  path,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  detail: string;
+  path: string;
+}) {
+  return (
+    <Link
+      to={path}
+      className="kcfc-surface flex min-h-[108px] flex-col justify-between p-4 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    >
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
+        <Icon className="h-[18px] w-[18px]" />
+      </div>
+      <div>
+        <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">{label}</p>
+        <p className="mt-0.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{detail}</p>
+      </div>
+    </Link>
+  );
+}
+
+function HomeEmpty({
+  icon: Icon,
+  title,
+  body,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="px-5 py-10 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">
+        <Icon className="h-5 w-5" />
+      </div>
+      <h3 className="mt-3 text-[14px] font-extrabold text-[#172033] dark:text-white">{title}</h3>
+      <p className="mx-auto mt-1 max-w-xs text-[12px] leading-5 text-slate-500 dark:text-slate-400">{body}</p>
     </div>
   );
 }

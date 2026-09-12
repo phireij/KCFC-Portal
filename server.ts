@@ -1,7 +1,5 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
 import { readFileSync, appendFileSync, writeFileSync, existsSync } from "fs";
 import { initializeApp, getApps, getApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -10,10 +8,11 @@ import { getMessaging as getMessagingAdmin } from "firebase-admin/messaging";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import webpush from "web-push";
+import { initializeDeliveryDiagnostics, recordDeliveryOutcome } from "./src/lib/deliveryDiagnostics";
+import { buildPwaDeliveryEvidence, type PwaTransportAttempt } from "./src/lib/pwaDeliveryEvidence";
 
-const hasImportMeta = typeof import.meta !== "undefined" && "url" in import.meta;
-const currentFilename = hasImportMeta ? fileURLToPath(import.meta.url) : (typeof __filename !== "undefined" ? __filename : "");
-const currentDirname = hasImportMeta ? path.dirname(currentFilename) : (typeof __dirname !== "undefined" ? __dirname : "");
+// The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().
+const currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 
 // Load Firebase configuration safely to prevent startup crashes
 let firebaseConfigFromFile: any = {};
@@ -30,9 +29,30 @@ try {
   }
 }
 
+const runtimeEnvironment = String(process.env.KCFC_RUNTIME_ENV || "production").trim().toLowerCase();
+const runtimeAppUrl = String(process.env.APP_URL || "").trim();
+if (runtimeEnvironment === "staging") {
+  if (!runtimeAppUrl) {
+    throw new Error("KCFC staging safety guard: APP_URL is required for staging.");
+  }
+  let stagingAppUrl: URL;
+  try {
+    stagingAppUrl = new URL(runtimeAppUrl);
+  } catch {
+    throw new Error("KCFC staging safety guard: staging APP_URL must be a valid absolute HTTPS URL.");
+  }
+  if (stagingAppUrl.protocol !== "https:") {
+    throw new Error("KCFC staging safety guard: staging APP_URL must be a valid absolute HTTPS URL.");
+  }
+  const productionPortalHostnames = new Set(['portal.kcfcjp.com', 'www.portal.kcfcjp.com']);
+  if (productionPortalHostnames.has(stagingAppUrl.hostname.toLowerCase())) {
+    throw new Error("KCFC staging safety guard: staging APP_URL must not target the production KCFC Portal hostname.");
+  }
+}
 const hasServerEnvConfig = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID);
 const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
-const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasServerEnvConfig ? {
+const committedProjectId = String(firebaseConfigFromFile?.projectId || "").trim();
+const serverEnvConfig = hasServerEnvConfig ? {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
   projectId: process.env.FIREBASE_PROJECT_ID,
@@ -40,18 +60,23 @@ const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasServe
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.FIREBASE_APP_ID,
   firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)" ? process.env.FIREBASE_DATABASE_ID : undefined,
-} : {});
+} : null;
 
-// Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
-// If the environment variable is set to "(default)", it should not overwrite our custom database ID
-if (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== "(default)") {
-  firebaseConfig.firestoreDatabaseId = process.env.FIREBASE_DATABASE_ID;
-} else if (firebaseConfig.firestoreDatabaseId === "(default)") {
-  if (hasFileConfig && firebaseConfigFromFile.firestoreDatabaseId && firebaseConfigFromFile.firestoreDatabaseId !== "(default)") {
-    firebaseConfig.firestoreDatabaseId = firebaseConfigFromFile.firestoreDatabaseId;
-  } else {
-    delete firebaseConfig.firestoreDatabaseId;
+if (runtimeEnvironment === "staging") {
+  if (!serverEnvConfig) {
+    throw new Error("KCFC staging safety guard: KCFC_RUNTIME_ENV=staging requires explicit FIREBASE_* staging configuration. Refusing to fall back to the committed Firebase project.");
   }
+  if (String(serverEnvConfig.projectId || "").trim() === committedProjectId) {
+    throw new Error("KCFC staging safety guard: server staging Firebase projectId must differ from the committed production/default projectId.");
+  }
+}
+
+const firebaseConfig: any = serverEnvConfig
+  ? { ...serverEnvConfig }
+  : (hasFileConfig ? { ...firebaseConfigFromFile } : {});
+
+if (process.env.FIREBASE_DATABASE_ID === "(default)") {
+  delete firebaseConfig.firestoreDatabaseId;
 }
 
 // Unified server diagnostic logger
@@ -100,6 +125,10 @@ async function initializeWebPush() {
   try {
     const envPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || "";
     const envPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY || "";
+
+    if (runtimeEnvironment === "staging" && (!envPublicKey || !envPrivateKey)) {
+      throw new Error("KCFC staging safety guard: staging Web Push requires explicit WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY.");
+    }
 
     if (envPublicKey && envPrivateKey) {
       vapidPublicKey = envPublicKey;
@@ -183,6 +212,9 @@ async function initializeWebPush() {
     }
   } catch (err: any) {
     console.error("[WEBPUSH] Failed to initialize web-push credentials:", err);
+    if (runtimeEnvironment === "staging") {
+      throw err;
+    }
     const keys = webpush.generateVAPIDKeys();
     vapidPublicKey = keys.publicKey;
     vapidPrivateKey = keys.privateKey;
@@ -225,7 +257,7 @@ async function sendWebPushNotification(subscription: any, title: string, body: s
     await webpush.sendNotification(subscription, payload, options);
     return { success: true };
   } catch (err: any) {
-    console.error(`[WEBPUSH SEND ERROR] Failed to deliver to endpoint ${subscription?.endpoint}:`, err.message);
+    console.error(`[WEBPUSH SEND ERROR] Failed to deliver Web Push notification:`, err.message);
     if (err.statusCode === 410 || err.statusCode === 404) {
       return { success: false, expired: true };
     }
@@ -241,6 +273,46 @@ function isDeliverableFcmToken(token: unknown): token is string {
     trimmed.startsWith("simulated") ||
     trimmed.startsWith("webpush-registered-token-for-user:")
   );
+}
+
+const MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER = 8;
+const MAX_WEB_PUSH_ENDPOINT_LENGTH = 2048;
+const MAX_WEB_PUSH_KEY_LENGTH = 512;
+const MAX_FCM_TOKENS_PER_USER = 8;
+const MAX_FCM_TOKEN_LENGTH = 4096;
+
+function normalizeWebPushSubscription(input: any) {
+  if (!input || typeof input !== "object") return null;
+
+  const endpoint = typeof input.endpoint === "string" ? input.endpoint.trim() : "";
+  if (!endpoint || endpoint.length > MAX_WEB_PUSH_ENDPOINT_LENGTH) return null;
+
+  try {
+    const endpointUrl = new URL(endpoint);
+    if (endpointUrl.protocol !== "https:") return null;
+  } catch {
+    return null;
+  }
+
+  const keys = input.keys;
+  const p256dh = typeof keys?.p256dh === "string" ? keys.p256dh.trim() : "";
+  const auth = typeof keys?.auth === "string" ? keys.auth.trim() : "";
+  if (!p256dh || !auth || p256dh.length > MAX_WEB_PUSH_KEY_LENGTH || auth.length > MAX_WEB_PUSH_KEY_LENGTH) {
+    return null;
+  }
+
+  let expirationTime: number | null = null;
+  if (input.expirationTime !== null && input.expirationTime !== undefined) {
+    const candidate = Number(input.expirationTime);
+    if (!Number.isFinite(candidate) || candidate < 0) return null;
+    expirationTime = candidate;
+  }
+
+  return {
+    endpoint,
+    expirationTime,
+    keys: { p256dh, auth },
+  };
 }
 
 // Helpers for Firestore REST API fallback (for robust database reads when Admin SDK encounters permission denied)
@@ -387,7 +459,7 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       roles: data?.roles || [],
     };
   } catch (adminErr: any) {
-    logMessage(`[DB USER FETCH WARN] dbAdmin user query for ${userId} failed: ${adminErr.message}. Attempting REST API fallback...`);
+    logMessage(`[DB USER FETCH WARN] dbAdmin user query for [redacted] failed: ${adminErr.message}. Attempting REST API fallback...`);
     try {
       const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)" 
         ? firebaseConfig.firestoreDatabaseId 
@@ -424,7 +496,7 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       }
       return null;
     } catch (restErr: any) {
-      console.error(`[DB USER FETCH ERROR] Both Admin SDK and REST API fallback failed for ${userId}:`, restErr);
+      console.error(`[DB USER FETCH ERROR] Both Admin SDK and REST API fallback failed for [redacted]:`, restErr);
       throw restErr;
     }
   }
@@ -435,7 +507,9 @@ async function startServer() {
   await initializeWebPush();
 
   const app = express();
-  const PORT = 3000;
+  // Cloud Run and Firebase App Hosting provide the listener port through PORT.
+  // Retain 3000 only for local development.
+  const PORT = Number(process.env.PORT || 3000);
 
   // Middleware
   app.use(express.json());
@@ -443,7 +517,14 @@ async function startServer() {
 
   // API routes
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
+    const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
+    res.json({
+      status: "ok",
+      time: new Date().toISOString(),
+      runtime: runtimeEnvironment,
+      firebaseProjectId: targetProjectId,
+      firestoreDatabaseId: databaseId,
+    });
   });
 
   app.get("/api/client-id", (req, res) => {
@@ -468,9 +549,10 @@ async function startServer() {
 
     const token = authHeader.split("Bearer ")[1];
     const { subscription } = req.body;
+    const normalizedSubscription = normalizeWebPushSubscription(subscription);
 
-    if (!subscription || !subscription.endpoint) {
-      res.status(400).json({ error: "Missing required subscription data" });
+    if (!normalizedSubscription) {
+      res.status(400).json({ error: "Invalid Web Push subscription data" });
       return;
     }
 
@@ -484,17 +566,18 @@ async function startServer() {
 
       let webPushSubscriptions: any[] = [];
       if (userDoc.exists) {
-        webPushSubscriptions = userDoc.data()?.webPushSubscriptions || [];
+        const existingSubscriptions = userDoc.data()?.webPushSubscriptions;
+        webPushSubscriptions = Array.isArray(existingSubscriptions) ? existingSubscriptions : [];
       }
 
-      // Filter out existing subscription with same endpoint to avoid duplicates
-      webPushSubscriptions = webPushSubscriptions.filter(
-        (sub: any) => sub.endpoint !== subscription.endpoint
-      );
+      // Replace the same endpoint instead of accumulating duplicates, and keep a bounded
+      // set of the most recent other devices so stale registrations cannot grow forever.
+      webPushSubscriptions = webPushSubscriptions
+        .filter((sub: any) => sub && typeof sub.endpoint === "string" && sub.endpoint !== normalizedSubscription.endpoint)
+        .slice(-(MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER - 1));
 
-      // Add new subscription
       webPushSubscriptions.push({
-        ...subscription,
+        ...normalizedSubscription,
         registeredAt: new Date().toISOString()
       });
 
@@ -503,62 +586,53 @@ async function startServer() {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      logMessage(`[WEBPUSH REGISTER] Successfully registered web push subscription for user ${userId}`);
+      logMessage(`[WEBPUSH REGISTER] Successfully registered web push subscription for user [redacted]`);
       res.json({ success: true });
     } catch (err: any) {
       console.error("[WEBPUSH REGISTER ERROR]", err);
-      res.status(500).json({ error: err.message || "Failed to register web push subscription" });
+      res.status(500).json({ error: "Failed to register web push subscription" });
     }
   });
 
-  app.get("/api/public/db-diagnostics", async (req, res) => {
+  // Caller-bound FCM token registration with bounded recent-device retention.
+  app.post("/api/users/register-fcm-token", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized: Missing authorization token" });
+      return;
+    }
+
+    const idToken = authHeader.split("Bearer ")[1];
+    const rawToken = req.body?.token;
+    const normalizedToken = typeof rawToken === "string" ? rawToken.trim() : "";
+    if (!normalizedToken || normalizedToken.length > MAX_FCM_TOKEN_LENGTH || !isDeliverableFcmToken(normalizedToken)) {
+      res.status(400).json({ error: "Invalid FCM registration token" });
+      return;
+    }
+
     try {
-      const results: any = {
-        serverTime: new Date().toISOString(),
-        hasFileConfig,
-        hasServerEnvConfig,
-        firebaseConfigFromFileKeys: Object.keys(firebaseConfigFromFile),
-        envKeys: Object.keys(process.env).filter(k => k.startsWith("FIREBASE_") || k.startsWith("VITE_")),
-        envDatabaseId: process.env.FIREBASE_DATABASE_ID || "not set",
-        configProjectId: targetProjectId,
-        configDatabaseId: firebaseConfig.firestoreDatabaseId || "(not configured, defaulting to (default))",
-        defaultDbUsers: [],
-        namedDbUsers: [],
-        errors: {}
-      };
+      const decodedToken = await authAdmin.verifyIdToken(idToken);
+      const userId = decodedToken.uid;
+      const userRef = dbAdmin.collection("users").doc(userId);
+      const userDoc = await userRef.get();
+      const existingTokens = userDoc.exists && Array.isArray(userDoc.data()?.fcmTokens)
+        ? userDoc.data()?.fcmTokens.filter((value: unknown): value is string => isDeliverableFcmToken(value)) || []
+        : [];
+      const fcmTokens = existingTokens
+        .filter((value: string) => value !== normalizedToken)
+        .slice(-(MAX_FCM_TOKENS_PER_USER - 1));
+      fcmTokens.push(normalizedToken);
 
-      // 1. Query (default) database
-      try {
-        const defaultDb = getFirestore(appAdmin);
-        const snap = await defaultDb.collection("users").get();
-        results.defaultDbUsers = snap.docs.map(doc => ({
-          id: doc.id,
-          email: doc.data().email || "",
-          displayName: doc.data().displayName || "",
-          isVerified: doc.data().isVerified || false
-        }));
-      } catch (err: any) {
-        results.errors.defaultDb = err.message;
-      }
+      await userRef.set({
+        fcmTokens,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
 
-      // 2. Query named database
-      const namedDbId = "ai-studio-kcfccoregroup-17209335-8fcc-48c6-84f0-58e1ad7075c2";
-      try {
-        const namedDb = getFirestore(appAdmin, namedDbId);
-        const snap = await namedDb.collection("users").get();
-        results.namedDbUsers = snap.docs.map(doc => ({
-          id: doc.id,
-          email: doc.data().email || "",
-          displayName: doc.data().displayName || "",
-          isVerified: doc.data().isVerified || false
-        }));
-      } catch (err: any) {
-        results.errors.namedDb = err.message;
-      }
-
-      res.json(results);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      logMessage(`[FCM REGISTER] Successfully registered caller-bound device token for user [redacted]`);
+      res.json({ success: true, registeredTokens: fcmTokens.length });
+    } catch (error) {
+      console.error("[FCM REGISTER ERROR]", error);
+      res.status(500).json({ error: "Failed to register FCM device token" });
     }
   });
 
@@ -587,13 +661,13 @@ async function startServer() {
       const decodedToken = await authAdmin.verifyIdToken(token);
       const callerUid = decodedToken.uid;
       const callerEmail = decodedToken.email;
-      logMessage(`[PROCESS] Caller UID verified: "${callerUid}" | Email: "${callerEmail}"`);
+      logMessage(`[PROCESS] Caller Firebase ID token verified.`);
 
       // 2. Verify admin credentials
       let hasPermission = false;
       if (callerEmail === "kcfc.jp@gmail.com") {
         hasPermission = true;
-        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: ${callerEmail}`);
+        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: [redacted]`);
       } else {
         logMessage(`[PROCESS] Retrieving caller profile from Firestore room database...`);
         const callerDoc = await dbAdmin.collection("users").doc(callerUid).get();
@@ -617,27 +691,27 @@ async function startServer() {
       }
 
       // 3. Delete user from Firebase Auth (Optional/Non-blocking if Identity Toolkit is disabled)
-      logMessage(`[PROCESS] Executing authAdmin.deleteUser("${targetUserId}")...`);
+      logMessage(`[PROCESS] Executing authAdmin.deleteUser("[redacted]")...`);
       let authUserDeleted = false;
       try {
         await authAdmin.deleteUser(targetUserId);
         authUserDeleted = true;
-        logMessage(`[SUCCESS] Deleted user Auth credentials for UID: ${targetUserId}`);
+        logMessage(`[SUCCESS] Deleted user Auth credentials for UID: [redacted]`);
       } catch (authError: any) {
         logMessage(`[WARN] Skipping Auth credentials purge. Auth user deletion skipped/errored (Identity Toolkit API likely unconfigured or disabled): ${authError.message}`);
       }
 
       // 4. Delete user profile doc from 'users' collection
-      logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/${targetUserId}...`);
+      logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/[redacted]...`);
       try {
         await dbAdmin.collection("users").doc(targetUserId).delete();
-        logMessage(`[SUCCESS] Deleted document from users collection for UID: ${targetUserId}`);
+        logMessage(`[SUCCESS] Deleted document from users collection for UID: [redacted]`);
       } catch (e: any) {
         logMessage(`[WARN] Firestore profile cleanup skipped/errored: ${e.message}`);
       }
 
       // 5. Clean up from all 'polls' assignments and 'responses'
-      logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: ${targetUserId}...`);
+      logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: [redacted]...`);
       try {
         const pollsSnap = await dbAdmin.collection("polls").get();
         for (const pollDoc of pollsSnap.docs) {
@@ -668,7 +742,7 @@ async function startServer() {
               batch.delete(docSnap.ref);
             });
             await batch.commit();
-            logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: ${targetUserId} in poll: ${pollDoc.id}`);
+            logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: [redacted] in poll: ${pollDoc.id}`);
           }
         }
       } catch (e: any) {
@@ -676,7 +750,7 @@ async function startServer() {
       }
 
       // 6. Delete individual 'duties' documents associated with this user
-      logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: ${targetUserId}...`);
+      logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: [redacted]...`);
       try {
         const dutiesSnap = await dbAdmin.collection("duties").where("userId", "==", targetUserId).get();
         if (!dutiesSnap.empty) {
@@ -685,7 +759,7 @@ async function startServer() {
             batch.delete(docSnap.ref);
           });
           await batch.commit();
-          logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: ${targetUserId}`);
+          logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: [redacted]`);
         }
       } catch (e: any) {
         logMessage(`[WARN] Firestore duties cleanup skipped/errored: ${e.message}`);
@@ -728,7 +802,7 @@ async function startServer() {
     }
 
     const emailTrimmed = email.trim();
-    logMessage(`[PROCESS] Requested email deletion: "${emailTrimmed}"`);
+    logMessage(`[PROCESS] Requested email deletion: "[redacted]"`);
 
     try {
       // 1. Verify caller ID token
@@ -736,13 +810,13 @@ async function startServer() {
       const decodedToken = await authAdmin.verifyIdToken(token);
       const callerUid = decodedToken.uid;
       const callerEmail = decodedToken.email;
-      logMessage(`[PROCESS] Caller UID verified: "${callerUid}" | Email: "${callerEmail}"`);
+      logMessage(`[PROCESS] Caller Firebase ID token verified.`);
 
       // 2. Fetch caller's profile from Firestore to verify role
       let hasPermission = false;
       if (callerEmail === "kcfc.jp@gmail.com") {
         hasPermission = true;
-        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: ${callerEmail}`);
+        logMessage(`[PASS] Permission granted directly to Bootstrap Admin: [redacted]`);
       } else {
         logMessage(`[PROCESS] Retrieving caller profile from Firestore room database...`);
         const callerDoc = await dbAdmin.collection("users").doc(callerUid).get();
@@ -760,17 +834,17 @@ async function startServer() {
       }
 
       // 3. Find the user by email in Firebase Auth (or fallback to Firestore 'users' email match if Auth API is disabled)
-      logMessage(`[PROCESS] Finding user by email: "${emailTrimmed}"...`);
+      logMessage(`[PROCESS] Finding user by email: "[redacted]"...`);
       let targetUser: { uid: string; email?: string } | null = null;
       let authUserLookupError: any = null;
 
       try {
         const authUser = await authAdmin.getUserByEmail(emailTrimmed);
         targetUser = { uid: authUser.uid, email: authUser.email };
-        logMessage(`[PROCESS] Found user in Auth DB. UID: "${targetUser.uid}" | Email: "${targetUser.email}"`);
+        logMessage(`[PROCESS] Found user in Auth DB. UID: "[redacted]" | Email: "[redacted]"`);
       } catch (authError: any) {
         authUserLookupError = authError;
-        logMessage(`[WARN] Firebase Auth search failed for "${emailTrimmed}" (possibly disabled Auth API): ${authError.message}`);
+        logMessage(`[WARN] Firebase Auth search failed for "[redacted]" (possibly disabled Auth API): ${authError.message}`);
         
         if (authError.code === 'auth/user-not-found') {
           res.status(404).json({ error: `Not Found: No authentication account found for email "${emailTrimmed}"` });
@@ -780,7 +854,7 @@ async function startServer() {
 
       // Fallback search in Firestore 'users' collection
       if (!targetUser) {
-        logMessage(`[PROCESS] Trying Firestore fallback search for email: "${emailTrimmed}"...`);
+        logMessage(`[PROCESS] Trying Firestore fallback search for email: "[redacted]"...`);
         try {
           // A. Try exact email match in Firestore
           let userQuerySnap = await dbAdmin.collection("users").where("email", "==", emailTrimmed).get();
@@ -792,10 +866,10 @@ async function startServer() {
           if (!userQuerySnap.empty) {
             const firstDoc = userQuerySnap.docs[0];
             targetUser = { uid: firstDoc.id, email: firstDoc.data().email };
-            logMessage(`[SUCCESS] Found user UID "${targetUser.uid}" via Firestore 'users' search for: "${emailTrimmed}"`);
+            logMessage(`[SUCCESS] Found user UID "[redacted]" via Firestore 'users' search for: "[redacted]"`);
           } else {
             // C. Robust full scan fallback for case-insensitive and whitespace-tolerance match
-            logMessage(`[PROCESS] Checking full Firestore list of users for email: "${emailTrimmed}"...`);
+            logMessage(`[PROCESS] Checking full Firestore list of users for email: "[redacted]"...`);
             const allUsersSnap = await dbAdmin.collection("users").get();
             const matchedDoc = allUsersSnap.docs.find(doc => {
               const uEmail = doc.data().email;
@@ -804,7 +878,7 @@ async function startServer() {
 
             if (matchedDoc) {
               targetUser = { uid: matchedDoc.id, email: matchedDoc.data().email };
-              logMessage(`[SUCCESS] Found user UID "${targetUser.uid}" via Firestore scan search fallback for: "${emailTrimmed}"`);
+              logMessage(`[SUCCESS] Found user UID "[redacted]" via Firestore scan search fallback for: "[redacted]"`);
             } else {
               // No user in Auth and no user in Firestore after all three stages.
               // If the lookup failed because the Identity Toolkit API is disabled in this Google Cloud project,
@@ -818,7 +892,7 @@ async function startServer() {
               );
 
               if (isApiDisabled) {
-                logMessage(`[WARN] Identity Toolkit API is disabled, and no active Firestore user profile exists for: "${emailTrimmed}". Already clean.`);
+                logMessage(`[WARN] Identity Toolkit API is disabled, and no active Firestore user profile exists for: "[redacted]". Already clean.`);
                 res.json({
                   success: true,
                   message: `Any Firestore documents and assignments matching ${emailTrimmed} have been successfully verified as fully purged from the database. Note: Firebase Auth credentials could not be searched or deleted because the Google Cloud Identity Toolkit API is disabled in this project.`,
@@ -894,10 +968,10 @@ async function startServer() {
       }
 
       const allUidsToDelete = Array.from(uidsToDeleteSet);
-      logMessage(`[PROCESS] Collected UIDs to purge for email "${emailTrimmed}": ${JSON.stringify(allUidsToDelete)}`);
+      logMessage(`[PROCESS] Collected UIDs to purge for email "[redacted]": [redacted]`);
 
       // 4. Delete user from Firebase Auth (Optional: skip if fails due to disabled Auth API)
-      logMessage(`[PROCESS] Executing authAdmin.deleteUser("${targetUser.uid}")...`);
+      logMessage(`[PROCESS] Executing authAdmin.deleteUser("[redacted]")...`);
       let authUserDeleted = false;
       try {
         await authAdmin.deleteUser(targetUser.uid);
@@ -909,19 +983,19 @@ async function startServer() {
 
       // Loop over and delete all matching profiles and perform cascade cleanups
       for (const currentUid of allUidsToDelete) {
-        logMessage(`[PROCESS] Initiating complete cascade purge for UID: ${currentUid}...`);
+        logMessage(`[PROCESS] Initiating complete cascade purge for UID: [redacted]...`);
 
         // 5. Delete from users collection too, in case profile exists but wasn't deleted
-        logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/${currentUid}...`);
+        logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/[redacted]...`);
         try {
           await dbAdmin.collection("users").doc(currentUid).delete();
-          logMessage(`[SUCCESS] Document deleted from users collection for UID: ${currentUid}`);
+          logMessage(`[SUCCESS] Document deleted from users collection for UID: [redacted]`);
         } catch (e: any) {
-          logMessage(`[WARN] Firestore profile cleanup skipped/errored for UID ${currentUid}: ${e.message}`);
+          logMessage(`[WARN] Firestore profile cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
 
         // 6. Clean up from all 'polls' assignments and 'responses'
-        logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: ${currentUid}...`);
+        logMessage(`[PROCESS] Starting cascade cleanup of poll assignments and responses for UID: [redacted]...`);
         try {
           const pollsSnap = await dbAdmin.collection("polls").get();
           for (const pollDoc of pollsSnap.docs) {
@@ -940,7 +1014,7 @@ async function startServer() {
                   assignments: updatedAssignments,
                   updatedAt: new Date()
                 });
-                logMessage(`[SUCCESS] Cleaned up assignments in poll ID: ${pollDoc.id} for UID: ${currentUid}`);
+                logMessage(`[SUCCESS] Cleaned up assignments in poll ID: ${pollDoc.id} for UID: [redacted]`);
               }
             }
 
@@ -952,15 +1026,15 @@ async function startServer() {
                 batch.delete(docSnap.ref);
               });
               await batch.commit();
-              logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: ${currentUid} in poll: ${pollDoc.id}`);
+              logMessage(`[SUCCESS] Deleted ${responsesSnap.size} responses for UID: [redacted] in poll: ${pollDoc.id}`);
             }
           }
         } catch (e: any) {
-          logMessage(`[WARN] Firestore polls cleanup skipped/errored for UID ${currentUid}: ${e.message}`);
+          logMessage(`[WARN] Firestore polls cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
 
         // 7. Delete individual 'duties' documents associated with this user
-        logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: ${currentUid}...`);
+        logMessage(`[PROCESS] Starting cascade cleanup of duties documents for UID: [redacted]...`);
         try {
           const dutiesSnap = await dbAdmin.collection("duties").where("userId", "==", currentUid).get();
           if (!dutiesSnap.empty) {
@@ -969,10 +1043,10 @@ async function startServer() {
               batch.delete(docSnap.ref);
             });
             await batch.commit();
-            logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: ${currentUid}`);
+            logMessage(`[SUCCESS] Deleted ${dutiesSnap.size} duties doc(s) for UID: [redacted]`);
           }
         } catch (e: any) {
-          logMessage(`[WARN] Firestore duties cleanup skipped/errored for UID ${currentUid}: ${e.message}`);
+          logMessage(`[WARN] Firestore duties cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
       }
 
@@ -1055,7 +1129,8 @@ async function startServer() {
       let usingRealSMTP = false;
       const sendCount = recipients && Array.isArray(recipients) ? recipients.length : (emails ? emails.length : 0);
 
-      if (smtpHost && smtpUser && smtpPass) {
+      const allowRealBroadcastEmail = runtimeEnvironment !== "staging";
+      if (allowRealBroadcastEmail && smtpHost && smtpUser && smtpPass) {
         usingRealSMTP = true;
         const transporter = nodemailer.createTransport({
           host: smtpHost,
@@ -1108,13 +1183,13 @@ async function startServer() {
               });
               successCount++;
             } catch (mailErr: any) {
-              logMessage(`[BROADCAST EMAIL ERROR] Failed to send email to ${rec.email}: ${mailErr.message}`);
+              logMessage(`[BROADCAST EMAIL ERROR] Failed to send email to [redacted]: ${mailErr.message}`);
               failCount++;
               failedRecipients.push(rec.email);
             }
           }
 
-          emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.${failCount > 0 ? ` Failed recipients: ${failedRecipients.join(", ")}` : ""}`;
+          emailLogMessage = `[SMTP SUCCESS] Finished personalized email dispatch. Sent: ${successCount}, Failed: ${failCount}.`;
           logMessage(emailLogMessage);
         } else if (emails && Array.isArray(emails) && emails.length > 0) {
           logMessage(`[BROADCAST EMAIL] Dispatching single BCC SMTP mail to ${emails.length} recipients...`);
@@ -1169,7 +1244,7 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { title, body, recipientTokens } = req.body;
+    const { title, body } = req.body;
 
     if (!title || !body) {
       res.status(400).json({ error: "Missing required parameters (title, body)" });
@@ -1200,23 +1275,18 @@ async function startServer() {
       const allTokens: string[] = [];
       let targetedUsersCount = 0;
 
-      if (Array.isArray(recipientTokens) && recipientTokens.length > 0) {
-        logMessage(`[FCM BROADCAST] Using ${recipientTokens.length} client-provided tokens for announcement push.`);
-        allTokens.push(...recipientTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-        targetedUsersCount = recipientTokens.length;
-      } else {
-        logMessage(`[FCM BROADCAST] Fetching tokens from Firestore with REST fallback for announcement push.`);
-        const allUsers = await fetchAllUsersWithFallback(token);
-        allUsers.forEach(u => {
-          if (u.preferences?.announcements === false) return; // Opted out of announcement updates
+      logMessage(`[FCM BROADCAST] Fetching tokens from Firestore with REST fallback for announcement push.`);
+      const allUsers = await fetchAllUsersWithFallback(token);
+      allUsers.forEach(u => {
+        if (u.preferences?.announcements === false) return; // Opted out of announcement updates
 
-          const tokens = u.fcmTokens || [];
-          if (Array.isArray(tokens) && tokens.length > 0) {
-            allTokens.push(...tokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-            targetedUsersCount++;
-          }
-        });
-      }
+        const tokens = u.fcmTokens || [];
+        const validTokens = tokens.filter(isDeliverableFcmToken);
+        if (validTokens.length > 0) {
+          allTokens.push(...validTokens);
+          targetedUsersCount++;
+        }
+      });
 
       // De-duplicate tokens and filter out high-fidelity simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
@@ -1303,7 +1373,7 @@ async function startServer() {
           }
         }
       } else {
-        logMsgText = `[FCM SIMULATION] (No registered real browser push tokens found). Announcement broadcast simulation completed:\n  Title: "${title}"\n  Body preview: "${body.substring(0, 100)}..."`;
+        logMsgText = `[FCM SIMULATION] No registered real browser push tokens found. Announcement broadcast simulation completed without message-content logging.`;
         logMessage(logMsgText);
       }
 
@@ -1351,9 +1421,9 @@ async function startServer() {
                 await dbAdmin.collection("users").doc(u.id).update({
                   webPushSubscriptions: updatedSubs
                 });
-                logMessage(`[WEBPUSH ANNOUNCEMENT PRUNE] Pruned expired subscriptions for user ${u.id}`);
+                logMessage(`[WEBPUSH ANNOUNCEMENT PRUNE] Pruned expired subscriptions for user [redacted]`);
               } catch (pruneErr) {
-                console.error(`[WEBPUSH ANNOUNCEMENT PRUNE ERROR] Failed to prune for user ${u.id}:`, pruneErr);
+                console.error(`[WEBPUSH ANNOUNCEMENT PRUNE ERROR] Failed to prune for user [redacted]:`, pruneErr);
               }
             }
           }
@@ -1377,7 +1447,7 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Error sending FCM push broadcast:", error);
-      res.status(500).json({ error: error.message || "Failed to dispatch push notification" });
+      res.status(500).json({ error: "Failed to dispatch push notification" });
     }
   });
 
@@ -1390,7 +1460,7 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { userIds, title, body, clickAction, recipientTokens } = req.body;
+    const { userIds, title, body, clickAction, notificationIdsByUser } = req.body;
 
     if (!userIds || !Array.isArray(userIds) || !title || !body) {
       res.status(400).json({ error: "Missing required parameters (userIds, title, body)" });
@@ -1417,26 +1487,31 @@ async function startServer() {
         return;
       }
 
+      // Resolve target profiles once so transport results can be attributed honestly per member.
+      const targetUserIds = Array.from(new Set(userIds.filter((id: unknown): id is string => typeof id === "string" && id.trim() !== "")));
+      const targetUserIdSet = new Set(targetUserIds);
+      const targetUsers = (await fetchAllUsersWithFallback(token)).filter(u => targetUserIdSet.has(u.id));
+      const pwaAttempts: PwaTransportAttempt[] = [];
+      const tokenOwners = new Map<string, string[]>();
+      targetUsers.forEach(u => {
+        const tokens = Array.isArray(u.fcmTokens) ? u.fcmTokens.filter(isDeliverableFcmToken) : [];
+        tokens.forEach((deviceToken: string) => {
+          const owners = tokenOwners.get(deviceToken) || [];
+          if (!owners.includes(u.id)) owners.push(u.id);
+          tokenOwners.set(deviceToken, owners);
+        });
+      });
+
       // 3. Find targeted users who have registered fcmTokens and whose preferences allow broadcasts
       const allTokens: string[] = [];
 
-      if (Array.isArray(recipientTokens) && recipientTokens.length > 0) {
-        logMessage(`[FCM CUSTOM] Using ${recipientTokens.length} client-provided tokens for custom push.`);
-        allTokens.push(...recipientTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-      } else {
-        logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
-        const allUsers = await fetchAllUsersWithFallback(token);
-        const userIdsSet = new Set(userIds);
-        allUsers.forEach(u => {
-          if (!userIdsSet.has(u.id)) return;
-          if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
+      logMessage(`[FCM CUSTOM] Fetching tokens from Firestore with REST fallback for custom push.`);
+      targetUsers.forEach(u => {
+        if (u.preferences?.broadcasts === false) return; // Opted out of broadcasts
 
-          const tokens = u.fcmTokens || [];
-          if (Array.isArray(tokens) && tokens.length > 0) {
-            allTokens.push(...tokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
-          }
-        });
-      }
+        const tokens = u.fcmTokens || [];
+        allTokens.push(...tokens.filter(isDeliverableFcmToken));
+      });
 
       // De-duplicate tokens and filter out high-fidelity simulated tokens
       const uniqueTokens = Array.from(new Set(allTokens));
@@ -1485,7 +1560,16 @@ async function startServer() {
 
           let isCredentialMismatch = false;
           if (fcmResponse.responses) {
-            fcmResponse.responses.forEach((resp) => {
+            fcmResponse.responses.forEach((resp, index) => {
+              const attemptedToken = realTokens[index];
+              const owners = tokenOwners.get(attemptedToken) || [];
+              owners.forEach(userId => pwaAttempts.push({
+                userId,
+                transport: 'fcm',
+                success: resp.success,
+                ...(!resp.success && resp.error?.message ? { detail: resp.error.message } : {}),
+              }));
+
               if (!resp.success && resp.error) {
                 const errCode = resp.error.code || "";
                 const errMsg = resp.error.message || "";
@@ -1509,6 +1593,15 @@ async function startServer() {
             logMessage(logMsgText);
           }
         } catch (fcmErr: any) {
+          realTokens.forEach((attemptedToken) => {
+            const owners = tokenOwners.get(attemptedToken) || [];
+            owners.forEach(userId => pwaAttempts.push({
+              userId,
+              transport: 'fcm',
+              success: false,
+              detail: fcmErr?.message || 'FCM transport exception',
+            }));
+          });
           console.warn("[FCM CUSTOM BROADCAST SENDER] sendEachForMulticast threw exception:", fcmErr);
           const errMsg = fcmErr?.message || "";
           const errCode = fcmErr?.code || "";
@@ -1525,7 +1618,7 @@ async function startServer() {
           }
         }
       } else {
-        logMsgText = `[FCM SIMULATION] (No registered real browser push tokens found for targeted users). Custom broadcast simulation completed:\n  Title: "${title}"\n  Body preview: "${body.substring(0, 100)}..."`;
+        logMsgText = `[FCM SIMULATION] No registered real browser push tokens found for targeted users. Custom broadcast simulation completed without message-content logging.`;
         logMessage(logMsgText);
       }
 
@@ -1534,11 +1627,7 @@ async function startServer() {
       let webPushFailureCount = 0;
       try {
         logMessage(`[WEBPUSH BROADCAST] Attempting to deliver standard Web Push notifications...`);
-        const allUsers = await fetchAllUsersWithFallback(token);
-        const userIdsSet = new Set(userIds);
-
-        for (const u of allUsers) {
-          if (!userIdsSet.has(u.id)) continue;
+        for (const u of targetUsers) {
           if (u.preferences?.broadcasts === false) continue;
 
           const subs = u.webPushSubscriptions || [];
@@ -1556,6 +1645,12 @@ async function startServer() {
                 .replace(/\{nickname\}/gi, userNickname);
 
               const result = await sendWebPushNotification(sub, title, personalizedMsg, clickAction || "/inbox");
+              pwaAttempts.push({
+                userId: u.id,
+                transport: 'webpush',
+                success: result.success,
+                ...(!result.success && 'error' in result && result.error ? { detail: result.error } : {}),
+              });
               if (result.success) {
                 webPushSuccessCount++;
               } else {
@@ -1575,9 +1670,9 @@ async function startServer() {
                 await dbAdmin.collection("users").doc(u.id).update({
                   webPushSubscriptions: updatedSubs
                 });
-                logMessage(`[WEBPUSH PRUNE] Pruned expired subscriptions for user ${u.id}`);
+                logMessage(`[WEBPUSH PRUNE] Pruned expired subscriptions for user [redacted]`);
               } catch (pruneErr) {
-                console.error(`[WEBPUSH PRUNE ERROR] Failed to prune for user ${u.id}:`, pruneErr);
+                console.error(`[WEBPUSH PRUNE ERROR] Failed to prune for user [redacted]:`, pruneErr);
               }
             }
           }
@@ -1587,9 +1682,46 @@ async function startServer() {
         console.error("[WEBPUSH BROADCAST ERROR] Error sending standard Web Push:", wpErr);
       }
 
+      const deliveryResultsByUser = buildPwaDeliveryEvidence(targetUserIds, pwaAttempts);
+      let persistedDeliveryRecords = 0;
+
+      // Persist only evidence for explicitly supplied Inbox records that still belong to the target user.
+      // This prevents an arbitrary notification ID from being modified through the transport endpoint.
+      if (notificationIdsByUser && typeof notificationIdsByUser === 'object') {
+        for (const evidence of deliveryResultsByUser) {
+          const rawIds: unknown[] = Array.isArray(notificationIdsByUser[evidence.userId])
+            ? notificationIdsByUser[evidence.userId]
+            : [];
+          const ids: string[] = Array.from(new Set<string>(rawIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim() !== '')));
+
+          for (const notificationId of ids) {
+            const notificationRef = dbAdmin.collection('notifications').doc(notificationId);
+            const notificationSnap = await notificationRef.get();
+            if (!notificationSnap.exists) continue;
+            const notificationData = notificationSnap.data() || {};
+            if (notificationData.userId !== evidence.userId) continue;
+
+            const currentDeliveries = Array.isArray(notificationData.deliveries)
+              ? notificationData.deliveries
+              : initializeDeliveryDiagnostics(Array.isArray(notificationData.channels) ? notificationData.channels : []);
+            const deliveries = recordDeliveryOutcome({
+              deliveries: currentDeliveries,
+              channel: 'pwa',
+              status: evidence.status,
+              updatedAt: new Date(),
+              detail: evidence.detail,
+            });
+            await notificationRef.update({ deliveries });
+            persistedDeliveryRecords += 1;
+          }
+        }
+      }
+
       res.json({
         success: true,
         message: (realTokens.length > 0 || webPushSuccessCount > 0) ? "Push broadcast executed." : "Push broadcast simulated successfully (no real devices subscribed yet).",
+        deliveryResultsByUser,
+        persistedDeliveryRecords,
         totalTokens: realTokens.length,
         simulatedTokens: uniqueTokens.length - realTokens.length,
         successCount,
@@ -1601,7 +1733,7 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Error sending FCM custom push broadcast:", error);
-      res.status(500).json({ error: error.message || "Failed to dispatch custom push notification" });
+      res.status(500).json({ error: "Failed to dispatch custom push notification" });
     }
   });
 
@@ -1614,7 +1746,6 @@ async function startServer() {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    const { targetToken } = req.body;
 
     try {
       // 1. Verify caller ID token to safely bind the request to their authentic Firebase session
@@ -1628,12 +1759,8 @@ async function startServer() {
         return;
       }
 
-      // 3. Gather active tokens
+      // 3. Gather active tokens only from the authenticated caller profile.
       const allTokens: string[] = [];
-      if (typeof targetToken === "string" && targetToken.trim() !== "") {
-        allTokens.push(targetToken.trim());
-      }
-      
       const savedTokens = callerProfile.fcmTokens || [];
       if (Array.isArray(savedTokens)) {
         allTokens.push(...savedTokens.filter(tk => typeof tk === "string" && tk.trim() !== ""));
@@ -1669,7 +1796,7 @@ async function startServer() {
       // Send standard FCM notifications if we have real tokens
       if (realTokens.length > 0) {
         const messagingAdmin = getMessagingAdmin(appAdmin);
-        logMessage(`[FCM TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${realTokens.length} tokens...`);
+        logMessage(`[FCM TEST PUSH] Dispatching caller-bound test notification to ${realTokens.length} registered device token(s)...`);
 
         try {
           const fcmResponse = await messagingAdmin.sendEachForMulticast({
@@ -1744,7 +1871,7 @@ async function startServer() {
       let webPushSuccessCount = 0;
       let webPushFailureCount = 0;
       if (Array.isArray(callerWebPushSubs) && callerWebPushSubs.length > 0) {
-        logMessage(`[WEBPUSH TEST PUSH] Dispatching test notification to user ${callerProfile.email || callerUid} with ${callerWebPushSubs.length} subscriptions...`);
+        logMessage(`[WEBPUSH TEST PUSH] Dispatching caller-bound test notification to ${callerWebPushSubs.length} registered subscription(s)...`);
         const updatedSubs = [...callerWebPushSubs];
         let needsUpdate = false;
 
@@ -1774,7 +1901,7 @@ async function startServer() {
             await dbAdmin.collection("users").doc(callerUid).update({
               webPushSubscriptions: updatedSubs
             });
-            logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for user ${callerUid}`);
+            logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for authenticated caller.`);
           } catch (err) {
             console.error("[WEBPUSH TEST PRUNE ERROR]", err);
           }
@@ -1798,12 +1925,13 @@ async function startServer() {
         });
 
         res.json({
-          success: true,
-          isSandboxSimulated: true,
-          message: "A live fallback notification has been dispatched to your In-App Notification Center and native browser alerts.",
+          success: false,
+          transportAccepted: false,
+          inboxFallback: true,
+          message: "Native push transport was not confirmed. A fallback notification was stored in the KCFC Inbox instead.",
           totalTokens: realTokens.length,
-          successCount: realTokens.length,
-          failureCount: 0,
+          successCount,
+          failureCount,
           webPushSuccessCount,
           webPushFailureCount
         });
@@ -1825,7 +1953,7 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Error sending user test push notification:", error);
-      res.status(500).json({ error: error.message || "Failed to dispatch test push notification" });
+      res.status(500).json({ error: "Failed to dispatch test push notification" });
     }
   });
 
@@ -1871,7 +1999,8 @@ async function startServer() {
       let emailSent = false;
       let logMsgText = "";
 
-      if (smtpHost && smtpUser && smtpPass) {
+      const allowVerificationEmailDelivery = runtimeEnvironment !== "staging";
+      if (allowVerificationEmailDelivery && smtpHost && smtpUser && smtpPass) {
         const transporter = nodemailer.createTransport({
           host: smtpHost,
           port: smtpPort,
@@ -1915,15 +2044,15 @@ async function startServer() {
             </div>
           `
         }).then(() => {
-          logMessage(`[SMTP SUCCESS] Sent custom server-side verification link to ${email}`);
+          logMessage(`[SMTP SUCCESS] Custom server-side verification link dispatched.`);
         }).catch((err) => {
           console.error("[SMTP ERROR] Failed to send verification email in background:", err);
         });
         emailSent = true;
-        logMsgText = `[SMTP INITIATED] Custom server-side verification link dispatch started for ${email}`;
+        logMsgText = `[SMTP INITIATED] Custom server-side verification link dispatch started.`;
         logMessage(logMsgText);
       } else {
-        logMsgText = `[SMTP SIMULATION] No server SMTP config found. Raw verification link: ${verificationLink}`;
+        logMsgText = `[SMTP SIMULATION] No server SMTP config found. Verification link generated for authenticated caller without logging the link.`;
         logMessage(logMsgText);
       }
 
@@ -1936,7 +2065,7 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Error generating verification link or sending email:", error);
-      res.status(500).json({ error: error.message || "Failed to process verification email dispatch" });
+      res.status(500).json({ error: "Failed to process verification email dispatch" });
     }
   });
 
@@ -1977,11 +2106,17 @@ async function startServer() {
 
       res.json({ success: true, logs });
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error("[ADMIN DIAGNOSTIC LOG READ ERROR] Failed to read diagnostic service logs.", error);
+      res.status(500).json({ error: "Failed to read diagnostic service logs" });
     }
   });
 
-  const upload = multer();
+  const publicContactUpload = multer({
+    limits: {
+      fields: 32,
+      fieldSize: 16 * 1024,
+    },
+  });
 
   // Public endpoint to receive contact messages from external website (KCFC.COM)
   app.options("/api/public/contact", (req, res) => {
@@ -1996,7 +2131,7 @@ async function startServer() {
     res.sendStatus(204);
   });
 
-  app.post("/api/public/contact", upload.any(), async (req, res) => {
+  app.post("/api/public/contact", publicContactUpload.none(), async (req, res) => {
     const requestedHeaders = req.headers["access-control-request-headers"] || req.headers["Access-Control-Request-Headers"];
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -2006,11 +2141,10 @@ async function startServer() {
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Requested-With, Accept, Authorization");
     }
 
-    // Unified server-side diagnostic logging of incoming public inquiries
-    const inboundHeaders = JSON.stringify(req.headers);
-    const inboundBody = JSON.stringify(req.body);
-    const inboundQuery = JSON.stringify(req.query);
-    logMessage(`[INBOUND CONTACT] Received request. Headers: ${inboundHeaders} | Body: ${inboundBody} | Query: ${inboundQuery}`);
+    // Privacy-safe request metadata only. Never persist raw headers/body/query for public inquiries.
+    const inboundBodyFieldCount = req.body && typeof req.body === "object" ? Object.keys(req.body).length : 0;
+    const inboundQueryFieldCount = req.query && typeof req.query === "object" ? Object.keys(req.query).length : 0;
+    logMessage(`[INBOUND CONTACT] Received request. method=${req.method} contentType=${req.get("content-type") || "unknown"} bodyFields=${inboundBodyFieldCount} queryFields=${inboundQueryFieldCount}`);
 
     const body = req.body || {};
     const query = req.query || {};
@@ -2114,13 +2248,16 @@ async function startServer() {
       subject = subjectField.value.trim();
     }
 
-    logMessage(`[INBOUND CONTACT] Extracted fields => name: "${name}", email: "${email}", subject: "${subject}", message: "${message.substring(0, 100)}..."`);
+    logMessage(`[INBOUND CONTACT] Parsed inquiry fields: name=${name ? "present" : "missing"}, email=${email ? "present" : "missing"}, subject=${subject ? "present" : "missing"}, messageLength=${message.length}`);
 
-    if (!name || !email || !message) {
-      logMessage(`[INBOUND CONTACT ERROR] Validation failed. Missing name, email, or message.`);
-      res.status(400).json({ 
-        error: "Missing required fields: name, email, and message are required.",
-        extracted: { name, email, subject, message }
+    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const hasHeaderBreaks = /[\r\n]/.test(name) || /[\r\n]/.test(email) || /[\r\n]/.test(subject);
+    const fieldsWithinBounds = name.length <= 160 && email.length <= 320 && subject.length <= 200 && message.length <= 5000;
+
+    if (!name || !email || !message || !validEmail || hasHeaderBreaks || !fieldsWithinBounds) {
+      logMessage(`[INBOUND CONTACT ERROR] Validation failed for public inquiry payload.`);
+      res.status(400).json({
+        error: "Invalid contact inquiry. Please check the submitted fields and try again."
       });
       return;
     }
@@ -2132,6 +2269,16 @@ async function startServer() {
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASSWORD;
       const smtpFrom = process.env.SMTP_FROM || smtpUser || '"KCFC Community Portal" <no-reply@kcfc-portal.org>';
+      const escapeHtml = (value: string) => value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+      const safeName = escapeHtml(name);
+      const safeEmail = escapeHtml(email);
+      const safeSubject = escapeHtml(subject || "KCFC Portal Inquiry");
+      const safeMessage = escapeHtml(message).replace(/\n/g, "<br />");
 
       const mailOptions = {
         from: smtpFrom,
@@ -2144,15 +2291,15 @@ async function startServer() {
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40; width: 100px;">From:</td>
-                <td style="padding: 8px 0; color: #2d2d25;">${name}</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${safeName}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Email:</td>
-                <td style="padding: 8px 0; color: #2d2d25;"><a href="mailto:${email}" style="color: #8a8a65;">${email}</a></td>
+                <td style="padding: 8px 0; color: #2d2d25;"><a href="mailto:${safeEmail}" style="color: #8a8a65;">${safeEmail}</a></td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Subject:</td>
-                <td style="padding: 8px 0; color: #2d2d25;">${subject || "KCFC Portal Inquiry"}</td>
+                <td style="padding: 8px 0; color: #2d2d25;">${safeSubject}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #5A5A40;">Submitted:</td>
@@ -2160,7 +2307,7 @@ async function startServer() {
               </tr>
             </table>
             <div style="background-color: #fafaf7; border-left: 4px solid #5A5A40; padding: 15px; border-radius: 4px; font-style: italic; font-size: 14px; line-height: 1.6; color: #333; margin-top: 10px;">
-              "${message}"
+              ${safeMessage}
             </div>
             <hr style="border: 0; border-top: 1px solid #e5e5df; margin: 25px 0;" />
             <div style="text-align: center;">
@@ -2173,7 +2320,8 @@ async function startServer() {
       };
 
       let emailSent = false;
-      if (smtpHost && smtpUser && smtpPass) {
+      const allowInquiryEmailDelivery = runtimeEnvironment !== "staging";
+      if (allowInquiryEmailDelivery && smtpHost && smtpUser && smtpPass) {
         logMessage(`[INBOUND CONTACT] Initiating background SMTP mail dispatch to kcfc.jp@gmail.com...`);
         const transporter = nodemailer.createTransport({
           host: smtpHost,
@@ -2187,13 +2335,14 @@ async function startServer() {
           console.error(`[INBOUND CONTACT] SMTP mail dispatch FAILED in background:`, err);
         });
         emailSent = true;
+      } else if (!allowInquiryEmailDelivery) {
+        logMessage(`[INBOUND CONTACT] Staging runtime: SMTP notification suppressed; inquiry remains in isolated staging data.`);
       } else {
         logMessage(`[INBOUND CONTACT] SMTP disabled or credentials missing. Skipping email notification.`);
       }
 
       // 2. Write the message to Firestore (try direct admin SDK write first, fallback to REST API)
       let firestoreWritten = false;
-      let errorDetails = "";
       try {
         logMessage(`[INBOUND CONTACT] Attempting direct Firestore write via dbAdmin...`);
         await dbAdmin.collection("messages").add({
@@ -2202,14 +2351,13 @@ async function startServer() {
           subject: subject || "KCFC Portal Inquiry",
           message,
           status: "unread",
-          alertSent: true,
+          alertSent: emailSent,
           createdAt: new Date().toISOString()
         });
         firestoreWritten = true;
         logMessage("[SUCCESS] Message written to Firestore via dbAdmin.");
       } catch (dbErr: any) {
-        logMessage(`[WARN] dbAdmin direct write failed, attempting unauthenticated REST API fallback. Error: ${dbErr.message}`);
-        errorDetails += `[dbAdmin Error: ${dbErr.message}]`;
+        logMessage(`[WARN] dbAdmin direct write failed; attempting Firestore REST fallback.`);
         
         try {
           const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || "(default)"}/documents/messages?key=${firebaseConfig.apiKey}`;
@@ -2220,12 +2368,12 @@ async function startServer() {
               subject: { stringValue: subject || "KCFC Portal Inquiry" },
               message: { stringValue: message },
               status: { stringValue: "unread" },
-              alertSent: { booleanValue: true },
+              alertSent: { booleanValue: emailSent },
               createdAt: { stringValue: new Date().toISOString() }
             }
           };
 
-          logMessage(`[INBOUND CONTACT] POSTing to REST endpoint: ${firestoreUrl}`);
+          logMessage(`[INBOUND CONTACT] Attempting Firestore REST fallback write.`);
           const fsResponse = await fetch(firestoreUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2236,20 +2384,17 @@ async function startServer() {
             firestoreWritten = true;
             logMessage("[SUCCESS] Message written to Firestore via REST API fallback.");
           } else {
-            const errText = await fsResponse.text();
-            logMessage(`[ERROR] REST API fallback failed: ${errText}`);
-            errorDetails += ` [REST Error: ${errText}]`;
+            logMessage(`[ERROR] Firestore REST fallback failed with status ${fsResponse.status}.`);
           }
         } catch (fsErr: any) {
-          logMessage(`[ERROR] REST API fetch failed: ${fsErr.message}`);
-          errorDetails += ` [REST Fetch Error: ${fsErr.message}]`;
+          logMessage(`[ERROR] Firestore REST fallback request failed.`);
         }
       }
 
-      res.json({ success: true, emailSent, firestoreWritten, errorDetails: errorDetails || undefined });
+      res.json({ success: true, emailSent, firestoreWritten });
     } catch (err: any) {
-      logMessage(`[ERROR] Public contact endpoint execution failed: ${err.message}`);
-      res.status(500).json({ error: err.message || "Failed to process contact inquiry" });
+      logMessage(`[ERROR] Public contact endpoint execution failed.`);
+      res.status(500).json({ error: "Failed to process contact inquiry" });
     }
   });
 
@@ -2293,6 +2438,16 @@ async function startServer() {
 
       if (!hasPermission) {
         res.status(403).json({ error: "Forbidden: Only Admin or President can trigger email alerts" });
+        return;
+      }
+
+      if (runtimeEnvironment === "staging") {
+        logMessage(`[SMTP SIMULATION] Staging runtime: inquiry email alert suppressed for message ${messageId}.`);
+        res.json({
+          success: true,
+          simulated: true,
+          message: "Staging runtime: inquiry email alert simulated; no SMTP message was sent."
+        });
         return;
       }
 
@@ -2375,6 +2530,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -2383,7 +2539,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('/{*splat}', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

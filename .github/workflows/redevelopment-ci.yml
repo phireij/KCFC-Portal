@@ -1,0 +1,285 @@
+name: KCFC Redevelopment CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - 'redesign/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Record production dependency audit snapshot
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > /tmp/kcfc-npm-audit.json
+          audit_status=$?
+          set -e
+          node scripts/report-npm-audit.mjs /tmp/kcfc-npm-audit.json "$GITHUB_STEP_SUMMARY" "$audit_status"
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Verify communication policy
+        run: |
+          npx tsx scripts/verify-communication-policy.ts
+          npx tsx scripts/verify-staging-inquiry-email-isolation.ts
+          npx tsx scripts/verify-inquiry-privacy-logging.ts
+          npx tsx scripts/verify-staging-verification-email-isolation.ts
+          npx tsx scripts/verify-staging-client-email-isolation.ts
+          npx tsx scripts/verify-public-contact-boundary.ts
+          npx tsx scripts/verify-browser-admin-diagnostic-privacy.ts
+          npx tsx scripts/verify-server-diagnostic-privacy.ts
+          npx tsx scripts/verify-broadcast-recipient-token-boundary.ts
+          npx tsx scripts/verify-public-db-diagnostics-boundary.ts
+
+      - name: Verify communication batches
+        run: npx tsx scripts/verify-communication-batches.ts
+
+      - name: Verify liturgical creator plans
+        run: npx tsx scripts/verify-liturgical-creator-plans.ts
+
+      - name: Verify liturgical assignment diff
+        run: npx tsx scripts/verify-liturgical-assignment-diff.ts
+
+      - name: Verify liturgical publication plan
+        run: npx tsx scripts/verify-liturgical-publication-plan.ts
+
+      - name: Verify leadership broadcast creator plan
+        run: npx tsx scripts/verify-broadcast-creator-plan.ts
+
+      - name: Verify leadership broadcast composer accessibility
+        run: npx tsx scripts/verify-broadcast-composer-accessibility.ts
+
+      - name: Verify member governance rules
+        run: npx tsx scripts/verify-member-governance.ts
+
+      - name: Verify member pre-registration safety
+        run: npx tsx scripts/verify-member-pre-registration.ts
+
+      - name: Verify pre-registration email verification migration
+        run: npx tsx scripts/verify-preregistration-email-verification-migration.ts
+
+      - name: Verify Login email-verification migration
+        run: npx tsx scripts/verify-login-email-verification.ts
+
+      - name: Verify member account status summary
+        run: npx tsx scripts/verify-member-account-status.ts
+
+      - name: Verify Core status transition planning
+        run: npx tsx scripts/verify-core-status-transition.ts
+
+      - name: Verify Core status mutation safeguards
+        run: npx tsx scripts/verify-core-status-mutation-plan.ts
+
+      - name: Verify staging-only Core status executor
+        run: npx tsx scripts/verify-core-status-staging-executor.ts
+
+      - name: Verify Core status executor isolation
+        run: npx tsx scripts/verify-core-status-executor-isolation.ts
+
+      - name: Verify Firebase Admin Storage boundary
+        run: npx tsx scripts/verify-firebase-admin-storage-boundary.ts
+
+      - name: Verify Firebase runtime isolation
+        run: npx tsx scripts/verify-firebase-runtime-isolation.ts
+
+      - name: Verify health runtime identity boundary
+        run: |
+          npx tsx scripts/verify-health-runtime-identity.ts
+          node scripts/verify-staging-runtime-evidence.mjs
+
+      - name: Verify staging Web Push runtime boundary
+        run: npx tsx scripts/verify-staging-webpush-runtime.ts
+
+      - name: Verify staging environment template
+        run: npx tsx scripts/verify-staging-env-template.ts
+
+      - name: Verify staging environment badge
+        run: npx tsx scripts/verify-staging-environment-banner.ts
+
+      - name: Verify Web Push service worker boundary
+        run: npx tsx scripts/verify-webpush-service-worker-boundary.ts
+
+      - name: Verify Updates deep-link focus
+        run: npx tsx scripts/verify-announcement-deep-link-focus.ts
+
+      - name: Verify Updates scope history navigation
+        run: npx tsx scripts/verify-updates-scope-history.ts
+
+      - name: Verify availability deep-link focus
+        run: npx tsx scripts/verify-availability-deep-link-focus.ts
+
+      - name: Verify Inbox deep-link boundary
+        run: npx tsx scripts/verify-inbox-deep-link-boundary.ts
+
+      - name: Verify Inbox message history
+        run: npx tsx scripts/verify-inbox-message-history.ts
+
+      - name: Verify Inbox filter history navigation
+        run: npx tsx scripts/verify-inbox-filter-history.ts
+
+      - name: Verify Resource category history navigation
+        run: npx tsx scripts/verify-resource-category-history.ts
+
+      - name: Verify Community filter history navigation
+        run: npx tsx scripts/verify-community-filter-history.ts
+
+      - name: Verify push privacy logging
+        run: npx tsx scripts/verify-push-privacy-logging.ts
+
+      - name: Verify server Web Push privacy logging
+        run: |
+          npx tsx scripts/verify-server-webpush-privacy.ts
+          npx tsx scripts/verify-webpush-registration-boundary.ts
+          npx tsx scripts/verify-fcm-registration-boundary.ts
+
+      - name: Verify PWA theme contract
+        run: npx tsx scripts/verify-pwa-theme-contract.ts
+
+      - name: Verify app shell theme palette
+        run: npx tsx scripts/verify-app-shell-theme-contract.ts
+
+      - name: Verify install PWA platform detection
+        run: npx tsx scripts/verify-install-pwa-platform-detection.ts
+
+      - name: Exercise staging preflight with synthetic isolated environment
+        env:
+          APP_URL: https://kcfc-staging-ci.example.invalid
+          VITE_KCFC_RUNTIME_ENV: staging
+          KCFC_RUNTIME_ENV: staging
+          VITE_FIREBASE_API_KEY: synthetic-client-key
+          FIREBASE_API_KEY: synthetic-server-key
+          VITE_FIREBASE_AUTH_DOMAIN: kcfc-staging-ci.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: kcfc-staging-ci
+          FIREBASE_PROJECT_ID: kcfc-staging-ci
+          VITE_FIREBASE_APP_ID: synthetic-app-id
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '1234567890'
+          VITE_FIREBASE_DATABASE_ID: kcfc-staging-ci-db
+          FIREBASE_DATABASE_ID: kcfc-staging-ci-db
+          VITE_FCM_VAPID_KEY: synthetic-fcm-public-vapid
+          WEB_PUSH_VAPID_PUBLIC_KEY: synthetic-native-public-vapid
+          WEB_PUSH_VAPID_PRIVATE_KEY: synthetic-private-vapid
+          KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED: 'false'
+          KCFC_CONNECTOR_LINE_ENABLED: 'false'
+          KCFC_CONNECTOR_TELEGRAM_ENABLED: 'false'
+          KCFC_CONNECTOR_WHATSAPP_ENABLED: 'false'
+          KCFC_CONNECTOR_VIBER_ENABLED: 'false'
+          VITE_KCFC_LINE_CONNECTOR_ENABLED: 'false'
+          VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED: 'false'
+          VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED: 'false'
+          VITE_KCFC_VIBER_CONNECTOR_ENABLED: 'false'
+        run: npm run staging:preflight
+
+      - name: Verify leadership accessibility contracts
+        run: npx tsx scripts/verify-leadership-accessibility.ts
+
+      - name: Verify Leadership workspace history navigation
+        run: npx tsx scripts/verify-admin-workspace-history.ts
+
+      - name: Verify mobile navigation contract
+        run: npx tsx scripts/verify-mobile-navigation-contract.ts
+
+      - name: Verify schedule view history navigation
+        run: npx tsx scripts/verify-schedule-view-history.ts
+
+      - name: Verify Home roster publication boundary
+        run: npx tsx scripts/verify-dashboard-roster-publication-boundary.ts
+
+      - name: Verify delivery diagnostics
+        run: npx tsx scripts/verify-delivery-diagnostics.ts
+
+      - name: Verify current-device notification health
+        run: npx tsx scripts/verify-current-device-notification-health.ts
+
+      - name: Verify device QA snapshot contract
+        run: npx tsx scripts/verify-device-qa-snapshot.ts
+
+      - name: Verify self-test push recipient boundary
+        run: npx tsx scripts/verify-self-test-push-boundary.ts
+
+      - name: Build and guard resolved warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/kcfc-build.log
+          if grep -q 'dynamically imported by .*fcmClient' /tmp/kcfc-build.log; then
+            echo 'Redundant fcmClient dynamic-import warning must remain resolved.' >&2
+            exit 1
+          fi
+          if grep -q 'import.meta.*not available with the "cjs" output format' /tmp/kcfc-build.log; then
+            echo 'CJS import.meta build warning must remain resolved.' >&2
+            exit 1
+          fi
+
+      - name: Record production bundle asset sizes
+        env:
+          KCFC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node scripts/generate-build-artifact-manifest.mjs dist dist/kcfc-build-manifest.json
+          node scripts/verify-build-artifact-manifest.mjs dist/kcfc-build-manifest.json dist
+          node scripts/report-build-assets.mjs dist
+
+      - name: Retain build artifact identity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: kcfc-build-manifest-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/kcfc-build-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Guard Core status staging executor default
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=false$' .env.example || {
+            echo 'Core-status staging executor must remain disabled by default.' >&2
+            exit 1
+          }
+
+      - name: Guard external connector defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flag in \
+            KCFC_CONNECTOR_LINE_ENABLED \
+            KCFC_CONNECTOR_TELEGRAM_ENABLED \
+            KCFC_CONNECTOR_WHATSAPP_ENABLED \
+            KCFC_CONNECTOR_VIBER_ENABLED \
+            VITE_KCFC_LINE_CONNECTOR_ENABLED \
+            VITE_KCFC_TELEGRAM_CONNECTOR_ENABLED \
+            VITE_KCFC_WHATSAPP_CONNECTOR_ENABLED \
+            VITE_KCFC_VIBER_CONNECTOR_ENABLED; do
+            grep -q "^${flag}=false$" .env.example || {
+              echo "Connector feature gate ${flag} must remain false in .env.example" >&2
+              exit 1
+            }
+          done
+
+      - name: Guard provider secrets from browser bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -En '^VITE_.*(SECRET|ACCESS_TOKEN|BOT_TOKEN|VERIFY_TOKEN|CHANNEL_SECRET)=' .env.example; then
+            echo 'Provider credentials must never use VITE_* browser-exposed variables.' >&2
+            exit 1
+          fi

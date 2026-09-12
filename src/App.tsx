@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, lazy, Suspense, useContext, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
@@ -6,20 +6,20 @@ import { auth, db } from './lib/firebase';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
 import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
-import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites } from './lib/fcmClient';
+import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites, observeForegroundMessages } from './lib/fcmClient';
 
-// Pages
-import Dashboard from './pages/Dashboard';
-import Login from './pages/Login';
-import Polls from './pages/Polls';
-import Resources from './pages/Resources';
-import Duties from './pages/Duties';
-import Admin from './pages/Admin';
-import Profile from './pages/Profile';
-import Members from './pages/Members';
-import Announcements from './pages/Announcements';
-import Accounting from './pages/Accounting';
-import Inbox from './pages/Inbox';
+// Route pages are lazy-loaded so members download only the workflow they open.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Login = lazy(() => import('./pages/Login'));
+const Polls = lazy(() => import('./pages/Polls'));
+const Resources = lazy(() => import('./pages/Resources'));
+const Duties = lazy(() => import('./pages/Duties'));
+const Admin = lazy(() => import('./pages/Admin'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Members = lazy(() => import('./pages/Members'));
+const Announcements = lazy(() => import('./pages/Announcements'));
+const Accounting = lazy(() => import('./pages/Accounting'));
+const Inbox = lazy(() => import('./pages/Inbox'));
 import Navbar from './components/layout/Navbar';
 
 interface AuthContextType {
@@ -149,10 +149,10 @@ export default function App() {
                         uid: authenticatedUser.uid,
                         email: emailLower,
                         displayName: pendingData.displayName || authenticatedUser.displayName || 'Member',
-                        photoURL: pendingData.photoURL || authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingData.displayName || 'Member')}&background=5A5A40&color=fff`,
+                        photoURL: pendingData.photoURL || authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingData.displayName || 'Member')}&background=123B66&color=fff`,
                         roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
                         ministries: pendingData.ministries || [],
-                        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || true,
+                        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || false,
                         isVerified: isBootstrapAdmin || pendingData.isVerified || false,
                         isDisabled: pendingData.isDisabled || false,
                         createdAt: pendingData.createdAt || new Date().toISOString(),
@@ -167,7 +167,7 @@ export default function App() {
 
                       // Delete old pending document
                       await deleteDoc(pendingDocRef);
-                      console.log(`Successfully migrated pre-registered pending document ${pendingDocId} to real UID ${authenticatedUser.uid}`);
+                      console.log("Successfully migrated pre-registered pending member profile to the authenticated account.");
                       migrated = true;
                     }
                   } catch (migrationErr) {
@@ -193,7 +193,7 @@ export default function App() {
                       uid: authenticatedUser.uid,
                       email: authenticatedUser.email || '',
                       displayName: isBootstrapAdmin ? 'ADMIN' : (authenticatedUser.displayName || 'Member'),
-                      photoURL: authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authenticatedUser.displayName || 'Member')}&background=5A5A40&color=fff`,
+                      photoURL: authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authenticatedUser.displayName || 'Member')}&background=123B66&color=fff`,
                       roles: isBootstrapAdmin ? ['admin'] : ['member'],
                       ministries: [],
                       isEmailVerified: isBootstrapAdmin || emailVerified || false,
@@ -205,7 +205,7 @@ export default function App() {
                   } else {
                     // Past grace period, meaning the admin deleted their document from Firestore.
                     // Sign out immediately to prevent recreating the document and clean up the zombie session.
-                    console.warn("User document deleted from Firestore. Force signing out zombie session:", authenticatedUser.uid);
+                    console.warn("User profile was removed from Firestore. Force signing out stale authenticated session.");
                     setProfile(null);
                     auth.signOut().catch((err) => {
                       console.error("Force sign out failed:", err);
@@ -339,7 +339,7 @@ export default function App() {
 
     let activeCleanup: (() => void) | null = null;
 
-    import('./lib/fcmClient').then(async ({ observeForegroundMessages }) => {
+    const initializeForegroundMessaging = async () => {
       // 1. Preload public VAPID key from backend to guarantee zero network latency during direct clicks
       await preloadVapidKeyFromServer();
 
@@ -366,7 +366,9 @@ export default function App() {
       if (unsubscribeMessages) {
         activeCleanup = unsubscribeMessages;
       }
-    }).catch(err => {
+    };
+
+    initializeForegroundMessaging().catch(err => {
       console.warn("FCM: Client initialization deferred or unsupported in this sandboxed frame:", err);
     });
 
@@ -592,9 +594,9 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0]">
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC]">
         <div className="animate-pulse flex flex-col items-center">
-          <div className="w-16 h-16 bg-[#5A5A40] rounded-full mb-4"></div>
+          <div className="w-16 h-16 bg-[#123B66] rounded-full mb-4"></div>
           <div className="h-4 w-48 bg-gray-200 rounded"></div>
         </div>
       </div>
@@ -604,7 +606,7 @@ export default function App() {
   // Database Connection Error View
   if (authError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
           <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -625,7 +627,7 @@ export default function App() {
                 setAuthError(null);
                 window.location.reload();
               }}
-              className="w-full py-4 bg-[#5A5A40] text-white rounded-full font-bold uppercase tracking-widest text-xs shadow-sm hover:shadow-lg transition-all cursor-pointer"
+              className="w-full py-4 bg-[#123B66] text-white rounded-full font-bold uppercase tracking-widest text-xs shadow-sm hover:shadow-lg transition-all cursor-pointer"
             >
               Retry Connection
             </button>
@@ -647,7 +649,7 @@ export default function App() {
   // Disabled Account View
   if (user && profile && profile.isDisabled) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
           <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
@@ -656,7 +658,7 @@ export default function App() {
           <p className="text-gray-500 leading-relaxed text-sm">Hello {profile.displayName}, your registration has been disabled by an administrator. Please contact your coordinator to restore access.</p>
           <button 
             onClick={() => auth.signOut()}
-            className="text-[#5A5A40] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
+            className="text-[#123B66] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
           >
             Sign Out
           </button>
@@ -669,14 +671,14 @@ export default function App() {
   const isRegistering = sessionStorage.getItem('kcfc_registration_in_progress') === 'true';
   if (user && !user.emailVerified && profile && !profile.isEmailVerified && !profile.isVerified && !isRegistering) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
           <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           </div>
           <h1 className="text-2xl font-serif">Verify Your Email</h1>
           <p className="text-gray-500 text-sm leading-relaxed">
-            Welcome to the KCFC Portal! We have sent an email verification link to <strong className="text-[#5A5A40]">{user.email}</strong>. Please check your inbox (and spam folder) and verify your email.
+            Welcome to the KCFC Portal! We have sent an email verification link to <strong className="text-[#123B66]">{user.email}</strong>. Please check your inbox (and spam folder) and verify your email.
           </p>
           <p className="text-xs text-amber-600 font-bold">
             Note: Once verified, your account will be visible to administrator coordinators for approval.
@@ -700,7 +702,7 @@ export default function App() {
                   alert(e.message || "Something went wrong.");
                 }
               }}
-              className="w-full py-4 bg-[#5A5A40] text-white rounded-full font-bold uppercase tracking-widest text-xs shadow-sm hover:shadow-lg transition-all cursor-pointer"
+              className="w-full py-4 bg-[#123B66] text-white rounded-full font-bold uppercase tracking-widest text-xs shadow-sm hover:shadow-lg transition-all cursor-pointer"
             >
               I Have Verified My Email
             </button>
@@ -713,7 +715,7 @@ export default function App() {
                   alert("Error resending email: " + e.message);
                 }
               }}
-              className="text-[#5A5A40] font-bold uppercase tracking-widest text-[10px] hover:underline pt-2 cursor-pointer"
+              className="text-[#123B66] font-bold uppercase tracking-widest text-[10px] hover:underline pt-2 cursor-pointer"
             >
               Resend Verification Email
             </button>
@@ -735,7 +737,7 @@ export default function App() {
   // Pending Approval View
   if (user && profile && !profile.isVerified && !isRegistering) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f0] p-4 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl">
           <div className="w-20 h-20 bg-yellow-50 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -747,7 +749,7 @@ export default function App() {
               sessionStorage.removeItem('kcfc_registration_in_progress');
               auth.signOut();
             }}
-            className="text-[#5A5A40] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
+            className="text-[#123B66] font-bold uppercase tracking-widest text-xs hover:underline cursor-pointer"
           >
             Sign Out
           </button>
@@ -766,11 +768,12 @@ export default function App() {
           "min-h-screen transition-all duration-300",
           isDarkMode 
             ? "dark bg-[#141411] text-[#f5f5f0]" 
-            : "bg-[#f5f5f0] text-[#1a1a1a]"
+            : "bg-[#F7F9FC] text-[#1a1a1a]"
         )}>
           {isAuthReady && <Navbar />}
           <main className={cn("min-h-screen", isAuthReady ? "pt-20 pb-24 md:pb-8 px-2 sm:px-4" : "")}>
-            <Routes>
+            <Suspense fallback={<div className="min-h-[40vh] flex items-center justify-center text-sm text-slate-500">Loading KCFC Portal…</div>}>
+              <Routes>
               <Route path="/login" element={!isAuthReady ? <Login /> : <Navigate to="/" replace />} />
               <Route path="/" element={isAuthReady ? <Dashboard /> : <Navigate to="/login" />} />
               <Route path="/polls" element={isAuthReady ? <Polls /> : <Navigate to="/login" />} />
@@ -784,7 +787,8 @@ export default function App() {
               <Route path="/inbox" element={isAuthReady ? <Inbox /> : <Navigate to="/login" />} />
               {/* Fallback for deep-linking unmatched routes or /index.html pathing */}
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+              </Routes>
+            </Suspense>
           </main>
 
           {/* Visual FCM Foreground Notification Banner */}
@@ -794,9 +798,9 @@ export default function App() {
               className="fixed bottom-6 right-6 z-50 max-w-sm w-[90%] sm:w-full bg-white/80 dark:bg-[#11110f]/85 p-5 rounded-2xl border border-gray-200 dark:border-white/10 backdrop-blur-xl shadow-2xl flex gap-4 overflow-hidden"
               style={{ animation: 'bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}
             >
-              <div className="absolute inset-x-0 top-0 h-1 bg-[#5A5A40]" />
-              <div className="p-2.5 bg-[#5A5A40]/10 rounded-xl h-fit">
-                <Megaphone className="w-5 h-5 text-[#5A5A40]" />
+              <div className="absolute inset-x-0 top-0 h-1 bg-[#123B66]" />
+              <div className="p-2.5 bg-[#123B66]/10 rounded-xl h-fit">
+                <Megaphone className="w-5 h-5 text-[#123B66]" />
               </div>
               <div className="flex-1 space-y-1">
                 <div className="flex justify-between items-start">
@@ -815,7 +819,7 @@ export default function App() {
                       setFcmNotification(null);
                       window.location.hash = "/announcements";
                     }}
-                    className="text-[9px] font-bold text-[#5A5A40] dark:text-[#8a8a65] uppercase tracking-widest hover:underline cursor-pointer"
+                    className="text-[9px] font-bold text-[#123B66] dark:text-[#8a8a65] uppercase tracking-widest hover:underline cursor-pointer"
                   >
                     View Announcements →
                   </button>
@@ -879,7 +883,7 @@ export default function App() {
                       setNewMessageNotification(null);
                       window.location.href = "/admin#messages-inbox-section";
                     }}
-                    className="text-[9px] font-extrabold text-[#5A5A40] dark:text-[#8a8a65] uppercase tracking-widest bg-[#5A5A40]/10 dark:bg-[#8a8a65]/10 px-2.5 py-1.5 rounded-lg hover:bg-[#5A5A40]/20 dark:hover:bg-[#8a8a65]/25 transition-all cursor-pointer"
+                    className="text-[9px] font-extrabold text-[#123B66] dark:text-[#8a8a65] uppercase tracking-widest bg-[#123B66]/10 dark:bg-[#8a8a65]/10 px-2.5 py-1.5 rounded-lg hover:bg-[#123B66]/20 dark:hover:bg-[#8a8a65]/25 transition-all cursor-pointer"
                   >
                     Open Inbox &rarr;
                   </button>
@@ -892,7 +896,7 @@ export default function App() {
           {showPwaNotificationPrompt && (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300 animate-fade-in">
               <div className="w-full max-w-sm bg-[#fafafa]/90 dark:bg-[#121210]/95 backdrop-blur-xl rounded-2xl p-6 shadow-2xl border border-gray-200/50 dark:border-white/10 text-center flex flex-col items-center">
-                <div className="p-3 bg-[#5A5A40]/10 text-[#5A5A40] rounded-full mb-4">
+                <div className="p-3 bg-[#123B66]/10 text-[#123B66] rounded-full mb-4">
                   <Bell className="w-8 h-8 animate-pulse" />
                 </div>
                 <h3 className="font-serif font-bold text-lg text-gray-900 dark:text-gray-50 mb-2">
@@ -905,7 +909,7 @@ export default function App() {
                   <button
                     onClick={handleEnablePwaNotifications}
                     disabled={enablingPwaNotifications}
-                    className="w-full py-2.5 px-4 bg-[#5a5a40] hover:bg-[#484833] text-white rounded-xl text-xs font-semibold shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-2.5 px-4 bg-[#123b66] hover:bg-[#484833] text-white rounded-xl text-xs font-semibold shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {enablingPwaNotifications ? (
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -269,13 +269,96 @@ service cloud.firestore {
 
     // --- Accounting Collection ---
     match /accounting/{transactionId} {
-      function canAccessAccounting() {
+      function accountingRoles() {
+        let data = getUserData();
+        return data != null ? data.get('roles', []) : [];
+      }
+
+      function isAccountingMember() {
+        let data = getUserData();
+        return isSignedIn() && (
+          isBootstrapAdmin() || (
+            data != null &&
+            data.get('isVerified', false) == true &&
+            data.get('isDisabled', false) == false
+          )
+        );
+      }
+
+      function canReadAccounting() {
+        let roles = accountingRoles();
+        return isAccountingMember() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'vice_president' in roles ||
+          'treasurer' in roles ||
+          'auditor' in roles
+        );
+      }
+
+      function canEditAccounting() {
+        let roles = accountingRoles();
+        return isAccountingMember() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'treasurer' in roles
+        );
+      }
+
+      function canApproveAccounting() {
+        let roles = accountingRoles();
+        return isAccountingMember() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'auditor' in roles
+        );
+      }
+
+      function hasValidAccountingShape(data) {
+        return data.type in ['income', 'expense'] &&
+               data.amount is number &&
+               data.category is string;
+      }
+
+      function isEditorUpdate() {
+        return canEditAccounting() &&
+               hasValidAccountingShape(incoming()) &&
+               incoming().diff(existing()).affectedKeys().hasOnly([
+                 'type', 'amount', 'category', 'description', 'date', 'receiptUrl',
+                 'updatedAt', 'lastModifiedBy', 'lastModifiedByName'
+               ]);
+      }
+
+      function isApprovalUpdate() {
+        return canApproveAccounting() &&
+               hasValidAccountingShape(incoming()) &&
+               incoming().get('status', '') == 'approved' &&
+               incoming().get('approvedBy', '') == request.auth.uid &&
+               incoming().diff(existing()).affectedKeys().hasOnly([
+                 'status', 'approvedBy', 'approvedByName', 'updatedAt'
+               ]);
+      }
+
+      allow read: if canReadAccounting();
+      allow create: if canEditAccounting() &&
+                    hasValidAccountingShape(incoming()) &&
+                    incoming().get('processedBy', '') == request.auth.uid;
+      allow update: if isEditorUpdate() || isApprovalUpdate();
+      allow delete: if canEditAccounting();
+    }
+
+    // --- Accounting Categories Collection ---
+    match /accounting_categories/{categoryId} {
+      function canEditAccountingCategories() {
         let data = getUserData();
         let roles = data != null ? data.get('roles', []) : [];
         return isSignedIn() && (
           isBootstrapAdmin() || (
             data != null &&
-            data.get('isVerified', false) == true && 
+            data.get('isVerified', false) == true &&
             data.get('isDisabled', false) == false &&
             (
               'admin' in roles ||
@@ -285,24 +368,9 @@ service cloud.firestore {
           )
         );
       }
-      
-      function isValidTransaction(data) {
-        return data.type in ['income', 'expense'] &&
-               data.amount is number &&
-               data.category is string &&
-               data.processedBy == request.auth.uid;
-      }
 
-      allow read: if canAccessAccounting();
-      allow create: if canAccessAccounting() && isValidTransaction(incoming());
-      allow update: if canAccessAccounting() && isValidTransaction(incoming());
-      allow delete: if canAccessAccounting();
-    }
-
-    // --- Accounting Categories Collection ---
-    match /accounting_categories/{categoryId} {
       allow read: if isApproved();
-      allow write: if isAdmin();
+      allow write: if canEditAccountingCategories();
     }
 
     // --- Messages Collection ---

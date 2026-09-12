@@ -1,1544 +1,914 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
+import {
+  ArrowRight,
+  CalendarCheck2,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  Clock3,
+  Edit3,
+  Eye,
+  EyeOff,
+  Grid3X3,
+  ListChecks,
+  Plus,
+  RefreshCcw,
+  Save,
+  Send,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  UserCheck,
+  UsersRound,
+  X,
+} from 'lucide-react';
+import { db } from '../lib/firebase';
 import { useAuth } from '../App';
-import { collection, query, where, getDocs, getDoc, addDoc, updateDoc, doc, serverTimestamp, orderBy, deleteDoc, writeBatch, onSnapshot } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Poll, PollResponse, PollStatus, UserProfile } from '../types';
+import { Poll, PollResponse, UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { CommitteeAssignments } from '../components/CommitteeAssignments';
-import { motion } from 'motion/react';
-import { CheckCircle2, XCircle, HelpCircle, Calendar, Plus, Trash2, ChevronDown, Play, Pause, Settings, Check, Mail, Loader2, Copy, User, BookOpen, Users, Lock, Share2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { sendGmail } from '../lib/gmail';
+import LegacyPolls from './LegacyPolls';
+import {
+  buildAvailabilityCompletionCreatorPlan,
+  buildAvailabilityRequestCreatorPlan,
+  buildPublishedRosterCreatorPlan,
+} from '../lib/liturgicalCreatorPlan';
+import { appendCommunicationNotificationsToBatch } from '../lib/communicationFirestore';
+import { buildLiturgicalPublicationPlan } from '../lib/liturgicalPublicationPlan';
+
+type PageMode = 'availability' | 'leader' | 'legacy';
+type LeaderPanel = 'progress' | 'matrix' | 'assignments';
+type ExtendedPoll = Poll & {
+  rosterPublished?: boolean;
+  rosterPublishedAt?: unknown;
+  rosterPublishedBy?: string;
+  rosterPublishedByName?: string;
+  publicationMode?: 'explicit';
+  lastPublishedAssignments?: Record<string, Record<string, string>>;
+  rosterRevision?: number;
+  updatedAt?: unknown;
+};
+
+type CreateForm = {
+  title: string;
+  description: string;
+  endDate: string;
+  massDates: { date: string; description?: string }[];
+};
+
+const memberMinistries = ['lector_commentator', 'usher', 'altar_server'];
+const leaderRoles = [
+  'admin',
+  'president',
+  'vice_president',
+  'secretary',
+  'auditor',
+  'lector_commentator_leader',
+  'usher_leader',
+  'altar_server_leader',
+];
+
+const ROLE_GROUPS = [
+  {
+    key: 'lector_commentator',
+    label: 'Lector & Commentator',
+    roles: ['Commentator', 'Lector 1', 'Lector 2'],
+  },
+  {
+    key: 'altar_server',
+    label: 'Altar Servers',
+    roles: ['Altar Server 1', 'Altar Server 2', 'Altar Server 3', 'Altar Server 4'],
+  },
+  {
+    key: 'usher',
+    label: 'Ushers',
+    roles: ['Usher 1', 'Usher 2', 'Usher 3', 'Usher 4'],
+  },
+] as const;
+
+const localDateTimeValue = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const parseDateValue = (value?: string): Date | null => {
+  if (!value) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDate = (value?: string, includeYear = false) => {
+  const date = parseDateValue(value);
+  if (!date) return value || 'Date TBA';
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  }).format(date);
+};
+
+const formatDeadline = (value?: string) => {
+  const date = parseDateValue(value);
+  if (!date) return 'No deadline';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const ministryLabel = (value: string) => {
+  if (value === 'lector_commentator') return 'Lector & Commentator';
+  if (value === 'usher') return 'Usher';
+  if (value === 'altar_server') return 'Altar Server';
+  return value.replaceAll('_', ' ');
+};
+
+const latestResponsesByUser = (responses: PollResponse[]) => {
+  const map = new Map<string, PollResponse>();
+  responses.forEach((response) => {
+    const current = map.get(response.userId);
+    const responseTime = parseDateValue(response.submittedAt)?.getTime() || 0;
+    const currentTime = parseDateValue(current?.submittedAt)?.getTime() || 0;
+    if (!current || responseTime >= currentTime) map.set(response.userId, response);
+  });
+  return map;
+};
+
+const massDatesForPoll = (poll: Poll) =>
+  poll.massDates?.length
+    ? poll.massDates
+    : poll.massDate
+      ? [{ date: poll.massDate, description: poll.description }]
+      : [];
+
+const assignedUserIds = (poll: Poll) => {
+  const ids = new Set<string>();
+  Object.values(poll.assignments || {}).forEach((dateAssignments) => {
+    Object.keys(dateAssignments || {}).forEach((uid) => ids.add(uid));
+  });
+  return ids;
+};
 
 export default function Polls() {
   const { profile, user } = useAuth();
   const [searchParams] = useSearchParams();
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [userResponses, setUserResponses] = useState<Record<string, PollResponse>>({});
+  const focusedPollId = searchParams.get('id');
+  const [mode, setMode] = useState<PageMode>('availability');
+  const [polls, setPolls] = useState<ExtendedPoll[]>([]);
+  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [responses, setResponses] = useState<Record<string, PollResponse[]>>({});
   const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({});
-  const [notifying, setNotifying] = useState<string | null>(null);
-  const [showingCreate, setShowingCreate] = useState(false);
-  const [editingPoll, setEditingPoll] = useState<Poll | null>(null);
-  const [pollResponses, setPollResponses] = useState<Record<string, PollResponse[]>>({});
-  const [filter, setFilter] = useState<'latest' | 'all' | 'core' | 'committee'>('latest');
-  const [expandedPolls, setExpandedPolls] = useState<Record<string, boolean>>({});
-  const [copiedPollId, setCopiedPollId] = useState<string | null>(null);
-  const [formSubmitting, setFormSubmitting] = useState(false);
-
-  const handleSharePoll = (pollId: string, pollTitle: string) => {
-    const shareUrl = `${window.location.origin}/?pollId=${pollId}`;
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setCopiedPollId(pollId);
-      setTimeout(() => setCopiedPollId(null), 2000);
-    }).catch(err => {
-      console.error("[ERROR] Failed to copy deep-link:", err);
-      alert(`Could not write to clipboard automatically. Here is the link to copy:\n${shareUrl}`);
-    });
-  };
-
-  const [formData, setFormData] = useState({
+  const [draftSelections, setDraftSelections] = useState<Record<string, string[]>>({});
+  const [savingPollId, setSavingPollId] = useState<string | null>(null);
+  const [savedPollId, setSavedPollId] = useState<string | null>(null);
+  const [expandedLeaderPoll, setExpandedLeaderPoll] = useState<string | null>(null);
+  const [leaderPanel, setLeaderPanel] = useState<Record<string, LeaderPanel>>({});
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [publishingPollId, setPublishingPollId] = useState<string | null>(null);
+  const [newMassDate, setNewMassDate] = useState('');
+  const [newMassDescription, setNewMassDescription] = useState('');
+  const [form, setForm] = useState<CreateForm>(() => ({
     title: '',
-    description: '',
-    category: 'core_member' as 'core_member' | 'committee',
-    createdBy: '',
-    massDate: '',
-    massDates: [] as { date: string, description?: string }[],
-    startDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-    endDate: format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm"),
-  });
+    description: 'Please select every Mass where you are available to serve in your liturgical ministry.',
+    endDate: localDateTimeValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
+    massDates: [],
+  }));
 
-  const canManage = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'kitchen_leader', 'cleaning_leader'].includes(r)) || profile?.email === 'kcfc.jp@gmail.com';
-  const canDelete = (profile?.roles || []).some(r => ['admin', 'president'].includes(r));
+  const canLead = (profile?.roles || []).some((role) => leaderRoles.includes(role)) || profile?.email === 'kcfc.jp@gmail.com';
+  const isLiturgicalMember = (profile?.ministries || []).some((ministry) => memberMinistries.includes(ministry));
+  const hasLegacyPollAccess = Boolean(profile?.isCoreMember || canLead);
 
   useEffect(() => {
-    // 1. Listen to users
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      const fetchedUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
-      setUsers(fetchedUsers.filter(u => u.email !== 'kcfc.jp@gmail.com'));
-    }, (err) => {
-      console.error("Error listening to users in Polls page:", err);
-    });
+    const unsubMembers = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        setMembers(snapshot.docs.map((item) => ({ uid: item.id, ...item.data() } as UserProfile)));
+      },
+      (error) => console.error('Availability: failed to load members', error),
+    );
 
-    // 2. Listen to polls
-    const q = query(collection(db, 'polls'), orderBy('createdAt', 'desc'));
-    const unsubPolls = onSnapshot(q, async (snap) => {
-      const fetchedPolls = snap.docs.map(d => ({ id: d.id, ...d.data() } as Poll));
-      setPolls(fetchedPolls);
+    const unsubPolls = onSnapshot(
+      collection(db, 'polls'),
+      async (snapshot) => {
+        const fetched = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as ExtendedPoll));
+        fetched.sort((a, b) => {
+          const aTime = parseDateValue(a.createdAt)?.getTime() || 0;
+          const bTime = parseDateValue(b.createdAt)?.getTime() || 0;
+          return bTime - aTime;
+        });
+        setPolls(fetched);
 
-      if (user) {
-        // Fetch responses (still one-shot but triggered on poll changes)
-        const responses: Record<string, PollResponse> = {};
-        const allResponses: Record<string, PollResponse[]> = {};
-
-        for (const poll of fetchedPolls) {
-          try {
-            const respQ = query(collection(db, `polls/${poll.id}/responses`));
-            const respSnap = await getDocs(respQ);
-            const rawResps = respSnap.docs.map(d => ({ id: d.id, ...d.data() } as PollResponse));
-            
-            const uniqueRespsMap = new Map<string, PollResponse>();
-            for (const r of rawResps) {
-              const existing = uniqueRespsMap.get(r.userId);
-              if (!existing || new Date(r.submittedAt).getTime() > new Date(existing.submittedAt).getTime()) {
-                uniqueRespsMap.set(r.userId, r);
+        const responseEntries = await Promise.all(
+          fetched
+            .filter((poll) => poll.category === 'committee')
+            .map(async (poll) => {
+              try {
+                const responseSnapshot = await getDocs(collection(db, 'polls', poll.id, 'responses'));
+                const raw = responseSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as PollResponse));
+                return [poll.id, Array.from(latestResponsesByUser(raw).values())] as const;
+              } catch (error) {
+                console.error(`Availability: failed to load responses for ${poll.id}`, error);
+                return [poll.id, []] as const;
               }
-            }
-            const resps = Array.from(uniqueRespsMap.values());
-            
-            allResponses[poll.id] = resps;
-            
-            const myResp = resps.find(r => r.userId === user.uid);
-            if (myResp) {
-              responses[poll.id] = myResp;
-            }
-          } catch (err) {
-            console.warn(`Could not load responses for poll ${poll.id}:`, err);
-          }
-        }
-        setUserResponses(responses);
-        setPollResponses(allResponses);
-      }
-      setLoading(false);
-
-      // Scroll to poll if id is in URL
-      const pollId = searchParams.get('id');
-      if (pollId) {
-        setExpandedPolls(prev => ({ ...prev, [pollId]: true }));
-        setTimeout(() => {
-          const el = document.getElementById(`poll-${pollId}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            el.classList.add('ring-2', 'ring-[#5A5A40]', 'ring-offset-4');
-            setTimeout(() => el.classList.remove('ring-2', 'ring-[#5A5A40]', 'ring-offset-4'), 3000);
-          }
-        }, 500);
-      }
-    }, (err) => {
-      console.error("Error listening to polls in Polls page:", err);
-      setLoading(false);
-    });
+            }),
+        );
+        setResponses(Object.fromEntries(responseEntries));
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Availability: failed to load polls', error);
+        setLoading(false);
+      },
+    );
 
     return () => {
-      unsubUsers();
+      unsubMembers();
       unsubPolls();
     };
-  }, [user]);
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canManage || formSubmitting) return;
+  const myResponses = useMemo(() => {
+    if (!user) return {} as Record<string, PollResponse>;
+    const result: Record<string, PollResponse> = {};
+    Object.entries(responses).forEach(([pollId, pollResponses]) => {
+      const response = pollResponses.find((item) => item.userId === user.uid);
+      if (response) result[pollId] = response;
+    });
+    return result;
+  }, [responses, user]);
 
-    if (formData.category === 'core_member') {
-      const duplicate = polls.find(p => p.category === formData.category && p.massDate === formData.massDate && (!editingPoll || p.id !== editingPoll.id));
-      if (duplicate) {
-        alert(`A poll for the Mass date ${formData.massDate} already exists in this category.`);
-        return;
-      }
-    }
-
-    setFormSubmitting(true);
-
-    try {
-      const isDraft = (e.nativeEvent as any).submitter?.name === 'draft';
-      const dataToSave = {
-        ...formData,
-        isMultiSelect: formData.category === 'committee',
-        type: 'weekly',
-        status: editingPoll ? editingPoll.status : (isDraft ? 'draft' : 'active'),
-        createdBy: user?.uid,
-        creatorName: profile?.displayName,
-        updatedAt: serverTimestamp()
-      };
-
-      if (editingPoll) {
-        const isStarted = editingPoll.status !== 'draft' && new Date() >= new Date(editingPoll.startDate);
-        if (isStarted) {
-          if (new Date(formData.endDate) < new Date()) {
-            alert("End date cannot be set earlier than the current time for an active poll.");
-            setFormSubmitting(false);
-            return;
-          }
-        }
-
-        await updateDoc(doc(db, 'polls', editingPoll.id), dataToSave);
-        setPolls(prev => prev.map(p => p.id === editingPoll.id ? { ...p, ...dataToSave } as Poll : p));
-      } else {
-        const docRef = await addDoc(collection(db, 'polls'), {
-          ...dataToSave,
-          createdAt: serverTimestamp()
-        });
-
-        // Create notifications for all users (or targeted users) - ONLY if not draft
-        if (!isDraft) {
-          try {
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const batch = writeBatch(db);
-            usersSnap.docs.forEach(userDoc => {
-              const userData = userDoc.data();
-              if (userData.isDisabled) return;
-              if (!userData.isVerified) return;
-
-              // Target logic
-              let shouldNotify = false;
-              if (formData.category === 'core_member') {
-                shouldNotify = !!userData.isCoreMember;
-              } else if (formData.category === 'committee') {
-                const committeeRoles = ['lector_commentator_leader', 'usher_leader', 'altar_server_leader'];
-                const committeeMinistries = ['lector_commentator', 'usher', 'altar_server'];
-                const userRoles = userData.roles || [];
-                const userMinistries = userData.ministries || [];
-                shouldNotify = userRoles.some((r: string) => committeeRoles.includes(r)) || userMinistries.some((m: string) => committeeMinistries.includes(m));
-              }
-
-              if (shouldNotify) {
-                const notificationRef = doc(collection(db, 'notifications'));
-                batch.set(notificationRef, {
-                  userId: userDoc.id,
-                  title: `New ${formData.category === 'core_member' ? 'Core Group' : formData.category === 'committee' ? 'Committee' : 'Community'} Poll`,
-                  message: `New poll published: ${formData.title}`,
-                  type: 'system',
-                  status: 'unread',
-                  link: '/polls',
-                  createdAt: serverTimestamp()
-                });
-              }
-            });
-            await batch.commit();
-          } catch (err) {
-            console.error("Failed to create notifications", err);
-          }
-        }
-
-        const newPollRecord: Poll = {
-          id: docRef.id,
-          ...dataToSave,
-          createdAt: new Date().toISOString()
-        } as unknown as Poll;
-        setPolls(prev => [newPollRecord, ...prev]);
-      }
-      setShowingCreate(false);
-      setEditingPoll(null);
-      setFormData({ 
-        title: '', 
-        description: '', 
-        category: 'core_member' as 'core_member' | 'committee', 
-        createdBy: '',
-        massDate: '', 
-        massDates: [] as { date: string, description?: string }[], 
-        startDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"), 
-        endDate: format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm") 
+  useEffect(() => {
+    setDraftSelections((current) => {
+      const next = { ...current };
+      Object.entries(myResponses).forEach(([pollId, response]) => {
+        if (!(pollId in next)) next[pollId] = response.selectedOptions || [];
       });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'polls');
-    } finally {
-      setFormSubmitting(false);
-    }
+      return next;
+    });
+  }, [myResponses]);
+
+  const focusPollTarget = (prefix: 'availability' | 'leader-availability', targetId: string) => {
+    window.setTimeout(() => {
+      const target = document.getElementById(`${prefix}-${targetId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    }, 150);
   };
 
-  const checkAndNotifyCoreCompletion = async (pollId: string) => {
-    try {
-      const pollRef = doc(db, 'polls', pollId);
-      const pollSnap = await getDoc(pollRef);
-      if (!pollSnap.exists()) return;
-      const pollData = pollSnap.data() as Poll;
-
-      // Get all active, verified, enabled users excluding kcfc.jp@gmail.com
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const activeUsers = usersSnap.docs
-        .map(d => ({ uid: d.id, ...d.data() } as UserProfile))
-        .filter(u => !u.isDisabled && u.isVerified && u.email !== 'kcfc.jp@gmail.com');
-
-      let eligibleUids: string[] = [];
-      if (pollData.category === 'core_member') {
-        eligibleUids = activeUsers.filter(u => u.isCoreMember).map(u => u.uid);
-      } else if (pollData.category === 'committee') {
-        eligibleUids = activeUsers
-          .filter(u => u.ministries?.some(m => ['lector_commentator', 'usher', 'altar_server', 'ppt'].includes(m)))
-          .map(u => u.uid);
-      } else {
-        eligibleUids = activeUsers.map(u => u.uid);
-      }
-
-      if (eligibleUids.length === 0) return;
-
-      // Get all responses
-      const respQ = collection(db, `polls/${pollId}/responses`);
-      const respSnap = await getDocs(respQ);
-      const respondedUids = new Set(
-        respSnap.docs
-          .map(d => d.data() as PollResponse)
-          .filter(r => r.attendance !== null && r.attendance !== undefined)
-          .map(r => r.userId)
-      );
-
-      // Check if all eligible members have responded
-      const allDone = eligibleUids.every(uid => respondedUids.has(uid));
-
-      if (allDone) {
-        // Find admins & presidents to notify
-        const adminsSnap = await getDocs(collection(db, 'users'));
-        const adminUsers = adminsSnap.docs.filter(d => {
-          const roles = d.data().roles || [];
-          return roles.includes('admin') || roles.includes('president');
-        });
-
-        const notifyUids = new Set<string>();
-        if (pollData.createdBy) notifyUids.add(pollData.createdBy);
-        adminUsers.forEach(d => notifyUids.add(d.id));
-
-        const batch = writeBatch(db);
-        notifyUids.forEach(uid => {
-          const notificationRef = doc(collection(db, 'notifications'));
-          batch.set(notificationRef, {
-            userId: uid,
-            title: `Poll Response Completed`,
-            message: `All eligible members have responded to: "${pollData.title}". You can now close the poll and review results.`,
-            type: 'system',
-            status: 'unread',
-            link: pollData.category === 'core_member' ? '/duties?tab=core' : '/duties?tab=liturgical',
-            createdAt: serverTimestamp()
-          });
-        });
-        await batch.commit();
-      }
-    } catch (err) {
-      console.error("Error in checkAndNotifyCoreCompletion", err);
-    }
-  };
-
-  const handleResponse = async (pollId: string, attendance?: 'yes' | 'no' | 'maybe', selectedOption?: string, toiletOk?: boolean) => {
-    if (!user || !profile || isSubmitting[pollId]) return;
-    if (user.email?.toLowerCase() === 'kcfc.jp@gmail.com' || profile.email?.toLowerCase() === 'kcfc.jp@gmail.com') {
-      alert("As the primary administrator, you are excluded from public poll participation.");
+  useEffect(() => {
+    const targetId = searchParams.get('id');
+    if (!targetId || polls.length === 0) return;
+    const target = polls.find((poll) => poll.id === targetId);
+    if (!target) return;
+    if (target.category === 'core_member') {
+      setMode('legacy');
       return;
     }
-
-    const poll = polls.find(p => p.id === pollId);
-    if (!poll) return;
-
-    // Strict access check for voting
-    const isManager = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r));
-    if (!isManager) {
-      if (poll.category === 'core_member' && !profile?.isCoreMember) {
-        alert("You are not authorized to vote on Chore polls.");
-        return;
-      }
-      if (poll.category === 'committee') {
-        const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
-        const isCommitteeMember = profile?.ministries?.some(m => committeeMinistries.includes(m));
-        if (!isCommitteeMember) {
-          alert("You are not authorized to vote on Liturgical Committee polls.");
-          return;
-        }
-      }
+    if (canLead && searchParams.get('leader') === '1') {
+      setMode('leader');
+      setExpandedLeaderPoll(targetId);
+      focusPollTarget('leader-availability', targetId);
+      return;
     }
-    
-    setIsSubmitting(prev => ({ ...prev, [pollId]: true }));
-    
+    setMode('availability');
+    focusPollTarget('availability', targetId);
+  }, [polls, searchParams, canLead]);
+
+  const memberPolls = useMemo(() => {
+    if (!isLiturgicalMember && !canLead) return [];
+    return polls.filter((poll) => poll.category === 'committee' && poll.status !== 'draft');
+  }, [canLead, isLiturgicalMember, polls]);
+
+  const activeMemberPolls = useMemo(() => {
+    const now = new Date();
+    return memberPolls.filter((poll) => poll.status === 'active' && (!parseDateValue(poll.endDate) || parseDateValue(poll.endDate)! >= now));
+  }, [memberPolls]);
+
+  const recentMemberPolls = useMemo(() => memberPolls.filter((poll) => poll.status !== 'active').slice(0, 4), [memberPolls]);
+
+  const eligibleMembers = useMemo(
+    () => members.filter((member) =>
+      member.email !== 'kcfc.jp@gmail.com' &&
+      member.isVerified &&
+      !member.isDisabled &&
+      (member.ministries || []).some((ministry) => memberMinistries.includes(ministry)),
+    ),
+    [members],
+  );
+
+  const checkAndNotifyCompletion = async (poll: Poll) => {
     try {
-      if (poll.status !== 'active') {
-        setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
-        return;
-      }
+      const responseSnapshot = await getDocs(collection(db, 'polls', poll.id, 'responses'));
+      const responseMap = latestResponsesByUser(responseSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as PollResponse)));
+      const allDone = eligibleMembers.length > 0 && eligibleMembers.every((member) => responseMap.has(member.uid));
+      if (!allDone) return;
 
-      const now = new Date();
-      // Allow a 5-minute grace period for "not started" to account for clock skew
-      const pollStart = new Date(poll.startDate);
-      if (now < new Date(pollStart.getTime() - 5 * 60000)) {
-        alert("This poll has not started yet.");
-        setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
-        return;
-      }
-      if (now > new Date(poll.endDate)) {
-        alert("This poll has ended.");
-        setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
-        return;
-      }
+      const pollRecord = polls.find((item) => item.id === poll.id) as ExtendedPoll & { availabilityCompletionNotifiedAt?: unknown };
+      if (pollRecord?.availabilityCompletionNotifiedAt) return;
 
-      const existingResp = userResponses[pollId];
-      let newSelectedOptions = existingResp?.selectedOptions || [];
-      let newAttendance = attendance || existingResp?.attendance || null;
-      let newToiletOk = toiletOk !== undefined ? toiletOk : (existingResp?.toiletOk || false);
+      const creatorPlan = buildAvailabilityCompletionCreatorPlan({
+        members,
+        pollId: poll.id,
+        pollTitle: poll.title,
+        createdBy: poll.createdBy,
+      });
 
-      // Deselect and Change confirmations logic
-      const isDeselect = existingResp && existingResp.attendance && existingResp.attendance === attendance;
-      const isChange = existingResp && existingResp.attendance && existingResp.attendance !== attendance;
+      const batch = writeBatch(db);
+      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
+      batch.update(doc(db, 'polls', poll.id), { availabilityCompletionNotifiedAt: serverTimestamp() });
+      await batch.commit();
+    } catch (error) {
+      console.error('Availability: completion notification failed', error);
+    }
+  };
 
-      if (isDeselect) {
-        const confirmed = window.confirm("Are you sure you want to deselect your response and remove your RSVP?");
-        if (!confirmed) {
-          setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
-          return;
-        }
-        newAttendance = null;
-      } else if (isChange) {
-        const confirmed = window.confirm(`Are you sure you want to change your response from "${existingResp.attendance.toUpperCase()}" to "${attendance?.toUpperCase()}"?`);
-        if (!confirmed) {
-          setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
-          return;
-        }
-        newAttendance = attendance || null;
-      } else {
-        newAttendance = attendance || null;
-      }
+  const saveAvailability = async (poll: Poll, selectedOptions: string[]) => {
+    if (!user || !profile || savingPollId) return;
+    const deadline = parseDateValue(poll.endDate);
+    if (poll.status !== 'active' || (deadline && deadline < new Date())) return;
 
-      if (poll.isMultiSelect && selectedOption) {
-        if (newSelectedOptions.includes(selectedOption)) {
-          newSelectedOptions = newSelectedOptions.filter(o => o !== selectedOption);
-        } else {
-          newSelectedOptions = [...newSelectedOptions, selectedOption];
-        }
-      }
-
-      const responseData: PollResponse = {
-        pollId,
+    setSavingPollId(poll.id);
+    setSavedPollId(null);
+    try {
+      const existing = myResponses[poll.id];
+      const responseData = {
+        pollId: poll.id,
         userId: user.uid,
         userDisplayName: profile.displayName,
-        attendance: newAttendance as any,
-        selectedOptions: newSelectedOptions,
-        toiletOk: newToiletOk,
-        submittedAt: new Date().toISOString()
+        attendance: selectedOptions.length > 0 ? 'yes' : 'no',
+        selectedOptions,
+        submittedAt: serverTimestamp(),
       };
 
-      if (existingResp?.id) {
-        await updateDoc(doc(db, `polls/${pollId}/responses`, existingResp.id), {
-          attendance: newAttendance,
-          selectedOptions: newSelectedOptions,
-          toiletOk: newToiletOk,
-          submittedAt: serverTimestamp()
-        });
+      let responseId = existing?.id;
+      if (existing?.id) {
+        await updateDoc(doc(db, 'polls', poll.id, 'responses', existing.id), responseData);
       } else {
-        const newDoc = await addDoc(collection(db, `polls/${pollId}/responses`), {
-          ...responseData,
-          attendance: newAttendance,
-          toiletOk: newToiletOk,
-          submittedAt: serverTimestamp()
-        });
-        responseData.id = newDoc.id;
+        const created = await addDoc(collection(db, 'polls', poll.id, 'responses'), responseData);
+        responseId = created.id;
       }
 
-      setUserResponses(prev => ({
-        ...prev,
-        [pollId]: { ...responseData, id: existingResp?.id || responseData.id } as PollResponse
-      }));
+      const optimistic: PollResponse = {
+        ...responseData,
+        id: responseId,
+        attendance: selectedOptions.length > 0 ? 'yes' : 'no',
+        submittedAt: new Date().toISOString(),
+      } as PollResponse;
 
-      setPollResponses(prev => {
-        const current = prev[pollId] || [];
-        const filtered = current.filter(r => r.userId !== user.uid);
-        return {
-          ...prev,
-          [pollId]: [...filtered, { ...responseData, id: existingResp?.id || responseData.id }]
-        };
+      setResponses((current) => {
+        const currentPollResponses = current[poll.id] || [];
+        const withoutMine = currentPollResponses.filter((item) => item.userId !== user.uid);
+        return { ...current, [poll.id]: [...withoutMine, optimistic] };
+      });
+      setDraftSelections((current) => ({ ...current, [poll.id]: [...selectedOptions] }));
+      setSavedPollId(poll.id);
+      setTimeout(() => setSavedPollId((current) => current === poll.id ? null : current), 2500);
+      await checkAndNotifyCompletion(poll);
+    } catch (error) {
+      console.error('Availability: failed to save response', error);
+      alert('Your availability could not be saved. Please try again.');
+    } finally {
+      setSavingPollId(null);
+    }
+  };
+
+  const toggleMassSelection = (pollId: string, date: string) => {
+    setDraftSelections((current) => {
+      const selected = current[pollId] || [];
+      const next = selected.includes(date) ? selected.filter((item) => item !== date) : [...selected, date];
+      return { ...current, [pollId]: next };
+    });
+  };
+
+  const addMassDate = () => {
+    if (!newMassDate || form.massDates.some((item) => item.date === newMassDate)) return;
+    setForm((current) => ({
+      ...current,
+      massDates: [...current.massDates, { date: newMassDate, description: newMassDescription.trim() || undefined }]
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    }));
+    setNewMassDate('');
+    setNewMassDescription('');
+  };
+
+  const createAvailabilityRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canLead || !user || !profile || creating) return;
+    if (!form.title.trim() || !form.endDate || form.massDates.length === 0) return;
+
+    setCreating(true);
+    try {
+      const created = await addDoc(collection(db, 'polls'), {
+        type: 'quarterly',
+        category: 'committee',
+        title: form.title.trim(),
+        description: form.description.trim(),
+        massDates: form.massDates,
+        startDate: localDateTimeValue(new Date()),
+        endDate: form.endDate,
+        status: 'active',
+        isMultiSelect: true,
+        createdBy: user.uid,
+        creatorName: profile.displayName,
+        completedAssignments: [],
+        publicationMode: 'explicit',
+        rosterPublished: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
-      // Call completion notifier after writing response
-      await checkAndNotifyCoreCompletion(pollId);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `polls/${pollId}/responses`);
+      const creatorPlan = buildAvailabilityRequestCreatorPlan({
+        eligibleMembers,
+        pollId: created.id,
+        pollTitle: form.title.trim(),
+      });
+      const batch = writeBatch(db);
+      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
+      await batch.commit();
+
+      setForm({
+        title: '',
+        description: 'Please select every Mass where you are available to serve in your liturgical ministry.',
+        endDate: localDateTimeValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
+        massDates: [],
+      });
+      setShowCreate(false);
+      setExpandedLeaderPoll(created.id);
+      setLeaderPanel((current) => ({ ...current, [created.id]: 'progress' }));
+    } catch (error) {
+      console.error('Availability: failed to create request', error);
+      alert('The availability request could not be created. Please try again.');
     } finally {
-      setIsSubmitting(prev => ({ ...prev, [pollId]: false }));
+      setCreating(false);
     }
   };
 
-  const togglePollStatus = async (pollId: string, currentStatus: PollStatus) => {
-    let nextStatus: PollStatus;
-    if (currentStatus === 'draft') {
-      nextStatus = 'active';
-    } else {
-      nextStatus = currentStatus === 'active' ? 'closed' : 'active';
-    }
-
+  const setRequestStatus = async (poll: ExtendedPoll, status: 'active' | 'closed') => {
+    if (!canLead) return;
+    if (status === 'closed' && !window.confirm('Close this availability request? Members will no longer be able to change their availability.')) return;
     try {
-      await updateDoc(doc(db, 'polls', pollId), { status: nextStatus, updatedAt: serverTimestamp() });
-      
-      const updatedPoll = polls.find(p => p.id === pollId);
-      if (updatedPoll) {
-        setPolls(prev => prev.map(p => p.id === pollId ? { ...p, status: nextStatus } : p));
-
-        // If poll is closed and it is a core_member poll, notify creator & admin/president
-        if (nextStatus === 'closed' && updatedPoll.category === 'core_member') {
-          try {
-            const usersQ = query(collection(db, 'users'));
-            const usersSnap = await getDocs(usersQ);
-            const adminOrPres = usersSnap.docs.filter(d => {
-              const roles = d.data().roles || [];
-              return roles.includes('admin') || roles.includes('president');
-            });
-            const notifyUids = new Set<string>();
-            if (updatedPoll.createdBy) notifyUids.add(updatedPoll.createdBy);
-            adminOrPres.forEach(d => notifyUids.add(d.id));
-
-            const batch = writeBatch(db);
-            notifyUids.forEach(uid => {
-              const notificationRef = doc(collection(db, 'notifications'));
-              batch.set(notificationRef, {
-                userId: uid,
-                title: 'Chore Poll Closed',
-                message: `Chore committee poll "${updatedPoll.title}" has been successfully closed. You can proceed with duty assignments.`,
-                type: 'system',
-                status: 'unread',
-                link: '/duties',
-                createdAt: serverTimestamp()
-              });
-            });
-            await batch.commit();
-          } catch (err) {
-            console.error("Failed to notify on chore poll close", err);
-          }
-        }
-
-        // If move from draft to active, send notifications
-        if (currentStatus === 'draft' && nextStatus === 'active') {
-          try {
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const batch = writeBatch(db);
-            usersSnap.docs.forEach(userDoc => {
-              const userData = userDoc.data();
-              if (userData.isDisabled || !userData.isVerified) return;
-
-              let shouldNotify = false;
-              if (updatedPoll.category === 'core_member') {
-                shouldNotify = !!userData.isCoreMember;
-              } else if (updatedPoll.category === 'committee') {
-                const committeeRoles = ['lector_commentator_leader', 'usher_leader', 'altar_server_leader'];
-                const committeeMinistries = ['lector_commentator', 'usher', 'altar_server'];
-                const userRoles = userData.roles || [];
-                const userMinistries = userData.ministries || [];
-                shouldNotify = userRoles.some((r: string) => committeeRoles.includes(r)) || userMinistries.some((m: string) => committeeMinistries.includes(m));
-              }
-
-              if (shouldNotify) {
-                const notificationRef = doc(collection(db, 'notifications'));
-                batch.set(notificationRef, {
-                  userId: userDoc.id,
-                  title: `New ${updatedPoll.category === 'core_member' ? 'Core Group' : updatedPoll.category === 'committee' ? 'Committee' : 'Community'} Poll`,
-                  message: `New poll published: ${updatedPoll.title}`,
-                  type: 'system',
-                  status: 'unread',
-                  link: '/polls',
-                  createdAt: serverTimestamp()
-                });
-              }
-            });
-            await batch.commit();
-          } catch (err) {
-            console.error("Failed to create notifications on publish", err);
-          }
-        }
+      await updateDoc(doc(db, 'polls', poll.id), { status, updatedAt: serverTimestamp() });
+      if (status === 'closed') {
+        setLeaderPanel((current) => ({ ...current, [poll.id]: 'matrix' }));
       }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'polls');
+    } catch (error) {
+      console.error('Availability: failed to update request status', error);
+      alert('The request status could not be changed.');
     }
   };
 
-  const deletePoll = async (pollId: string) => {
-    if (!canDelete) return;
-    const poll = polls.find(p => p.id === pollId);
-    if (!poll) return;
-    
-    // Check for assignments in the poll object
-    const hasAssignments = poll.assignments && Object.keys(poll.assignments).length > 0;
-    
-    // Check for duties linked to this poll
-    let hasDuties = false;
-    let dutiesSnap: any = null;
-    try {
-      const dutiesQ = query(collection(db, 'duties'), where('pollId', '==', poll.id));
-      dutiesSnap = await getDocs(dutiesQ);
-      hasDuties = !dutiesSnap.empty;
-    } catch (e) {
-      console.error("Checking duties failed", e);
-    }
+  const saveAssignment = async (poll: ExtendedPoll, date: string, role: string, userId: string) => {
+    if (!canLead || poll.status !== 'closed') return;
+    const nextAssignments = JSON.parse(JSON.stringify(poll.assignments || {})) as Record<string, Record<string, string>>;
+    if (!nextAssignments[date]) nextAssignments[date] = {};
 
-    let confirmMessage = "Are you sure you want to delete this poll? All responses will be permanently removed.";
-    if (hasAssignments || hasDuties) {
-      confirmMessage = "WARNING: This poll has active liturgical or chore assignments linked to it. If you proceed, all linked assignments and duties will be permanently deleted as well. Are you sure you want to proceed and delete this poll?";
-    }
-    
-    if (!confirm(confirmMessage)) return;
-    
-    try {
-      if (hasDuties && dutiesSnap && !dutiesSnap.empty) {
-        const batch = writeBatch(db);
-        dutiesSnap.docs.forEach((docSnap: any) => {
-          batch.delete(docSnap.ref);
-        });
-        await batch.commit();
+    Object.entries(nextAssignments[date]).forEach(([uid, currentRole]) => {
+      if (currentRole === role) delete nextAssignments[date][uid];
+    });
+
+    if (userId) {
+      const existingRoleForUser = nextAssignments[date][userId];
+      if (existingRoleForUser && existingRoleForUser !== role) {
+        const okay = window.confirm(`${members.find((member) => member.uid === userId)?.displayName || 'This member'} is already assigned as ${existingRoleForUser} for this Mass. Replace that assignment?`);
+        if (!okay) return;
+        delete nextAssignments[date][userId];
       }
-      
-      await deleteDoc(doc(db, 'polls', pollId));
-      setPolls(prev => prev.filter(p => p.id !== pollId));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, 'polls');
+      nextAssignments[date][userId] = role;
     }
-  };
 
-  const startEditing = (poll: Poll) => {
-    const isCreator = poll.createdBy === user?.uid;
-    if (poll.status !== 'draft' && new Date() >= new Date(poll.startDate) && !isCreator) {
-      alert("This poll has already started and cannot be edited.");
-      return;
-    }
-    setEditingPoll(poll);
-    setFormData({
-      title: poll.title,
-      description: poll.description,
-      category: (poll.category as any) || 'core_member',
-      createdBy: poll.createdBy || '',
-      massDate: poll.massDate || '',
-      massDates: poll.massDates || [],
-      startDate: (poll.startDate || '').substring(0, 16),
-      endDate: (poll.endDate || '').substring(0, 16),
-    });
-    setShowingCreate(true);
-  };
-
-  const handleDuplicatePoll = (poll: Poll) => {
-    setEditingPoll(null); // It's a new poll
-    setFormData({
-      title: `${poll.title} (Copy)`,
-      description: poll.description,
-      category: (poll.category as any) || 'core_member',
-      createdBy: user?.uid || '',
-      massDate: poll.massDate || '',
-      massDates: poll.massDates || [],
-      startDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-      endDate: format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm"),
-    });
-    setShowingCreate(true);
-  };
-
-  const safeFormat = (dateStr: string | undefined, formatStr: string) => {
-    if (!dateStr) return 'TBA';
     try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return 'Invalid Date';
-      return format(d, formatStr);
-    } catch {
-      return 'Invalid Date';
+      await updateDoc(doc(db, 'polls', poll.id), {
+        assignments: nextAssignments,
+        rosterPublished: false,
+        rosterPublishedAt: null,
+        rosterPublishedBy: null,
+        rosterPublishedByName: null,
+        publicationMode: 'explicit',
+        ...(poll.rosterPublished && !poll.lastPublishedAssignments
+          ? { lastPublishedAssignments: poll.assignments || {} }
+          : {}),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error('Assignments: failed to save role', error);
+      alert('The assignment could not be saved.');
     }
   };
 
-  const handleNotifyMembers = async (poll: Poll) => {
-    if (!canManage) return;
-    if (notifying) return;
-    
-    const clientId = (import.meta as any).env.VITE_CLIENT_ID || (window as any).VITE_CLIENT_ID;
-    if (!clientId) {
-      alert("Gmail integration is not configured. Please add VITE_CLIENT_ID to your environment variables (Secrets) to enable notifications.");
+  const publishRoster = async (poll: ExtendedPoll) => {
+    if (!canLead || !user || !profile || publishingPollId) return;
+    if (poll.status !== 'closed') {
+      alert('Close the availability request before publishing the final roster.');
       return;
     }
 
-    const targetAudience = poll.category === 'core_member' 
-      ? 'all Core Group members' 
-      : poll.category === 'committee' 
-        ? 'all Liturgical Committee members' 
-        : 'all verified community members';
+    const assignments = poll.assignments || {};
+    const requiredMissing: string[] = [];
+    massDatesForPoll(poll).forEach((mass) => {
+      const values = Object.values(assignments[mass.date] || {});
+      if (!values.includes('Commentator')) requiredMissing.push(`${formatDate(mass.date)}: Commentator`);
+      if (!values.some((role) => role.startsWith('Lector'))) requiredMissing.push(`${formatDate(mass.date)}: Lector`);
+      if (!values.some((role) => role.startsWith('Altar Server'))) requiredMissing.push(`${formatDate(mass.date)}: Altar Server`);
+      if (!values.some((role) => role.startsWith('Usher'))) requiredMissing.push(`${formatDate(mass.date)}: Usher`);
+    });
 
-    if (!confirm(`This will send an email notification to ${targetAudience} about the poll: "${poll.title}". Continue?`)) return;
+    if (requiredMissing.length > 0) {
+      alert(`Please complete the required roles before publishing:\n\n${requiredMissing.slice(0, 12).join('\n')}`);
+      return;
+    }
 
-    setNotifying(poll.id);
+    const publicationPlan = buildLiturgicalPublicationPlan({
+      members,
+      pollId: poll.id,
+      pollTitle: poll.title,
+      state: {
+        assignments: poll.assignments || {},
+        lastPublishedAssignments: poll.lastPublishedAssignments,
+        rosterRevision: poll.rosterRevision,
+      },
+    });
+    const notifyCount = publicationPlan.communicationPlan.notifications.length;
+    const confirmation = publicationPlan.mode === 'revision'
+      ? `Publish revised liturgical roster now? ${notifyCount} affected members will receive an updated-schedule Portal notification.`
+      : publicationPlan.mode === 'no_change'
+        ? 'Publish this roster again? No member assignments changed, so no new assignment notification will be created.'
+        : `Publish this liturgical roster now? ${notifyCount} assigned members will receive a Portal notification.`;
+    if (!window.confirm(confirmation)) return;
+
+    setPublishingPollId(poll.id);
     try {
-      // 1. Fetch all verified members
-      const q = query(collection(db, 'users'), where('isVerified', '==', true));
-      const snap = await getDocs(q);
-      let members = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(m => !!m.email && !m.isDisabled);
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'polls', poll.id), {
+        rosterPublished: true,
+        rosterPublishedAt: serverTimestamp(),
+        rosterPublishedBy: user.uid,
+        rosterPublishedByName: profile.displayName,
+        publicationMode: 'explicit',
+        lastPublishedAssignments: poll.assignments || {},
+        rosterRevision: publicationPlan.nextRevision,
+        updatedAt: serverTimestamp(),
+      });
 
-      // Filter members based on poll category to match eligible responders
-      if (poll.category === 'core_member') {
-        members = members.filter(m => !!m.isCoreMember);
-      } else if (poll.category === 'committee') {
-        const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
-        members = members.filter(m => m.ministries?.some(role => committeeMinistries.includes(role)));
-      }
-
-      if (members.length === 0) {
-        alert("No eligible verified members with email addresses found.");
-        setNotifying(null);
-        return;
-      }
-
-      // 2. Prepare email content
-      const massDateFormatted = safeFormat(poll.massDate, 'EEEE, MMM dd');
-      const subject = `[KCFC] Pre-attendance Poll: ${poll.title}`;
-      const baseUrl = window.location.origin;
-
-      // 3. Send emails
-      let successCount = 0;
-      let failErrors: string[] = [];
-
-      for (const member of members) {
-        try {
-          const recipientName = member.nickname?.trim() || member.displayName || "Community Member";
-          const personalizedBody = `
-            <div style="font-family: serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 20px; overflow: hidden;">
-              <div style="background-color: #5A5A40; color: white; padding: 40px; text-align: center;">
-                <h1 style="margin: 0; font-size: 24px; font-weight: normal;">KCFC Attendance Poll</h1>
-                <p style="margin-top: 10px; font-style: italic; opacity: 0.9;">Holy Mass: ${massDateFormatted}</p>
-              </div>
-              <div style="padding: 40px; line-height: 1.6;">
-                <p>Dear <strong>${recipientName}</strong>,</p>
-                <p>A new attendance poll has been published for the upcoming Mass.</p>
-                <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin: 20px 0;">
-                  <h2 style="margin: 0 0 10px 0; color: #5A5A40;">${poll.title}</h2>
-                  <p style="margin: 0; color: #666; font-style: italic;">${poll.description || 'Please record your attendance to help us with planning.'}</p>
-                </div>
-                <p style="text-align: center; margin: 40px 0;">
-                  <a href="${baseUrl}/polls" style="background-color: #5A5A40; color: white; padding: 15px 30px; text-decoration: none; border-radius: 10px; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
-                    Respond to Poll
-                  </a>
-                </p>
-                <p style="font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; margin-top: 40px;">
-                  This is an automated notification from the KCFC Portal.
-                  This represents an automated official notification from KCFC Secretariat Office.
-                </p>
-              </div>
-            </div>
-          `;
-          await sendGmail(member.email!, subject, personalizedBody);
-          successCount++;
-        } catch (err: any) {
-          console.error(`Failed to send email to ${member.email}`, err);
-          failErrors.push(`${member.email}: ${err.message || 'Unknown error'}`);
-        }
-      }
-
-      if (failErrors.length > 0) {
-        alert(`Notifications results:\n\nSuccessful: ${successCount}\nFailed: ${failErrors.length}\n\nErrors:\n${failErrors.slice(0, 3).join('\n')}${failErrors.length > 3 ? '\n...' : ''}`);
-      } else {
-        alert(`Notifications sent successfully to ${successCount} members!`);
-      }
-    } catch (err: any) {
-      console.error("Notification process failed", err);
-      alert("Failed to complete notification process. Please check your console for details.");
+      appendCommunicationNotificationsToBatch(batch, db, publicationPlan.communicationPlan);
+      await batch.commit();
+    } catch (error) {
+      console.error('Assignments: failed to publish roster', error);
+      alert('The roster could not be published.');
     } finally {
-      setNotifying(null);
+      setPublishingPollId(null);
     }
   };
 
-  const filteredPolls = polls
-    .filter(poll => {
-      const isManager = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'kitchen_leader', 'cleaning_leader'].includes(r)) || profile?.email === 'kcfc.jp@gmail.com';
-      
-      // If it's a draft, only managers can see it
-      if (poll.status === 'draft') return isManager;
-      
-      // Managers can see everything
-      if (isManager) {
-        if (filter === 'core') return poll.category === 'core_member';
-        if (filter === 'committee') return poll.category === 'committee';
-        return true;
-      }
-      
-      // General members:
-      // Check core membership for chore polls
-      if (poll.category === 'core_member') {
-        if (!profile?.isCoreMember) return false;
-      }
-      
-      // Check committee membership for committee polls
-      if (poll.category === 'committee') {
-        const committeeMinistries = ['lector_commentator', 'usher', 'altar_server', 'ppt'];
-        const isCommitteeMember = profile?.ministries?.some(m => committeeMinistries.includes(m));
-        if (!isCommitteeMember) return false;
-      }
-      
-      // Now apply the active filter
-      if (filter === 'core') return poll.category === 'core_member';
-      if (filter === 'committee') return poll.category === 'committee';
-      
-      return true;
-    })
-    .slice(0, filter === 'latest' ? 2 : undefined);
+  const unpublishRoster = async (poll: ExtendedPoll) => {
+    if (!canLead) return;
+    if (!window.confirm('Unpublish this roster? Members will stop seeing these assignments in the new Schedule view until it is published again.')) return;
+    try {
+      await updateDoc(doc(db, 'polls', poll.id), {
+        rosterPublished: false,
+        rosterPublishedAt: null,
+        rosterPublishedBy: null,
+        rosterPublishedByName: null,
+        publicationMode: 'explicit',
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error('Assignments: failed to unpublish roster', error);
+      alert('The roster could not be unpublished.');
+    }
+  };
+
+  const pendingCount = activeMemberPolls.filter((poll) => !myResponses[poll.id]).length;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-24">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Attendance Polls</h1>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm">Respond to attendance requests for the Holy Mass.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="bg-white dark:bg-[#1e1e1a] p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm flex items-center">
-            {[
-              { id: 'latest', label: 'Latest' },
-              { id: 'all', label: 'All' },
-              { id: 'core', label: 'Chores' },
-              { id: 'committee', label: 'Liturgical' }
-            ].map((f) => (
-              <button
-                 key={f.id}
-                 onClick={() => {
-                   setFilter(f.id as any);
-                   setExpandedPolls({});
-                 }}
-                 className={cn(
-                   "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
-                   filter === f.id 
-                     ? "bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] shadow-md" 
-                     : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#252520]"
-                 )}
-              >
-                {f.label}
-              </button>
-            ))}
+    <div className="kcfc-page space-y-5 pb-4">
+      <section className="overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-[#123B66] via-[#174E83] to-[#2563EB] p-5 text-white shadow-[0_18px_45px_rgba(18,59,102,0.18)] sm:p-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 flex items-center gap-2 text-blue-100">
+              <CalendarCheck2 className="h-4 w-4" />
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.13em]">Liturgical Availability</span>
+            </div>
+            <h1 className="text-[28px] font-extrabold leading-tight tracking-[-0.03em] sm:text-[34px]">Tell us when you can serve.</h1>
+            <p className="mt-2 max-w-xl text-[14px] leading-6 text-blue-50/90">
+              Select every upcoming Mass where you are available. Leaders then build the roster from that availability and publish the final schedule separately.
+            </p>
           </div>
-          {canManage && (
-            <button 
-              onClick={() => {
-                setEditingPoll(null);
-                setFormData({ 
-                  title: '', 
-                  description: '', 
-                  category: 'core_member' as 'core_member' | 'committee', 
-                  createdBy: '',
-                  massDate: '', 
-                  massDates: [] as { date: string, description?: string }[], 
-                  startDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"), 
-                  endDate: format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm") 
-                });
-                setShowingCreate(true);
-              }}
-              className="flex items-center gap-2 px-6 py-3 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all shadow-lg cursor-pointer"
-            >
-              <Plus size={18} />
-              Create
-            </button>
-          )}
+          <Link to="/duties" className="inline-flex min-h-11 w-fit items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-[13px] font-bold text-[#123B66] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <CalendarDays className="h-4 w-4" /> Browse schedule <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
-      </div>
+      </section>
 
-      {showingCreate && (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[40px] shadow-xl border border-gray-100 dark:border-white/5"
-        >
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-2xl font-serif text-gray-900 dark:text-white">{editingPoll ? 'Edit Poll' : 'Create Pre-attendance Poll'}</h2>
-            <button onClick={() => setShowingCreate(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400">
-              <ChevronDown size={24} className="rotate-90" />
-            </button>
+      <section className="kcfc-surface overflow-hidden">
+        <div className="border-b border-slate-100 p-2 dark:border-white/10">
+          <div className={cn('grid gap-1 rounded-2xl bg-[#F7F9FC] p-1 dark:bg-white/5', canLead ? 'grid-cols-3' : hasLegacyPollAccess ? 'grid-cols-2' : 'grid-cols-1')}>
+            <ModeButton active={mode === 'availability'} onClick={() => setMode('availability')} icon={CalendarCheck2} label="My availability" badge={pendingCount || undefined} />
+            {canLead && <ModeButton active={mode === 'leader'} onClick={() => setMode('leader')} icon={ShieldCheck} label="Leader view" />}
+            {hasLegacyPollAccess && <ModeButton active={mode === 'legacy'} onClick={() => setMode('legacy')} icon={Settings2} label="Other polls" />}
           </div>
-          
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Poll Category</label>
-                <select
-                  required
-                  disabled={!!editingPoll && editingPoll.status !== 'draft' && new Date() >= new Date(editingPoll.startDate)}
-                  className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] transition-all disabled:opacity-50"
-                  value={formData.category}
-                  onChange={e => setFormData({ ...formData, category: e.target.value as any })}
-                >
-                  <option value="core_member">Chore Committee (Single Mass)</option>
-                  <option value="committee">Liturgical Committee (Multi-Mass)</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">
-                  Poll Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
-                  placeholder={formData.category === 'committee' ? "e.g. Lector & Altar Server Schedule" : "e.g. Sunday Mass Community Attendance"}
-                  value={formData.title}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
-                />
+        </div>
+
+        {mode === 'availability' && (
+          <div>
+            <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Your availability requests</h2>
+                  <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Tap every date when you can serve, then save once.</p>
+                </div>
+                {pendingCount > 0 && <span className="w-fit rounded-full bg-amber-100 px-3 py-1 text-[11px] font-extrabold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">{pendingCount} response needed</span>}
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Description</label>
-              <textarea
-                className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all min-h-[100px]"
-                placeholder="Optional description or instructions..."
-                value={formData.description}
-                onChange={e => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-
-            {formData.category === 'committee' ? (
-              <div className="space-y-4">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Mass Dates & Descriptions (Multiple)</label>
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="date"
-                      id="new-mass-date"
-                      className="w-full sm:w-1/3 px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
-                    />
-                    <input
-                      type="text"
-                      id="new-mass-desc"
-                      placeholder="Optional description (e.g. 7:00 AM Mass)"
-                      className="flex-1 px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const dateInput = document.getElementById('new-mass-date') as HTMLInputElement;
-                        const descInput = document.getElementById('new-mass-desc') as HTMLInputElement;
-                        if (dateInput.value && !formData.massDates.find(d => d.date === dateInput.value)) {
-                          setFormData({ 
-                            ...formData, 
-                            massDates: [...formData.massDates, { date: dateInput.value, description: descInput.value }].sort((a, b) => a.date.localeCompare(b.date)) 
-                          });
-                          dateInput.value = '';
-                          descInput.value = '';
-                        }
-                      }}
-                      className="px-6 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-colors cursor-pointer"
-                    >
-                      Add Date
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-3 px-2">
-                  {formData.massDates.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-[#5A5A40]/10 dark:bg-[#8a8a65]/10 text-[#5A5A40] dark:text-[#8a8a65] rounded-2xl flex flex-col sm:flex-row items-center gap-3">
-                      <input 
-                        type="date"
-                        value={item.date}
-                        className="w-full sm:w-1/3 px-4 py-2 bg-white/50 dark:bg-[#1e1e1a]/50 text-gray-900 dark:text-white border-none rounded-xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none text-sm transition-all"
-                        onChange={(e) => {
-                          const newDates = [...formData.massDates];
-                          newDates[idx].date = e.target.value;
-                          setFormData({ ...formData, massDates: newDates });
-                        }}
-                      />
-                      <input 
-                        type="text"
-                        value={item.description || ''}
-                        placeholder="Description..."
-                        className="flex-1 w-full px-4 py-2 bg-white/50 dark:bg-[#1e1e1a]/50 text-gray-900 dark:text-white border-none rounded-xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none text-sm transition-all"
-                        onChange={(e) => {
-                          const newDates = [...formData.massDates];
-                          newDates[idx].description = e.target.value;
-                          setFormData({ ...formData, massDates: newDates });
-                        }}
-                      />
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button 
-                          type="button"
-                          onClick={() => setFormData({ ...formData, massDates: [...formData.massDates, { ...item }] })}
-                          className="hover:text-[#5A5A40] dark:hover:text-[#8a8a65] text-gray-400 p-2 shrink-0 transition-all cursor-pointer"
-                          title="Duplicate"
-                        >
-                          <Copy size={16} />
-                        </button>
-                        <button 
-                          type="button"
-                          onClick={() => setFormData({ ...formData, massDates: formData.massDates.filter((_, i) => i !== idx) })}
-                          className="hover:text-red-500 p-2 shrink-0 transition-all cursor-pointer"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {formData.massDates.length === 0 && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 italic">No mass dates added yet.</p>
-                  )}
-                </div>
-              </div>
+            {loading ? <LoadingCards /> : activeMemberPolls.length === 0 ? (
+              <EmptyState icon={CheckCircle2} title={isLiturgicalMember || canLead ? 'You are up to date' : 'No liturgical availability requests for you'} body={isLiturgicalMember || canLead ? 'There is no active request waiting for your response.' : 'If you join Lector & Commentator, Ushers or Altar Servers, relevant availability requests will appear here.'} />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Date of the Mass</label>
-                  <input
-                    type="date"
-                    required
-                    className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
-                    value={formData.massDate}
-                    onChange={e => setFormData({ ...formData, massDate: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Poll Options</label>
-                  <div className="px-6 py-4 bg-gray-100 dark:bg-[#252520] text-gray-400 dark:text-gray-500 text-sm rounded-2xl font-italic">
-                    Default: Yes / No / Maybe
-                  </div>
-                </div>
+              <div className="space-y-4 p-4 sm:p-5">
+                {activeMemberPolls.map((poll) => (
+                  <AvailabilityCard key={poll.id} poll={poll} focused={focusedPollId === poll.id} response={myResponses[poll.id]} selected={draftSelections[poll.id] || []} saving={savingPollId === poll.id} saved={savedPollId === poll.id} onToggle={(date) => toggleMassSelection(poll.id, date)} onSave={(selected) => saveAvailability(poll, selected)} />
+                ))}
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">Start of Poll</label>
-                <input
-                  type="datetime-local"
-                  required
-                  disabled={!!editingPoll && editingPoll.status !== 'draft' && new Date() >= new Date(editingPoll.startDate)}
-                  className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all disabled:opacity-50"
-                  value={formData.startDate}
-                  onChange={e => setFormData({ ...formData, startDate: e.target.value })}
-                />
+            {recentMemberPolls.length > 0 && (
+              <div className="border-t border-slate-100 px-4 py-5 sm:px-5 dark:border-white/10">
+                <h3 className="text-[13px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Recent requests</h3>
+                <div className="mt-3 space-y-2">
+                  {recentMemberPolls.map((poll) => {
+                    const response = myResponses[poll.id];
+                    return (
+                      <div key={poll.id} className="flex items-center gap-3 rounded-2xl border border-slate-200/80 p-3.5 dark:border-white/10">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300"><CheckCircle2 className="h-5 w-5" /></div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-bold text-[#172033] dark:text-white">{poll.title}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{response ? `${response.selectedOptions?.length || 0} available Masses submitted` : 'No response recorded'} • {poll.rosterPublished ? 'Roster published' : poll.status}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4">End of Poll</label>
-                <input
-                  type="datetime-local"
-                  required
-                  className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none transition-all"
-                  value={formData.endDate}
-                  onChange={e => setFormData({ ...formData, endDate: e.target.value })}
-                />
-              </div>
-            </div>
+            )}
+          </div>
+        )}
 
-            <div className="pt-4 flex flex-col sm:flex-row gap-4">
-              {!editingPoll || editingPoll.status === 'draft' ? (
-                <>
-                  <button
-                    type="submit"
-                    disabled={formSubmitting}
-                    className="flex-1 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] shadow-lg hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {formSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Publishing...
-                      </>
-                    ) : (
-                      'Publish Poll'
-                    )}
-                  </button>
-                  <button
-                    type="submit"
-                    name="draft"
-                    value="draft"
-                    disabled={formSubmitting}
-                    className="flex-1 py-4 bg-white dark:bg-[#1e1e1a] text-[#5A5A40] dark:text-[#8a8a65] border-2 border-[#5A5A40] dark:border-[#8a8a65]/50 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-[#5A5A40]/5 dark:hover:bg-[#8a8a65]/5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {formSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      'Save as Draft'
-                    )}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={formSubmitting}
-                  className="flex-1 py-4 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-2xl font-bold uppercase tracking-widest text-[10px] shadow-lg hover:bg-[#4a4a35] dark:hover:bg-[#9a9a70] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {formSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    'Update Poll'
-                  )}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={formSubmitting}
-                onClick={() => setShowingCreate(false)}
-                className="px-8 py-4 bg-gray-100 dark:bg-[#252520] text-gray-400 dark:text-gray-500 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-gray-200 dark:hover:bg-gray-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Cancel
+        {mode === 'leader' && canLead && (
+          <div>
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:border-white/10">
+              <div>
+                <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Liturgical planning</h2>
+                <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Availability → response matrix → assignment builder → explicit roster publication.</p>
+              </div>
+              <button type="button" onClick={() => setShowCreate((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                {showCreate ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showCreate ? 'Close form' : 'Create request'}
               </button>
             </div>
-          </form>
-        </motion.div>
-      )}
 
-      {loading ? (
-        <div className="text-center py-20 text-gray-400 dark:text-gray-500 font-serif italic">Loading community polls...</div>
-      ) : filteredPolls.length === 0 ? (
-        <div className="text-center py-20 bg-white dark:bg-[#1e1e1a] rounded-[40px] border border-dashed border-gray-200 dark:border-white/10">
-          <Calendar className="w-12 h-12 text-gray-200 dark:text-gray-700 mx-auto mb-4" />
-          <p className="text-gray-400 dark:text-gray-500 font-serif italic">No poll found.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-8">
-          {filteredPolls.map(poll => {
-            const hasVoted = !!userResponses[poll.id] && (
-              poll.category === 'committee'
-                ? (Array.isArray(userResponses[poll.id].selectedOptions) && userResponses[poll.id].selectedOptions.length > 0)
-                : (userResponses[poll.id].attendance !== null && userResponses[poll.id].attendance !== undefined)
-            );
-            const now = new Date();
-            const start = new Date(poll.startDate);
-            const end = new Date(poll.endDate);
-            const mass = new Date(poll.massDate);
-            
-            const isFinished = now > end;
-            const notStarted = now < new Date(start.getTime() - 5 * 60000);
-            const isActive = poll.status === 'active' && !isFinished && !notStarted;
-            const isDraft = poll.status === 'draft';
+            {showCreate && <CreateAvailabilityForm form={form} setForm={setForm} newMassDate={newMassDate} setNewMassDate={setNewMassDate} newMassDescription={newMassDescription} setNewMassDescription={setNewMassDescription} addMassDate={addMassDate} creating={creating} onSubmit={createAvailabilityRequest} />}
 
-            // Calculate non-responded (pending) users
-            const respondedUserIds = new Set(
-              (pollResponses[poll.id] || [])
-                .filter(r => 
-                  poll.category === 'committee'
-                    ? (Array.isArray(r.selectedOptions) && r.selectedOptions.length > 0)
-                    : (r.attendance !== null && r.attendance !== undefined)
-                )
-                .map(r => r.userId)
-            );
-            const eligibleUsers = (poll.category === 'core_member'
-              ? users.filter(u => u.isCoreMember && !u.isDisabled && u.isVerified)
-              : poll.category === 'committee'
-                ? users.filter(u => u.ministries?.some(m => ['lector_commentator', 'usher', 'altar_server', 'ppt'].includes(m)) && !u.isDisabled && u.isVerified)
-                : users.filter(u => !u.isDisabled && u.isVerified)
-            ).filter(u => u.email !== 'kcfc.jp@gmail.com');
-            const pendingUsers = eligibleUsers.filter(u => !respondedUserIds.has(u.uid));
-            const isAdminOrPresident = (profile?.roles || []).some(r => ['admin', 'president'].includes(r)) || profile?.email === 'kcfc.jp@gmail.com';
-            const isPollCreator = poll.createdBy === user?.uid;
-            const showPendingList = isAdminOrPresident || isPollCreator;
-
-            return (
-              <motion.div
-                key={poll.id}
-                id={`poll-${poll.id}`}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className={cn(
-                   "bg-white dark:bg-[#1e1e1a] -mx-2 sm:mx-0 rounded-none sm:rounded-[40px] shadow-sm border-y sm:border border-gray-100 dark:border-white/5 transition-all overflow-hidden",
-                   (!isActive && !isDraft) && "opacity-80",
-                   isDraft && "border-dashed border-[#5A5A40]/30 dark:border-[#8a8a65]/40"
-                )}
-              >
-                <button 
-                  onClick={() => setExpandedPolls(prev => ({ ...prev, [poll.id]: !prev[poll.id] }))}
-                  className="w-full p-5 sm:p-8 md:p-10 flex flex-col md:flex-row md:items-start justify-between gap-6 hover:bg-gray-50/50 dark:hover:bg-[#252520]/20 transition-all text-left pointer"
-                >
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className={cn(
-                        "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest",
-                        poll.category === 'core_member' ? "bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400" :
-                        poll.category === 'committee' ? "bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400" :
-                        "bg-[#5A5A40]/10 dark:bg-[#8a8a65]/10 text-[#5A5A40] dark:text-[#8a8a65]"
-                      )}>
-                        {poll.category === 'core_member' ? 'Chore Committee' : 
-                         poll.category === 'committee' ? 'Liturgical Committee' : 'Community'}
-                      </span>
-                      {poll.category === 'committee' && (
-                        <a
-                          href={`/duties?tab=liturgical&pollId=${poll.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-md flex items-center gap-1.5 active:scale-95 duration-150 whitespace-nowrap"
-                        >
-                          <BookOpen size={11} />
-                          View Matrix In Duties
-                        </a>
-                      )}
-                      {poll.category === 'core_member' && (
-                        <a
-                          href={`/duties?tab=core&pollId=${poll.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest bg-orange-600 text-white hover:bg-orange-700 transition-all shadow-md flex items-center gap-1.5 active:scale-95 duration-150 whitespace-nowrap"
-                        >
-                          <Users size={11} />
-                          View Matrix In Duties
-                        </a>
-                      )}
-                      <span className={cn(
-                        "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest",
-                        isDraft ? "bg-gray-100 dark:bg-gray-800 text-gray-400" :
-                        notStarted ? "bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400" :
-                        isActive ? "bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-400" :
-                        "bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400"
-                      )}>
-                        {isDraft ? 'Draft' :
-                         notStarted ? `Starts ${safeFormat(poll.startDate, 'MMM dd HH:mm')}` :
-                         isActive ? 'Active' :
-                         isFinished ? 'Finished' : 'Paused'}
-                      </span>
-                      {isActive && pendingUsers.length === 0 && showPendingList && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`All expected members have responded! Would you like to close the poll "${poll.title}" now?`)) {
-                              await togglePollStatus(poll.id, 'active');
-                            }
-                          }}
-                          className="px-3 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-widest bg-amber-500 hover:bg-amber-600 text-white transition-all shadow-md flex items-center gap-1 active:scale-95 duration-150 whitespace-nowrap animate-pulse cursor-pointer"
-                          title="Click to Close Poll"
-                        >
-                          <Lock size={10} />
-                          Close Poll Now
-                        </button>
-                      )}
-                      {poll.category !== 'committee' && (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
-                          <Calendar size={12} />
-                          Mass: <strong className="text-gray-900 dark:text-[#f5f5f0]">{safeFormat(poll.massDate, 'EEEE, MMM dd, yyyy')}</strong>
-                        </span>
-                      )}
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold flex items-center gap-1">
-                         {expandedPolls[poll.id] ? <ChevronDown size={14} /> : <ChevronDown size={14} className="-rotate-90" />}
-                         {expandedPolls[poll.id] ? 'Hide Details' : 'View Details'}
-                      </span>
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{poll.title}</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 italic font-serif leading-relaxed line-clamp-1">{poll.description || `Pre-attendance for Mass on ${safeFormat(poll.massDate, 'MMM dd')}`}</p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    {/* Share Poll Deep Link Button */}
-                    <button
-                      onClick={() => handleSharePoll(poll.id, poll.title)}
-                      className={cn(
-                        "p-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center cursor-pointer",
-                        copiedPollId === poll.id
-                          ? "text-green-600 dark:text-green-400 bg-green-500/10"
-                          : "text-gray-400 dark:text-gray-500 hover:text-[#5A5A40] dark:hover:text-[#8a8a65] hover:bg-gray-100 dark:hover:bg-[#252520]"
-                      )}
-                      title="Copy Share Link"
-                    >
-                      {copiedPollId === poll.id ? (
-                        <Check size={20} />
-                      ) : (
-                        <Share2 size={20} />
-                      )}
+            <div className="space-y-3 p-4 sm:p-5">
+              {polls.filter((poll) => poll.category === 'committee').map((poll) => {
+                const pollResponses = responses[poll.id] || [];
+                const latest = latestResponsesByUser(pollResponses);
+                const responded = eligibleMembers.filter((member) => latest.has(member.uid));
+                const percent = eligibleMembers.length ? Math.round((responded.length / eligibleMembers.length) * 100) : 0;
+                const expanded = expandedLeaderPoll === poll.id;
+                const panel = leaderPanel[poll.id] || 'progress';
+                return (
+                  <article key={poll.id} id={`leader-availability-${poll.id}`} tabIndex={focusedPollId === poll.id ? -1 : undefined} aria-current={focusedPollId === poll.id ? 'true' : undefined} className={cn('overflow-hidden rounded-2xl border bg-white transition-colors dark:bg-white/[0.03]', focusedPollId === poll.id ? 'border-blue-300 ring-2 ring-blue-300/60 dark:border-blue-400/40 dark:ring-blue-400/30' : 'border-slate-200 dark:border-white/10')}>
+                    <button type="button" onClick={() => setExpandedLeaderPoll(expanded ? null : poll.id)} className="flex min-h-[86px] w-full items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+                      <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl', poll.rosterPublished ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300' : poll.status === 'active' ? 'bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200' : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300')}>
+                        {poll.rosterPublished ? <Eye className="h-5 w-5" /> : <UsersRound className="h-5 w-5" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[14px] font-extrabold text-[#172033] dark:text-white">{poll.title}</p>
+                          <StatusPill poll={poll} />
+                        </div>
+                        <div className="mt-2 flex items-center gap-3">
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"><div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${percent}%` }} /></div>
+                          <span className="shrink-0 text-[11px] font-bold text-slate-500 dark:text-slate-400">{responded.length}/{eligibleMembers.length}</span>
+                        </div>
+                      </div>
+                      {expanded ? <ChevronUp className="h-5 w-5 shrink-0 text-slate-400" /> : <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" />}
                     </button>
 
-                    {canManage && (
-                      <>
-                       <button
-                        onClick={() => handleNotifyMembers(poll)}
-                        disabled={!!notifying}
-                        className={cn(
-                          "p-3 rounded-2xl transition-all relative overflow-hidden",
-                          notifying === poll.id 
-                            ? "text-[#5A5A40] dark:text-[#8a8a65] bg-[#5A5A40]/10" 
-                            : "text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-[#252520] active:scale-95"
-                        )}
-                        title="Notify Members via Email"
-                      >
-                        {notifying === poll.id ? (
-                          <Loader2 size={20} className="animate-spin" />
-                        ) : (
-                          <Mail size={20} className="transition-transform group-hover:-rotate-12" />
-                        )}
-                      </button>
-                      {isDraft ? (
-                        <button
-                          onClick={() => {
-                            if (confirm("Publish this poll now? This will notify community members.")) {
-                              togglePollStatus(poll.id, 'draft' as PollStatus); 
-                            }
-                          }}
-                          className={cn(
-                            "p-3 rounded-2xl transition-all",
-                            isFinished ? "text-gray-200 cursor-not-allowed" : "text-[#5A5A40] bg-[#5A5A40]/10 hover:bg-[#5A5A40]/20"
-                          )}
-                          title="Publish Now"
-                          disabled={isFinished}
-                        >
-                          <Play size={20} />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => togglePollStatus(poll.id, poll.status)}
-                          className={cn(
-                            "p-3 rounded-2xl transition-all",
-                            isFinished ? "text-gray-200 cursor-not-allowed" : "text-gray-400 hover:text-[#5A5A40] hover:bg-[#5A5A40]/5"
-                          )}
-                          title={poll.status === 'active' ? "Pause Poll" : "Resume Poll"}
-                          disabled={isFinished}
-                        >
-                          {poll.status === 'active' ? <Pause size={20} /> : <Play size={20} />}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDuplicatePoll(poll)}
-                        className="p-3 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-2xl transition-all"
-                        title="Duplicate Poll"
-                      >
-                        <Copy size={20} />
-                      </button>
-                      <button
-                        onClick={() => startEditing(poll)}
-                        className={cn(
-                          "p-3 rounded-2xl transition-all",
-                          (!isFinished && (isDraft || notStarted || poll.createdBy === user?.uid)) ? "text-gray-400 hover:text-[#5A5A40] hover:bg-[#5A5A40]/5" : "text-gray-200 cursor-not-allowed"
-                        )}
-                        title="Edit Poll"
-                        disabled={isFinished || (!isDraft && !notStarted && poll.createdBy !== user?.uid)}
-                      >
-                        <Settings size={20} />
-                      </button>
-                      {canDelete && (
-                        <button
-                          onClick={() => deletePoll(poll.id)}
-                          className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"
-                          title="Delete Poll"
-                        >
-                          <Trash2 size={20} />
-                        </button>
-                      )}
-                    </>)}
-                  </div>
-                </button>
-
-                {expandedPolls[poll.id] && (
-                  <div className="px-5 sm:px-8 pb-8 sm:pb-10 space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="flex flex-wrap gap-6 text-xs text-gray-400 dark:text-gray-500 pb-4 border-b border-gray-50 dark:border-white/5">
-                      <span className="flex items-center gap-1.5">
-                        <Calendar size={14} />
-                        Poll Period: <strong className="text-gray-900 dark:text-[#f5f5f0]">{safeFormat(poll.startDate, 'MMM dd, HH:mm')} - {safeFormat(poll.endDate, 'MMM dd, HH:mm')}</strong>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <User size={14} />
-                        Creator: <strong className="text-gray-900 dark:text-[#f5f5f0]">{poll.creatorName || 'System'}</strong>
-                      </span>
-                    </div>
-
-                    <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed max-w-2xl">{poll.description}</p>
-
-                    {(user?.email?.toLowerCase() === 'kcfc.jp@gmail.com' || profile?.email?.toLowerCase() === 'kcfc.jp@gmail.com') && (
-                      <div className="p-5 bg-gray-50 dark:bg-[#1e1e1a]/40 border border-gray-200 dark:border-white/10 rounded-[2rem] text-xs text-gray-500 dark:text-gray-400 font-medium flex items-center gap-2">
-                        <span>🛡️ As the primary Administrator (kcfc.jp@gmail.com), you are excluded from public poll participation and cannot answer. Other administrators and presidents are still permitted to participate.</span>
-                      </div>
-                    )}
-
-                    {isActive && pendingUsers.length === 0 && showPendingList && (
-                      <div className="p-5 bg-amber-50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900/30 rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-amber-500 text-white rounded-full">
-                            <CheckCircle2 size={18} />
-                          </div>
-                          <div>
-                            <p className="text-xs font-extrabold text-amber-900 dark:text-amber-400">100% Core Member Responses Received!</p>
-                            <p className="text-[10px] text-amber-700 dark:text-amber-500">All eligible community members have successfully responded to this poll.</p>
-                          </div>
+                    {expanded && (
+                      <div className="border-t border-slate-100 p-4 dark:border-white/10">
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <LeaderMetric label="Response progress" value={`${percent}%`} detail={`${responded.length} of ${eligibleMembers.length} eligible members`} />
+                          <LeaderMetric label="Mass dates" value={String(massDatesForPoll(poll).length)} detail="Included in this availability cycle" />
+                          <LeaderMetric label="Roster" value={poll.rosterPublished ? 'Published' : 'Not published'} detail={poll.status === 'active' ? 'Collect availability first' : 'Publishing is a separate final step'} />
                         </div>
-                        <button
-                          onClick={async () => {
-                            if (window.confirm("Are you sure you want to close this poll? This will lock further submissions and enable duty generators.")) {
-                              await togglePollStatus(poll.id, 'active');
-                            }
-                          }}
-                          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 active:scale-95 whitespace-nowrap cursor-pointer"
-                        >
-                          <Lock size={12} />
-                          Close Poll Now
-                        </button>
-                      </div>
-                    )}
 
-                    <div className="flex flex-wrap gap-4">
-                      {poll.category === 'committee' ? (
-                        <div className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                          {(poll.massDates || []).map((option) => {
-                            const isSelected = userResponses[poll.id]?.selectedOptions?.includes(option.date);
-                            const count = (pollResponses[poll.id] || []).filter(r => r.selectedOptions?.includes(option.date)).length;
-                            const isPrimaryAdminUser = user?.email?.toLowerCase() === 'kcfc.jp@gmail.com' || profile?.email?.toLowerCase() === 'kcfc.jp@gmail.com';
-                            return (
-                              <button
-                                key={option.date}
-                                disabled={!isActive || isSubmitting[poll.id] || isPrimaryAdminUser}
-                                onClick={() => handleResponse(poll.id, undefined, option.date)}
-                                className={cn(
-                                  "flex flex-col items-center gap-2 p-6 rounded-[28px] border-2 transition-all group relative cursor-pointer",
-                                  isSelected
-                                    ? "bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border-current"
-                                    : isActive && !isPrimaryAdminUser
-                                      ? "bg-white dark:bg-[#1e1e1a] text-gray-400 dark:text-gray-500 border-gray-100 dark:border-white/10 hover:text-blue-600 dark:hover:text-blue-400 hover:border-current"
-                                      : "bg-gray-50 dark:bg-gray-900/40 text-gray-300 dark:text-gray-600 border-transparent grayscale"
-                                )}
-                              >
-                                <Calendar size={28} className={cn("transition-transform", isActive && !isPrimaryAdminUser && "group-hover:scale-110")} />
-                                <div className="flex flex-col items-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-widest">{format(new Date(option.date), 'EEEE')}</span>
-                                  <span className="text-xs font-serif font-bold">{format(new Date(option.date), 'MMM dd, yyyy')}</span>
-                                  {option.description && (
-                                    <span className="text-[9px] mt-1 opacity-70 italic line-clamp-1">{option.description}</span>
-                                  )}
-                                </div>
-                                <span className="text-xl font-bold font-serif">{count}</span>
-                                {isSelected && (
-                                  <div className="absolute top-3 right-3 bg-white dark:bg-[#11110f] rounded-full p-0.5 shadow-sm">
-                                    <Check size={12} className="text-blue-600 dark:text-blue-400" />
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
+                        <div className="mt-4 grid grid-cols-3 gap-1 rounded-2xl bg-[#F7F9FC] p-1 dark:bg-white/5">
+                          <LeaderPanelButton active={panel === 'progress'} onClick={() => setLeaderPanel((current) => ({ ...current, [poll.id]: 'progress' }))} icon={UsersRound} label="Progress" />
+                          <LeaderPanelButton active={panel === 'matrix'} onClick={() => setLeaderPanel((current) => ({ ...current, [poll.id]: 'matrix' }))} icon={Grid3X3} label="Matrix" />
+                          <LeaderPanelButton active={panel === 'assignments'} onClick={() => setLeaderPanel((current) => ({ ...current, [poll.id]: 'assignments' }))} icon={ListChecks} label="Assignments" />
                         </div>
-                      ) : (
-                        (poll.category === 'core_member' ? [
-                          { value: 'yes', icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', hover: 'hover:bg-green-100', label: 'Yes' },
-                          { value: 'no', icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', hover: 'hover:bg-red-100', label: 'No' },
-                        ] : [
-                          { value: 'yes', icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/20', hover: 'hover:bg-green-100 dark:hover:bg-green-900/10', label: 'Yes' },
-                          { value: 'no', icon: XCircle, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/20', hover: 'hover:bg-red-100 dark:hover:bg-red-900/10', label: 'No' },
-                          { value: 'maybe', icon: HelpCircle, color: 'text-yellow-600', bg: 'bg-yellow-50 dark:bg-yellow-950/20', hover: 'hover:bg-yellow-100 dark:hover:bg-yellow-900/10', label: 'Maybe' },
-                        ]).map((opt) => {
-                          const isPrimaryAdminUser = user?.email?.toLowerCase() === 'kcfc.jp@gmail.com' || profile?.email?.toLowerCase() === 'kcfc.jp@gmail.com';
-                          return (
-                            <button
-                              key={opt.value}
-                              disabled={!isActive || isSubmitting[poll.id] || isPrimaryAdminUser}
-                              onClick={() => handleResponse(poll.id, opt.value as any)}
-                              className={cn(
-                                "flex-1 flex flex-col items-center gap-3 p-6 rounded-[28px] border-2 transition-all group cursor-pointer",
-                                userResponses[poll.id]?.attendance === opt.value
-                                  ? `${opt.bg} ${opt.color} border-current`
-                                  : isActive && !isPrimaryAdminUser
-                                    ? `bg-white dark:bg-[#1e1e1a] text-gray-400 dark:text-gray-500 border-gray-100 dark:border-white/10 ${opt.hover} hover:text-current hover:border-current`
-                                    : "bg-gray-50 dark:bg-gray-900/40 text-gray-300 dark:text-gray-600 border-transparent dark:border-white/5 grayscale"
-                              )}
-                            >
-                              <div className="relative">
-                                <opt.icon size={28} className={cn("transition-transform", isActive && !isPrimaryAdminUser && "group-hover:scale-110")} />
-                                {userResponses[poll.id]?.attendance === opt.value && (
-                                  <div className="absolute -top-1 -right-1 bg-white dark:bg-[#11110f] rounded-full p-0.5 shadow-sm">
-                                    <Check size={10} className={opt.color} />
-                                  </div>
-                                )}
-                              </div>
-                              <span className="text-[10px] font-bold uppercase tracking-widest">{opt.label}</span>
-                              <span className="text-xl font-bold font-serif">
-                                {(pollResponses[poll.id] || []).filter(r => r.attendance === opt.value).length}
-                              </span>
+
+                        {panel === 'progress' && <ResponseProgress eligibleMembers={eligibleMembers} latest={latest} />}
+                        {panel === 'matrix' && <AvailabilityMatrix poll={poll} eligibleMembers={eligibleMembers} latest={latest} />}
+                        {panel === 'assignments' && (
+                          <AssignmentBuilder poll={poll} eligibleMembers={eligibleMembers} latest={latest} members={members} onAssign={(date, role, uid) => saveAssignment(poll, date, role, uid)} />
+                        )}
+
+                        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4 dark:border-white/10">
+                          {poll.status === 'active' ? (
+                            <button type="button" onClick={() => setRequestStatus(poll, 'closed')} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#123B66] px-3.5 text-[11px] font-bold text-white"><CheckCircle2 className="h-4 w-4" /> Close availability</button>
+                          ) : (
+                            <button type="button" onClick={() => setRequestStatus(poll, 'active')} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3.5 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:text-slate-300"><RefreshCcw className="h-4 w-4" /> Reopen availability</button>
+                          )}
+
+                          {poll.status === 'closed' && !poll.rosterPublished && (
+                            <button type="button" onClick={() => publishRoster(poll)} disabled={publishingPollId === poll.id} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-green-700 px-3.5 text-[11px] font-bold text-white disabled:opacity-50">
+                              {publishingPollId === poll.id ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Publish final roster
                             </button>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* Responders List or Assignments */}
-                    <div className="space-y-6 pt-4">
-                      {poll.category === 'committee' ? (
-                        <div className="p-8 bg-blue-50/50 dark:bg-blue-950/10 rounded-[32px] border border-blue-100/50 dark:border-blue-950/30 text-center space-y-4">
-                          <BookOpen className="w-10 h-10 text-blue-400 mx-auto" />
-                          <div>
-                            <h4 className="text-sm font-bold text-blue-900 dark:text-blue-450">Assignments & Schedule</h4>
-                            <p className="text-[10px] text-blue-600/70 dark:text-blue-400/80 italic mt-1 uppercase tracking-widest">LITURGICAL MINISTRY ASSIGNMENT & SCHEDULING</p>
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md mx-auto leading-relaxed">
-                            Detailed poll results and committee assignments are managed in the Duties section.
-                          </p>
-                          <a 
-                            href={`/duties?tab=liturgical&pollId=${poll.id}`}
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest hover:bg-blue-700 transition-all shadow-md mt-2"
-                          >
-                            View Matrix in Duties
-                            <ChevronDown size={14} className="-rotate-90" />
-                          </a>
+                          )}
+                          {poll.rosterPublished && (
+                            <button type="button" onClick={() => unpublishRoster(poll)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 text-[11px] font-bold text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-300"><EyeOff className="h-4 w-4" /> Unpublish</button>
+                          )}
+                          <Link to={`/duties?tab=liturgical&pollId=${poll.id}`} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#EAF3FF] px-3.5 text-[11px] font-bold text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Settings2 className="h-4 w-4" /> Legacy detailed workspace</Link>
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                          {(poll.category === 'core_member' ? ['yes', 'no'] : ['yes', 'no', 'maybe']).map(type => {
-                            const attendees = (pollResponses[poll.id] || []).filter(r => r.attendance === type);
-                            if (attendees.length === 0) return null;
-
-                            const isAdminOrPresident = (profile?.roles || []).some(r => ['admin', 'president'].includes(r));
-                            const isPollCreator = poll.createdBy === user?.uid;
-                            const showResponders = !isActive || isAdminOrPresident || isPollCreator;
-
-                            return (
-                              <div key={type} className="space-y-4">
-                                <h4 className={cn(
-                                  "text-[10px] font-black uppercase tracking-widest flex items-center gap-2 px-1",
-                                  type === 'yes' ? "text-green-600" : type === 'no' ? "text-red-600" : "text-yellow-600"
-                                )}>
-                                  {type === 'yes' ? 'Attending' : type === 'no' ? 'Not Attending' : 'Tentative'}
-                                  <span className="bg-white dark:bg-[#1e1e1a] px-2 py-0.5 rounded-full border border-current opacity-70">{attendees.length}</span>
-                                </h4>
-                                <div className="flex flex-wrap gap-2">
-                                  {showResponders ? (
-                                    attendees.map(a => (
-                                      <div 
-                                        key={a.userId} 
-                                        className={cn(
-                                          "text-[10px] py-1.5 px-4 rounded-xl border flex items-center gap-2 shadow-sm",
-                                          a.userId === user?.uid ? "border-gray-900 dark:border-white bg-white dark:bg-gray-800 font-bold" : "border-gray-100 dark:border-white/5 bg-white dark:bg-[#252520] text-gray-650 dark:text-gray-300"
-                                        )}
-                                      >
-                                        <div className="w-4 h-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center text-[7px] uppercase font-black text-gray-500 dark:text-gray-400">
-                                          {a.userDisplayName?.substring(0, 2)}
-                                        </div>
-                                        {a.userDisplayName}
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 italic px-1">Names hidden while poll is ongoing.</p>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Show list of users who did not take the poll yet (for admin/president/poll creator) */}
-                      {showPendingList && pendingUsers.length > 0 && (
-                        <div className="mt-6 pt-6 border-t border-gray-100 dark:border-white/5">
-                          <h4 className="text-[10px] font-black uppercase tracking-widest text-[#5A5A40] dark:text-[#8a8a65] flex items-center gap-2 mb-3 px-1">
-                            Pending Response / Did Not Vote
-                            <span className="bg-white dark:bg-[#1e1e1a] text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-white/10 px-2 py-0.5 rounded-full font-mono font-bold opacity-80">{pendingUsers.length}</span>
-                          </h4>
-                          <div className="flex flex-wrap gap-2">
-                            {pendingUsers.map(u => (
-                              <div 
-                                key={u.uid} 
-                                className="text-[10px] py-1.5 px-4 rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-gray-50/30 dark:bg-[#252520]/20 text-gray-400 dark:text-gray-500 flex items-center gap-2 shadow-xs"
-                              >
-                                <div className="w-4 h-4 bg-gray-200/50 dark:bg-gray-800 rounded-full flex items-center justify-center text-[7px] uppercase font-black text-gray-500 dark:text-gray-400">
-                                  {u.displayName?.substring(0, 2)}
-                                </div>
-                                {u.displayName}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {hasVoted && (
-                      <div className="flex items-center justify-center gap-2 text-xs font-serif italic text-gray-400 pt-6">
-                        <Check size={14} className="text-green-500" />
-                        You recorded your response on {safeFormat(userResponses[poll.id].submittedAt, 'MMM dd, HH:mm')}
                       </div>
                     )}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                    {poll.category === 'core_member' && (poll.status === 'closed' || isFinished) && isAdminOrPresident && (
-                      <div className="mt-6 p-6 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20 border border-orange-200 dark:border-orange-900/30 rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="p-3 bg-orange-600 text-white rounded-full">
-                            <Users size={20} />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-bold text-orange-900 dark:text-orange-400">Chore Poll Completed!</h4>
-                            <p className="text-xs text-orange-750 dark:text-orange-500 font-medium">You can now proceed to assign chore roles to responders.</p>
-                          </div>
-                        </div>
-                        <a
-                          href={`/duties?tab=core&pollId=${poll.id}`}
-                          className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center gap-2"
-                        >
-                          Proceed to Assign Chores
-                          <Users size={14} />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
+        {mode === 'legacy' && hasLegacyPollAccess && (
+          <div>
+            <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-white/10">
+              <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Chore & legacy poll tools</h2>
+              <p className="mt-1 text-[13px] leading-5 text-slate-500 dark:text-slate-400">The previous poll workspace remains available while chore attendance and older records are migrated safely.</p>
+            </div>
+            <div className="p-2 sm:p-4"><LegacyPolls /></div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
+
+function ModeButton({ active, onClick, icon: Icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ComponentType<{ className?: string }>; label: string; badge?: number }) {
+  return (
+    <button type="button" onClick={onClick} className={cn('relative flex min-h-12 items-center justify-center gap-2 rounded-xl px-2 text-[12px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:text-[13px]', active ? 'bg-white text-[#123B66] shadow-sm ring-1 ring-slate-200/70 dark:bg-[#123B66] dark:text-white dark:ring-blue-300/10' : 'text-slate-500 hover:text-[#123B66] dark:text-slate-400 dark:hover:text-white')}>
+      <Icon className="h-[18px] w-[18px] shrink-0" /><span className="line-clamp-1">{label}</span>{badge ? <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-extrabold text-white">{badge}</span> : null}
+    </button>
+  );
+}
+
+function LeaderPanelButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: React.ComponentType<{ className?: string }>; label: string }) {
+  return (
+    <button type="button" onClick={onClick} className={cn('flex min-h-10 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-bold', active ? 'bg-white text-[#123B66] shadow-sm ring-1 ring-slate-200/70 dark:bg-[#123B66] dark:text-white' : 'text-slate-500 dark:text-slate-400')}><Icon className="h-4 w-4" />{label}</button>
+  );
+}
+
+function StatusPill({ poll }: { poll: ExtendedPoll }) {
+  if (poll.rosterPublished) return <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-green-700 dark:bg-green-500/15 dark:text-green-300">Published</span>;
+  if (poll.status === 'active') return <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200">Collecting</span>;
+  if (poll.status === 'closed') return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">Planning</span>;
+  return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-300">{poll.status}</span>;
+}
+
+function ResponseProgress({ eligibleMembers, latest }: { eligibleMembers: UserProfile[]; latest: Map<string, PollResponse> }) {
+  return (
+    <div className="mt-4 rounded-2xl bg-[#F7F9FC] p-3.5 dark:bg-white/5">
+      <p className="text-[12px] font-extrabold text-[#172033] dark:text-white">Response status</p>
+      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">See who has responded before you close availability.</p>
+      <div className="mt-3 grid gap-2 lg:grid-cols-2">
+        {eligibleMembers.map((member) => {
+          const response = latest.get(member.uid);
+          return (
+            <div key={member.uid} className="flex items-center gap-3 rounded-xl bg-white p-3 dark:bg-white/5">
+              <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full', response ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300')}>{response ? <Check className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</div>
+              <div className="min-w-0 flex-1"><p className="truncate text-[12px] font-bold text-[#172033] dark:text-white">{member.displayName}</p><p className="mt-0.5 truncate text-[10px] text-slate-500 dark:text-slate-400">{(member.ministries || []).filter((ministry) => memberMinistries.includes(ministry)).map(ministryLabel).join(' • ') || 'Liturgical ministry'}</p></div>
+              <span className="shrink-0 text-[10px] font-bold text-slate-400">{response ? `${response.selectedOptions?.length || 0} dates` : 'Waiting'}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AvailabilityMatrix({ poll, eligibleMembers, latest }: { poll: Poll; eligibleMembers: UserProfile[]; latest: Map<string, PollResponse> }) {
+  const dates = massDatesForPoll(poll);
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+      <div className="border-b border-slate-100 bg-[#F7F9FC] p-3.5 dark:border-white/10 dark:bg-white/5"><p className="text-[12px] font-extrabold text-[#172033] dark:text-white">Availability matrix</p><p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">A check means the member selected that Mass as available.</p></div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-left text-[11px]">
+          <thead><tr className="bg-white dark:bg-transparent"><th className="sticky left-0 z-10 min-w-[170px] border-b border-r border-slate-100 bg-white p-3 font-extrabold text-slate-500 dark:border-white/10 dark:bg-[#10243a] dark:text-slate-300">Member</th>{dates.map((date) => <th key={date.date} className="min-w-[120px] border-b border-slate-100 p-3 text-center font-extrabold text-slate-500 dark:border-white/10 dark:text-slate-300">{formatDate(date.date)}</th>)}</tr></thead>
+          <tbody>{eligibleMembers.map((member) => { const selected = latest.get(member.uid)?.selectedOptions || []; return <tr key={member.uid} className="border-b border-slate-100 last:border-0 dark:border-white/10"><td className="sticky left-0 z-10 border-r border-slate-100 bg-white p-3 dark:border-white/10 dark:bg-[#10243a]"><p className="font-bold text-[#172033] dark:text-white">{member.displayName}</p><p className="mt-0.5 text-[9px] text-slate-400">{(member.ministries || []).filter((ministry) => memberMinistries.includes(ministry)).map(ministryLabel).join(' • ')}</p></td>{dates.map((date) => <td key={date.date} className="p-3 text-center">{selected.includes(date.date) ? <span className="mx-auto flex h-7 w-7 items-center justify-center rounded-full bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300"><Check className="h-4 w-4" /></span> : <span className="text-slate-300">—</span>}</td>)}</tr>; })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AssignmentBuilder({ poll, eligibleMembers, latest, members, onAssign }: { poll: ExtendedPoll; eligibleMembers: UserProfile[]; latest: Map<string, PollResponse>; members: UserProfile[]; onAssign: (date: string, role: string, uid: string) => void }) {
+  const dates = massDatesForPoll(poll);
+  if (poll.status !== 'closed') return <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-[12px] leading-5 text-[#123B66] dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-200"><CircleAlert className="mr-2 inline h-4 w-4" />Close the availability request before assigning roles. This keeps member responses stable while leaders plan.</div>;
+
+  const eligibleFor = (date: string, ministry: string) => eligibleMembers.filter((member) => (member.ministries || []).includes(ministry as never) && (latest.get(member.uid)?.selectedOptions || []).includes(date));
+
+  return (
+    <div className="mt-4 space-y-4">
+      {poll.rosterPublished && <div className="rounded-2xl border border-green-200 bg-green-50 p-3.5 text-[11px] leading-5 text-green-800 dark:border-green-400/20 dark:bg-green-500/10 dark:text-green-300"><Eye className="mr-2 inline h-4 w-4" />This roster is published. Any assignment change will automatically return it to unpublished status so members never see an unreviewed revision.</div>}
+      {dates.map((mass) => (
+        <section key={mass.date} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+          <div className="bg-[#F7F9FC] p-3.5 dark:bg-white/5"><p className="text-[13px] font-extrabold text-[#172033] dark:text-white">{formatDate(mass.date, true)}</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{mass.description || 'Holy Mass'}</p></div>
+          <div className="space-y-4 p-3.5 sm:p-4">
+            {ROLE_GROUPS.map((group) => (
+              <div key={group.key}>
+                <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">{group.label}</p>
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {group.roles.map((role) => {
+                    const assigned = Object.entries(poll.assignments?.[mass.date] || {}).find(([, currentRole]) => currentRole === role)?.[0] || '';
+                    const candidates = eligibleFor(mass.date, group.key);
+                    return (
+                      <label key={role} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]">
+                        <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">{role}</span>
+                        <select value={assigned} onChange={(event) => onAssign(mass.date, role, event.target.value)} className="mt-2 min-h-10 w-full rounded-lg border border-slate-200 bg-[#F7F9FC] px-2.5 text-[11px] font-semibold text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white">
+                          <option value="">Unassigned</option>
+                          {candidates.map((member) => <option key={member.uid} value={member.uid}>{member.displayName}</option>)}
+                        </select>
+                        {assigned && <p className="mt-1.5 text-[9px] text-slate-400">Current: {members.find((member) => member.uid === assigned)?.displayName || 'KCFC Member'}</p>}
+                        {!assigned && candidates.length === 0 && <p className="mt-1.5 text-[9px] text-amber-600">No available member selected this date.</p>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function AvailabilityCard({ poll, focused, response, selected, saving, saved, onToggle, onSave }: { poll: Poll; focused: boolean; response?: PollResponse; selected: string[]; saving: boolean; saved: boolean; onToggle: (date: string) => void; onSave: (selected: string[]) => void }) {
+  const original = response?.selectedOptions || [];
+  const dirty = JSON.stringify([...original].sort()) !== JSON.stringify([...selected].sort()) || !response;
+  const deadline = parseDateValue(poll.endDate);
+  const expired = Boolean(deadline && deadline < new Date());
+  const dates = massDatesForPoll(poll);
+  return (
+    <article id={`availability-${poll.id}`} tabIndex={focused ? -1 : undefined} aria-current={focused ? 'true' : undefined} className={cn('overflow-hidden rounded-[22px] border bg-white transition-colors dark:bg-white/[0.03]', focused ? 'border-blue-300 ring-2 ring-blue-300/60 dark:border-blue-400/40 dark:ring-blue-400/30' : response ? 'border-green-200 dark:border-green-400/20' : 'border-blue-200 dark:border-blue-400/20')}>
+      <div className="p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2"><span className={cn('rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide', response ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300' : 'bg-blue-100 text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200')}>{response ? 'Submitted' : 'Response needed'}</span><span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400"><Clock3 className="h-3.5 w-3.5" /> Due {formatDeadline(poll.endDate)}</span></div>
+            <h3 className="mt-3 text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">{poll.title}</h3>
+            {poll.description && <p className="mt-1.5 max-w-2xl text-[13px] leading-5 text-slate-500 dark:text-slate-400">{poll.description}</p>}
+          </div>
+          {response && <div className="flex items-center gap-2 text-[11px] font-bold text-green-700 dark:text-green-300"><CheckCircle2 className="h-4 w-4" />{selected.length ? `${selected.length} Masses selected` : 'Unavailable for listed dates'}</div>}
+        </div>
+        <div className="mt-4"><p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Select every Mass you can serve</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{dates.map((item) => { const checked = selected.includes(item.date); return <button key={item.date} type="button" onClick={() => !expired && onToggle(item.date)} disabled={expired} className={cn('flex min-h-[72px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors', checked ? 'border-blue-300 bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-200' : 'border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300', expired && 'cursor-not-allowed opacity-55')}><span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border', checked ? 'border-[#2563EB] bg-[#2563EB] text-white' : 'border-slate-200 bg-[#F7F9FC] text-transparent dark:border-white/10 dark:bg-white/5')}><Check className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-[13px] font-extrabold">{formatDate(item.date)}</span><span className={cn('mt-0.5 block truncate text-[11px]', checked ? 'text-blue-700 dark:text-blue-200' : 'text-slate-500 dark:text-slate-400')}>{item.description || 'Holy Mass'}</span></span></button>; })}</div></div>
+        <div className="mt-4 flex flex-col gap-2 rounded-2xl bg-[#F7F9FC] p-3.5 sm:flex-row sm:items-center sm:justify-between dark:bg-white/5"><div><p className="text-[12px] font-bold text-[#172033] dark:text-white">{selected.length ? `Available for ${selected.length} ${selected.length === 1 ? 'Mass' : 'Masses'}` : 'Not available for any listed Mass'}</p><p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">You can change this response until the deadline.</p></div><div className="flex flex-wrap gap-2">{selected.length > 0 && !expired && <button type="button" onClick={() => onSave([])} disabled={saving} className="min-h-10 rounded-xl px-3 text-[11px] font-bold text-slate-500 hover:bg-white dark:text-slate-400 dark:hover:bg-white/5">I am unavailable for all</button>}<button type="button" onClick={() => onSave(selected)} disabled={saving || expired || !dirty} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[11px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">{saving ? <RefreshCcw className="h-4 w-4 animate-spin" /> : saved ? <CheckCircle2 className="h-4 w-4" /> : response ? <Edit3 className="h-4 w-4" /> : <Send className="h-4 w-4" />}{saving ? 'Saving…' : saved ? 'Saved' : response ? 'Save changes' : 'Submit availability'}</button></div></div>
+      </div>
+    </article>
+  );
+}
+
+function CreateAvailabilityForm({ form, setForm, newMassDate, setNewMassDate, newMassDescription, setNewMassDescription, addMassDate, creating, onSubmit }: { form: CreateForm; setForm: React.Dispatch<React.SetStateAction<CreateForm>>; newMassDate: string; setNewMassDate: (value: string) => void; newMassDescription: string; setNewMassDescription: (value: string) => void; addMassDate: () => void; creating: boolean; onSubmit: (event: React.FormEvent) => void }) {
+  return (
+    <form onSubmit={onSubmit} className="border-b border-slate-100 bg-blue-50/40 p-4 sm:p-5 dark:border-white/10 dark:bg-blue-500/5">
+      <div className="grid gap-4 lg:grid-cols-2"><label className="space-y-1.5"><span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Request title</span><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} required placeholder="e.g. Q4 Liturgical Ministry Availability" className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label><label className="space-y-1.5"><span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Response deadline</span><input type="datetime-local" value={form.endDate} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} required className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label></div>
+      <label className="mt-4 block space-y-1.5"><span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Instructions</span><textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13px] leading-5 text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+      <div className="mt-4"><span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Mass dates</span><div className="mt-2 grid gap-2 lg:grid-cols-[180px_1fr_auto]"><input type="date" value={newMassDate} onChange={(event) => setNewMassDate(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-[#172033] dark:border-white/10 dark:bg-white/5 dark:text-white" /><input value={newMassDescription} onChange={(event) => setNewMassDescription(event.target.value)} placeholder="Description, e.g. 3:00 PM English Mass" className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-[#172033] dark:border-white/10 dark:bg-white/5 dark:text-white" /><button type="button" onClick={addMassDate} disabled={!newMassDate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-[11px] font-bold text-[#123B66] disabled:opacity-40 dark:border-blue-400/20 dark:bg-white/5 dark:text-blue-200"><Plus className="h-4 w-4" /> Add date</button></div>{form.massDates.length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{form.massDates.map((item) => <div key={item.date} className="flex items-center gap-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 dark:bg-white/5 dark:ring-white/10"><CalendarDays className="h-4 w-4 shrink-0 text-[#2563EB]" /><div className="min-w-0 flex-1"><p className="text-[12px] font-bold text-[#172033] dark:text-white">{formatDate(item.date)}</p><p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{item.description || 'Holy Mass'}</p></div><button type="button" onClick={() => setForm((current) => ({ ...current, massDates: current.massDates.filter((date) => date.date !== item.date) }))} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X className="h-4 w-4" /></button></div>)}</div>}</div>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-2 text-[11px] leading-4 text-slate-500 dark:text-slate-400"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#D6A84B]" /> Publishing this request creates Portal notifications for verified Lector & Commentator, Usher and Altar Server members.</div><button type="submit" disabled={creating || !form.title.trim() || !form.endDate || form.massDates.length === 0} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white disabled:opacity-45">{creating ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{creating ? 'Publishing…' : 'Publish request'}</button></div>
+    </form>
+  );
+}
+
+function LeaderMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <div className="rounded-2xl bg-[#F7F9FC] p-3.5 dark:bg-white/5"><p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">{label}</p><p className="mt-1 text-[15px] font-extrabold text-[#172033] dark:text-white">{value}</p><p className="mt-1 text-[10px] leading-4 text-slate-500 dark:text-slate-400">{detail}</p></div>;
+}
+
+function LoadingCards() { return <div className="space-y-3 p-4 sm:p-5">{[0, 1].map((item) => <div key={item} className="h-56 animate-pulse rounded-[22px] bg-slate-100 dark:bg-white/5" />)}</div>; }
+function EmptyState({ icon: Icon, title, body }: { icon: React.ComponentType<{ className?: string }>; title: string; body: string }) { return <div className="px-5 py-12 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Icon className="h-6 w-6" /></div><h3 className="mt-4 text-[16px] font-extrabold text-[#172033] dark:text-white">{title}</h3><p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-500 dark:text-slate-400">{body}</p></div>; }

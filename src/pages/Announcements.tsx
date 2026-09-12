@@ -1,340 +1,379 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../App';
-import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, where, getDocs, writeBatch } from 'firebase/firestore';
+import { useSearchParams } from 'react-router-dom';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Announcement, UserRole } from '../types';
-import { motion, AnimatePresence } from 'motion/react';
-import { Megaphone, Plus, Trash2, Edit3, Send, Save, X, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
+import { Announcement, ConnectedCommunicationApp, NotificationPreferences } from '../types';
+import {
+  Bell,
+  Check,
+  Clock3,
+  Edit3,
+  Globe2,
+  Megaphone,
+  Plus,
+  Save,
+  Search,
+  Send,
+  ShieldCheck,
+  Trash2,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import { cn } from '../lib/utils';
-import { format } from 'date-fns';
+import { buildCommunicationRoutingPlan } from '../lib/communicationRouting';
+import { buildNotificationRecord } from '../lib/notificationRecord';
+import { CommunicationAudience, isProfileEligibleForAudience } from '../lib/communicationAudience';
 
-const formatSafeDate = (val: any, formatStr: string, fallback: string = 'Pending...') => {
-  if (!val) return fallback;
+type Audience = CommunicationAudience;
+type ExtendedAnnouncement = Announcement & {
+  audience?: Audience;
+  summary?: string;
+  channels?: string[];
+  expireAt?: unknown;
+  publishAt?: unknown;
+  websiteSlug?: string;
+  websiteSyncStatus?: 'not_requested' | 'pending' | 'synced' | 'failed';
+};
+
+type FormState = {
+  title: string;
+  summary: string;
+  content: string;
+  audience: Audience;
+  push: boolean;
+};
+
+const emptyForm: FormState = {
+  title: '',
+  summary: '',
+  content: '',
+  audience: 'kcfc_members',
+  push: true,
+};
+
+const formatDate = (value: unknown) => {
+  if (!value) return 'Just now';
   try {
-    let dateObj: Date;
-    if (typeof val.toDate === 'function') {
-      dateObj = val.toDate();
-    } else if (val.seconds !== undefined) {
-      dateObj = new Date(val.seconds * 1000);
-    } else {
-      dateObj = new Date(val);
-    }
-    if (isNaN(dateObj.getTime())) return fallback;
-    return format(dateObj, formatStr);
-  } catch (err) {
-    return fallback;
+    const candidate = value as { toDate?: () => Date; seconds?: number };
+    const date = typeof candidate.toDate === 'function'
+      ? candidate.toDate()
+      : typeof candidate.seconds === 'number'
+        ? new Date(candidate.seconds * 1000)
+        : new Date(value as string | number | Date);
+    if (Number.isNaN(date.getTime())) return 'Recently';
+    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  } catch {
+    return 'Recently';
   }
 };
 
+const audienceLabel = (audience?: Audience) => {
+  if (audience === 'public') return 'Public';
+  if (audience === 'parishioners') return 'Registered Parishioners';
+  if (audience === 'leadership') return 'Leadership';
+  return 'KCFC Members';
+};
+
+const audienceIcon = (audience?: Audience) => {
+  if (audience === 'public') return Globe2;
+  if (audience === 'leadership') return ShieldCheck;
+  return UsersRound;
+};
+
+const connectedProvidersFor = (apps?: ConnectedCommunicationApp[]) =>
+  (apps || [])
+    .filter((app) => app.status === 'connected')
+    .map((app) => app.provider);
+
 export default function Announcements() {
   const { profile, user } = useAuth();
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusedAnnouncementId = searchParams.get('id');
+  const [announcements, setAnnouncements] = useState<ExtendedAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
-  const [formData, setFormData] = useState({
-    title: '',
-    content: ''
-  });
+  const [saving, setSaving] = useState(false);
+  const [queryText, setQueryText] = useState('');
+  const requestedScope = searchParams.get('scope');
+  const [form, setForm] = useState<FormState>(emptyForm);
 
-  // Permissions
-  const canCreate = (profile?.roles || []).some(r => 
-    ['admin', 'president', 'vice_president', 'spiritual_director', 'secretary', 'pro'].includes(r)
+  const canCreate = (profile?.roles || []).some((role) =>
+    ['admin', 'president', 'vice_president', 'spiritual_director', 'secretary', 'pro'].includes(role),
   );
+  const canEditOthers = (profile?.roles || []).some((role) => ['admin', 'president'].includes(role));
+  const scope: 'published' | 'all' = canCreate && requestedScope === 'all' ? 'all' : 'published';
 
-  const canEditOthers = (profile?.roles || []).some(r => 
-    ['admin', 'president'].includes(r)
-  );
+  const setScopeFilter = (nextScope: 'published' | 'all') => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextScope === 'all') next.set('scope', 'all');
+      else next.delete('scope');
+      return next;
+    });
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
+    return onSnapshot(q, (snapshot) => {
+      setAnnouncements(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as ExtendedAnnouncement)));
+      setLoading(false);
+    }, (error) => {
+      console.error('Announcements: failed to load updates', error);
       setLoading(false);
     });
-    return () => unsubscribe();
   }, []);
 
-  const handleSubmit = async (status: 'draft' | 'published') => {
-    if (!user || !profile) return;
-    if (!formData.title || !formData.content) return;
+  const visibleAnnouncements = useMemo(() => {
+    const needle = queryText.trim().toLowerCase();
+    return announcements.filter((announcement) => {
+      const draftVisible = announcement.authorId === user?.uid || canEditOthers;
+      if (announcement.status === 'draft' && !draftVisible) return false;
+      if (scope === 'published' && announcement.status !== 'published') return false;
+      if (!needle) return true;
+      return [announcement.title, announcement.summary || '', announcement.content, announcement.authorName]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [announcements, user?.uid, canEditOthers, scope, queryText]);
 
-    const data = {
-      title: formData.title,
-      content: formData.content,
-      status,
-      updatedAt: serverTimestamp(),
-      authorId: user.uid,
-      authorName: profile.displayName,
-      ...(status === 'published' && { publishedAt: serverTimestamp() })
-    };
+  useEffect(() => {
+    if (!focusedAnnouncementId || loading) return;
+    if (!visibleAnnouncements.some((announcement) => announcement.id === focusedAnnouncementId)) return;
 
-    try {
-      let announcementId = editingId;
-      if (editingId) {
-        await updateDoc(doc(db, 'announcements', editingId), data);
-      } else {
-        const docRef = await addDoc(collection(db, 'announcements'), {
-          ...data,
-          createdAt: serverTimestamp()
-        });
-        announcementId = docRef.id;
-      }
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`announcement-${focusedAnnouncementId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    });
 
-      // Create notifications if published
-      if (status === 'published') {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        const batch = writeBatch(db);
-        
-        usersSnap.docs.forEach(userDoc => {
-          // Skip if user disabled announcement notifications in preferences (default is active)
-          const userData = userDoc.data();
-          if (userData.preferences?.announcements === false) return;
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedAnnouncementId, loading, visibleAnnouncements]);
 
-          const notificationRef = doc(collection(db, 'notifications'));
-          batch.set(notificationRef, {
-            userId: userDoc.id,
-            title: 'New Announcement',
-            message: formData.title,
-            type: 'announcement',
-            status: 'unread',
-            link: '/announcements',
-            createdAt: serverTimestamp()
-          });
-        });
-        
-        await batch.commit();
-
-        // Dispatch Firebase Cloud Messaging push broadcast via our backend service
-        try {
-          const recipientTokens: string[] = [];
-          usersSnap.docs.forEach(userDoc => {
-            const userData = userDoc.data();
-            if (userData.preferences?.announcements === false) return;
-            const tokens = userData.fcmTokens || [];
-            if (Array.isArray(tokens)) {
-              recipientTokens.push(...tokens.filter((tk: any) => typeof tk === "string" && tk.trim() !== ""));
-            }
-          });
-
-          const idToken = await user.getIdToken();
-          const pResponse = await fetch('/api/admin/broadcast-announcement-push', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            },
-            body: JSON.stringify({
-              title: `New Announcement: ${formData.title}`,
-              body: formData.content,
-              recipientTokens: recipientTokens
-            })
-          });
-          const pResult = await pResponse.json();
-          console.log("FCM push broadcast response:", pResult);
-        } catch (pushError) {
-          console.error("FCM push notification dispatch failed:", pushError);
-        }
-      }
-
-      setIsEditorOpen(false);
-      setEditingId(null);
-      setFormData({ title: '', content: '' });
-    } catch (err) {
-      console.error(err);
-      alert("Failed to save announcement");
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this announcement?")) return;
-    try {
-      await deleteDoc(doc(db, 'announcements', id));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const startEdit = (a: Announcement) => {
-    setEditingId(a.id || null);
-    setFormData({ title: a.title, content: a.content });
-    setIsEditorOpen(true);
+  const resetEditor = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setEditorOpen(false);
   };
 
   const openNew = () => {
     setEditingId(null);
-    setFormData({ title: '', content: '' });
-    setIsEditorOpen(true);
+    setForm(emptyForm);
+    setEditorOpen(true);
   };
 
-  const handleClose = () => {
-    setIsEditorOpen(false);
-    setEditingId(null);
-    setFormData({ title: '', content: '' });
+  const openEdit = (announcement: ExtendedAnnouncement) => {
+    setEditingId(announcement.id || null);
+    setForm({
+      title: announcement.title,
+      summary: announcement.summary || '',
+      content: announcement.content,
+      audience: announcement.audience || 'kcfc_members',
+      push: (announcement.channels || []).includes('push') || !announcement.channels,
+    });
+    setEditorOpen(true);
   };
 
-  const filteredAnnouncements = announcements.filter(a => {
-    if (a.status === 'published') return true;
-    // Drafts only visible to authors or admins/presidents
-    return a.authorId === user?.uid || canEditOthers;
-  });
+  const publishNotifications = async (announcementId: string, title: string, audience: Audience, push: boolean) => {
+    const usersSnapshot = await getDocs(collection(db, 'users'));
+    const batch = writeBatch(db);
+    const recipientTokens = new Set<string>();
 
-  if (loading) return <div className="p-8 text-center font-serif italic text-gray-400">Loading announcements...</div>;
+    usersSnapshot.docs.forEach((userDoc) => {
+      const userData = userDoc.data() as {
+        isDisabled?: boolean;
+        isVerified?: boolean;
+        roles?: any[];
+        preferences?: NotificationPreferences;
+        connectedCommunicationApps?: ConnectedCommunicationApp[];
+        fcmTokens?: unknown[];
+      };
+
+      if (!isProfileEligibleForAudience(userData, audience)) return;
+
+      const routing = buildCommunicationRoutingPlan({
+        kind: 'announcement',
+        preferences: userData.preferences,
+        connectedProviders: connectedProvidersFor(userData.connectedCommunicationApps),
+        allowPwa: push,
+        allowEmail: true,
+        allowExternalConnectors: false,
+      });
+
+      const notificationRef = doc(collection(db, 'notifications'));
+      batch.set(notificationRef, {
+        ...buildNotificationRecord({
+          userId: userDoc.id,
+          title: 'KCFC Update',
+          message: title,
+          type: 'announcement',
+          link: `/announcements?id=${announcementId}`,
+          sourceId: announcementId,
+          sourceType: 'announcement',
+          urgency: routing.urgency,
+          channels: routing.channels,
+          extra: {
+            audience,
+            routingRationale: routing.rationale,
+          },
+        }),
+        createdAt: serverTimestamp(),
+      });
+
+      if (push && routing.channels.includes('pwa') && Array.isArray(userData.fcmTokens)) {
+        userData.fcmTokens.forEach((token) => {
+          if (typeof token === 'string' && token.trim()) recipientTokens.add(token.trim());
+        });
+      }
+    });
+
+    await batch.commit();
+
+    if (push && recipientTokens.size > 0 && user) {
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch('/api/admin/broadcast-announcement-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            title: `KCFC Update: ${title}`,
+            body: form.summary || form.content,
+            recipientTokens: Array.from(recipientTokens),
+          }),
+        });
+        if (!response.ok) console.warn('Announcements: push broadcast returned non-success status');
+      } catch (error) {
+        console.error('Announcements: push broadcast failed; Inbox records were still created', error);
+      }
+    }
+  };
+
+  const handleSave = async (status: 'draft' | 'published') => {
+    if (!user || !profile || saving) return;
+    if (!form.title.trim() || !form.content.trim()) return;
+
+    setSaving(true);
+    try {
+      const channels = ['portal', ...(form.push ? ['push'] : [])];
+      const data = {
+        title: form.title.trim(),
+        summary: form.summary.trim(),
+        content: form.content.trim(),
+        audience: form.audience,
+        channels,
+        status,
+        updatedAt: serverTimestamp(),
+        authorId: user.uid,
+        authorName: profile.displayName,
+        websiteSyncStatus: 'not_requested',
+        ...(status === 'published' ? { publishedAt: serverTimestamp() } : {}),
+      };
+
+      let announcementId = editingId;
+      const previouslyPublished = editingId ? announcements.find((item) => item.id === editingId)?.status === 'published' : false;
+      if (editingId) {
+        await updateDoc(doc(db, 'announcements', editingId), data);
+      } else {
+        const created = await addDoc(collection(db, 'announcements'), { ...data, createdAt: serverTimestamp() });
+        announcementId = created.id;
+      }
+
+      if (status === 'published' && announcementId && !previouslyPublished) {
+        await publishNotifications(announcementId, form.title.trim(), form.audience, form.push);
+      }
+      resetEditor();
+    } catch (error) {
+      console.error('Announcements: failed to save', error);
+      alert('This update could not be saved. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (announcement: ExtendedAnnouncement) => {
+    if (!announcement.id) return;
+    if (!window.confirm(`Delete “${announcement.title}”? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, 'announcements', announcement.id));
+    } catch (error) {
+      console.error('Announcements: failed to delete', error);
+      alert('This update could not be deleted.');
+    }
+  };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-serif flex items-center gap-3 text-gray-900 dark:text-white">
-            <Megaphone className="text-[#5A5A40] dark:text-[#8a8a65]" />
-            Community News
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm mt-1">Stay updated with the latest from KCFC.</p>
+    <div className="kcfc-page space-y-5 pb-4">
+      <section className="overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-[#123B66] via-[#174E83] to-[#2563EB] p-5 text-white shadow-[0_18px_45px_rgba(18,59,102,0.18)] sm:p-7">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-2xl"><div className="mb-2 flex items-center gap-2 text-blue-100"><Megaphone className="h-4 w-4" /><span className="text-[11px] font-extrabold uppercase tracking-[0.13em]">Updates</span></div><h1 className="text-[28px] font-extrabold leading-tight tracking-[-0.03em] sm:text-[34px]">Everything important, easy to find.</h1><p className="mt-2 max-w-xl text-[14px] leading-6 text-blue-50/90">KCFC announcements stay in the Portal even if a push alert is missed. Published updates are the durable record members can return to anytime.</p></div>
+          {canCreate && <button type="button" onClick={openNew} className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-[12px] font-bold text-[#123B66] shadow-sm"><Plus className="h-4 w-4" />New update</button>}
         </div>
-        {canCreate && (
-          <button
-            onClick={openNew}
-            className="flex items-center gap-2 px-6 py-3 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-full font-bold text-xs uppercase tracking-widest shadow-soft hover:shadow-lg transition-all"
-          >
-            <Plus size={16} />
-            Post New
-          </button>
-        )}
-      </header>
+      </section>
 
-      <AnimatePresence>
-        {isEditorOpen && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          >
-            <div className="bg-white dark:bg-[#1e1e1a] w-full max-w-2xl rounded-[32px] overflow-hidden shadow-2xl border dark:border-white/5">
-              <div className="p-8 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-[#252520]/50">
-                <h2 className="text-xl font-serif font-medium text-gray-900 dark:text-white">{editingId ? 'Edit Announcement' : 'New Announcement'}</h2>
-                <button onClick={handleClose} className="p-2 hover:bg-gray-200 dark:hover:bg-[#252520] rounded-full transition-colors text-gray-400">
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="p-8 space-y-6">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest block mb-2">Title</label>
-                  <input
-                    type="text"
-                    value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] text-gray-900 dark:text-white transition-all font-medium outline-none"
-                    placeholder="Brief headline..."
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest block mb-2">Content</label>
-                  <textarea
-                    rows={6}
-                    value={formData.content}
-                    onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                    className="w-full px-6 py-4 bg-gray-50 dark:bg-[#252520] border-none rounded-2xl focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] text-gray-900 dark:text-white transition-all resize-none outline-none"
-                    placeholder="What would you like to share with the community?"
-                  />
-                </div>
-                <div className="flex gap-4 pt-4">
-                  <button
-                    onClick={() => handleSubmit('published')}
-                    className="flex-1 flex items-center justify-center gap-2 py-4 bg-[#5A5A40] text-white rounded-full font-bold text-xs uppercase tracking-widest shadow-soft hover:shadow-lg transition-all"
-                  >
-                    <Send size={16} />
-                    {editingId ? 'Save & Publish' : 'Send Announcement'}
-                  </button>
-                  <button
-                    onClick={() => handleSubmit('draft')}
-                    className="flex-1 flex items-center justify-center gap-2 py-4 bg-gray-100 dark:bg-[#252520] text-gray-600 dark:text-gray-400 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-gray-200 dark:hover:bg-[#2c2c25] transition-all"
-                  >
-                    <Save size={16} />
-                    Save as Draft
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="space-y-6">
-        {filteredAnnouncements.length === 0 ? (
-          <div className="text-center py-20 bg-white dark:bg-[#1e1e1a] rounded-[32px] border border-gray-100 dark:border-white/5 italic font-serif text-gray-400 dark:text-gray-500">
-            No announcements yet.
+      <section className="kcfc-surface overflow-hidden">
+        <div className="border-b border-slate-100 p-4 sm:p-5 dark:border-white/10">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div><h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Community updates</h2><p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Browse published notices, schedules, reminders and community news.</p></div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center"><div className="relative"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Search updates…" className="min-h-11 min-w-[230px] rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-[12px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>{canCreate && <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-white/5"><ScopeButton active={scope === 'published'} onClick={() => setScopeFilter('published')} label="Published" /><ScopeButton active={scope === 'all'} onClick={() => setScopeFilter('all')} label="All + drafts" /></div>}</div>
           </div>
-        ) : (
-          filteredAnnouncements.map((a, idx) => {
-            const isAuthor = a.authorId === user?.uid;
-            const canManage = isAuthor || canEditOthers;
-            
-            return (
-              <motion.article
-                key={a.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.1 }}
-                className={cn(
-                  "bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border transition-all hover:shadow-soft dark:hover:shadow-none",
-                  a.status === 'draft' 
-                    ? "border-dashed border-gray-200 dark:border-white/10" 
-                    : "border-gray-50 dark:border-white/5"
-                )}
-              >
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                       {a.status === 'draft' ? (
-                        <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-50 dark:bg-yellow-950/20 text-yellow-600 dark:text-yellow-400 text-[8px] font-bold uppercase rounded-full">
-                          <Clock size={10} /> Draft
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 px-2 py-0.5 bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-400 text-[8px] font-bold uppercase rounded-full">
-                          <CheckCircle2 size={10} /> Published
-                        </span>
-                      )}
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
-                        {formatSafeDate(a.createdAt, 'PPP p')}
-                      </span>
-                    </div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-[#f5f5f0] leading-tight">{a.title}</h2>
-                  </div>
-                  {canManage && (
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => startEdit(a)}
-                        className="p-2 text-gray-400 hover:text-[#5A5A40] dark:hover:text-[#8a8a65] hover:bg-gray-50 dark:hover:bg-[#252520] rounded-full transition-all"
-                      >
-                        <Edit3 size={18} />
-                      </button>
-                      <button 
-                         onClick={() => a.id && handleDelete(a.id)}
-                         className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full transition-all"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="prose prose-sm max-w-none text-gray-600 dark:text-gray-300 whitespace-pre-wrap font-serif">
-                  {a.content}
-                </div>
-                <div className="mt-8 pt-4 border-t border-gray-50 dark:border-white/5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-gray-100 dark:bg-[#252520] rounded-full flex items-center justify-center text-[10px] font-bold text-gray-400 dark:text-gray-500">
-                      {a.authorName.charAt(0)}
-                    </div>
-                    <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">{a.authorName}</span>
-                  </div>
-                </div>
-              </motion.article>
-            );
-          })
-        )}
-      </div>
+        </div>
+
+        {loading ? <div className="space-y-3 p-4 sm:p-5">{[0, 1, 2].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />)}</div> : visibleAnnouncements.length === 0 ? <EmptyState queryText={queryText} canCreate={canCreate} onCreate={openNew} /> : <div className="divide-y divide-slate-100 dark:divide-white/10">{visibleAnnouncements.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} focused={focusedAnnouncementId === announcement.id} canEdit={announcement.authorId === user?.uid || canEditOthers} onEdit={() => openEdit(announcement)} onDelete={() => handleDelete(announcement)} />)}</div>}
+      </section>
+
+      {editorOpen && <EditorSheet form={form} setForm={setForm} editing={Boolean(editingId)} saving={saving} onClose={resetEditor} onSave={handleSave} />}
     </div>
   );
 }
+
+function AnnouncementCard({ announcement, focused, canEdit, onEdit, onDelete }: { announcement: ExtendedAnnouncement; focused: boolean; canEdit: boolean; onEdit: () => void; onDelete: () => void }) {
+  const AudienceIcon = audienceIcon(announcement.audience);
+  const isDraft = announcement.status === 'draft';
+  return (
+    <article id={announcement.id ? `announcement-${announcement.id}` : undefined} tabIndex={focused ? -1 : undefined} aria-current={focused ? 'true' : undefined} className={cn('p-4 transition-colors sm:p-5', focused && 'bg-blue-50/60 ring-2 ring-inset ring-blue-400 dark:bg-blue-500/10 dark:ring-blue-400/70')}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide', isDraft ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300')}>{isDraft ? <Clock3 className="h-3 w-3" /> : <Check className="h-3 w-3" />}{isDraft ? 'Draft' : 'Published'}</span><span className="inline-flex items-center gap-1 rounded-full bg-[#F7F9FC] px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:bg-white/5 dark:text-slate-300"><AudienceIcon className="h-3 w-3" />{audienceLabel(announcement.audience)}</span></div><h3 className="mt-3 text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white sm:text-[20px]">{announcement.title}</h3>{announcement.summary && <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-600 dark:text-slate-300">{announcement.summary}</p>}<p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-slate-500 dark:text-slate-400">{announcement.content}</p><div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium text-slate-400"><span>{announcement.authorName}</span><span>•</span><span>{formatDate(announcement.publishedAt || announcement.updatedAt || announcement.createdAt)}</span>{(announcement.channels || []).includes('push') && <><span>•</span><span className="inline-flex items-center gap-1"><Bell className="h-3 w-3" />Push enabled</span></>}</div></div>
+        {canEdit && <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={onEdit} aria-label="Edit announcement" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-[#EAF3FF] hover:text-[#123B66] dark:text-slate-400 dark:hover:bg-blue-500/10"><Edit3 className="h-4 w-4" /></button><button type="button" onClick={onDelete} aria-label="Delete announcement" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"><Trash2 className="h-4 w-4" /></button></div>}
+      </div>
+    </article>
+  );
+}
+
+function EditorSheet({ form, setForm, editing, saving, onClose, onSave }: { form: FormState; setForm: React.Dispatch<React.SetStateAction<FormState>>; editing: boolean; saving: boolean; onClose: () => void; onSave: (status: 'draft' | 'published') => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/40 backdrop-blur-[2px] sm:items-center sm:p-4">
+      <section role="dialog" aria-modal="true" aria-label={editing ? 'Edit KCFC update' : 'Create KCFC update'} className="max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] bg-white shadow-2xl sm:max-w-2xl sm:rounded-[28px] dark:bg-[#10243a]">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-5 dark:border-white/10 dark:bg-[#10243a]/95"><div><p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#2563EB]">Updates</p><h2 className="mt-1 text-[20px] font-extrabold text-[#172033] dark:text-white">{editing ? 'Edit update' : 'Create update'}</h2></div><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300" aria-label="Close update editor"><X className="h-5 w-5" /></button></div>
+        <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
+          <label className="block"><span className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Title</span><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Clear, useful headline" className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+          <label className="block"><span className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Short summary</span><input value={form.summary} onChange={(event) => setForm((current) => ({ ...current, summary: event.target.value }))} placeholder="One-line summary shown before the full message" className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+          <label className="block"><span className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Message</span><textarea rows={7} value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} placeholder="Write the complete update…" className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13px] leading-6 text-[#172033] outline-none focus:border-blue-400 dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+
+          <div><span className="mb-2 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Audience</span><div className="grid grid-cols-2 gap-2">{(['kcfc_members', 'leadership', 'parishioners', 'public'] as Audience[]).map((audience) => { const Icon = audienceIcon(audience); const active = form.audience === audience; return <button key={audience} type="button" onClick={() => setForm((current) => ({ ...current, audience }))} className={cn('flex min-h-12 items-center gap-2 rounded-xl border px-3 text-left text-[11px] font-bold', active ? 'border-blue-300 bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-200' : 'border-slate-200 text-slate-500 dark:border-white/10 dark:text-slate-300')}><Icon className="h-4 w-4" />{audienceLabel(audience)}</button>; })}</div><p className="mt-2 text-[10px] leading-4 text-slate-400">Public website publishing will be enabled later as a separate channel. Selecting Public here does not publish to the website yet.</p></div>
+
+          <div className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-white/10"><button type="button" role="switch" aria-checked={form.push} aria-label="PWA Web Push alert" onClick={() => setForm((current) => ({ ...current, push: !current.push }))} className={cn('flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', form.push ? 'bg-[#2563EB]' : 'bg-slate-300 dark:bg-slate-600')}><span className={cn('h-5 w-5 rounded-full bg-white shadow-sm transition-transform', form.push && 'translate-x-4')} /></button><div><p className="text-[12px] font-bold text-[#172033] dark:text-white">PWA / Web Push alert</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">The Portal notification record is still created even if push delivery is disabled or fails.</p></div></div>
+
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-white/10"><button type="button" onClick={() => onSave('draft')} disabled={saving || !form.title.trim() || !form.content.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-[11px] font-bold text-slate-600 disabled:opacity-45 dark:border-white/10 dark:text-slate-300"><Save className="h-4 w-4" />Save draft</button><button type="button" onClick={() => onSave('published')} disabled={saving || !form.title.trim() || !form.content.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[11px] font-bold text-white disabled:opacity-45">{saving ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{saving ? 'Saving…' : editing ? 'Save & publish' : 'Publish update'}</button></div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ScopeButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button type="button" onClick={onClick} className={cn('min-h-9 rounded-lg px-3 text-[10px] font-bold', active ? 'bg-white text-[#123B66] shadow-sm dark:bg-[#123B66] dark:text-white' : 'text-slate-500 dark:text-slate-400')}>{label}</button>; }
+function EmptyState({ queryText, canCreate, onCreate }: { queryText: string; canCreate: boolean; onCreate: () => void }) { return <div className="px-5 py-14 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Megaphone className="h-6 w-6" /></div><h3 className="mt-4 text-[16px] font-extrabold text-[#172033] dark:text-white">{queryText ? 'No updates match your search' : 'No updates yet'}</h3><p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-500 dark:text-slate-400">{queryText ? 'Try a shorter search or clear the search box.' : 'Published KCFC announcements will appear here.'}</p>{canCreate && !queryText && <button type="button" onClick={onCreate} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#123B66] px-4 text-[11px] font-bold text-white"><Plus className="h-4 w-4" />Create first update</button>}</div>; }

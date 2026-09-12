@@ -1,6 +1,8 @@
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { PollResponse, DutyAssignment } from '../types';
+import { PollResponse, DutyAssignment, UserProfile } from '../types';
+import { buildDutyAssignmentNotification } from '../lib/dutyCommunication';
+import { materializeNotificationRecord } from '../lib/notificationPersistence';
 
 export interface ChoreAttendee {
   userId: string;
@@ -35,7 +37,6 @@ export function balanceChoreSlots(
 ): AutoChoreAssignment[] {
   if (attendees.length === 0) return [];
 
-  // Calculate local user workloads
   const workloadMap: Record<string, number> = {};
   attendees.forEach(a => {
     workloadMap[a.userId] = history.filter(h => h.userId === a.userId).length;
@@ -46,7 +47,6 @@ export function balanceChoreSlots(
     currentlyAssignedCount[a.userId] = 0;
   });
 
-  // Flat list of remaining slots to assign
   const slotsToAssign: { template: ChoreDutyTemplate; slotIndex: number }[] = [];
   templates.forEach(t => {
     const required = t.requiredPersons || 0;
@@ -55,7 +55,6 @@ export function balanceChoreSlots(
     }
   });
 
-  // Prioritize Restricted slots first (e.g. toilet)
   slotsToAssign.sort((a, b) => {
     const rA = a.template.restrictedToToiletOk ? 1 : 0;
     const rB = b.template.restrictedToToiletOk ? 1 : 0;
@@ -66,35 +65,24 @@ export function balanceChoreSlots(
 
   for (const slot of slotsToAssign) {
     let potential = attendees.filter(a => {
-      if (slot.template.group === 'kitchen') {
-        return !!a.isKitchen;
-      }
-      if (slot.template.group === 'cleaning') {
-        return !!a.isCleaning;
-      }
+      if (slot.template.group === 'kitchen') return !!a.isKitchen;
+      if (slot.template.group === 'cleaning') return !!a.isCleaning;
       return true;
     });
 
-    // Handle toilet restriction among the eligible committee members
     if (slot.template.restrictedToToiletOk) {
       const toiletPotentials = potential.filter(a => a.toiletOk);
-      if (toiletPotentials.length > 0) {
-        potential = toiletPotentials;
-      }
+      if (toiletPotentials.length > 0) potential = toiletPotentials;
     }
 
-    // Safe fallback if no specific committee members are present in Yes responses
     if (potential.length === 0) {
       potential = [...attendees];
       if (slot.template.restrictedToToiletOk) {
         const fallbackToilet = potential.filter(a => a.toiletOk);
-        if (fallbackToilet.length > 0) {
-          potential = fallbackToilet;
-        }
+        if (fallbackToilet.length > 0) potential = fallbackToilet;
       }
     }
 
-    // Balance by current assignments, and then past history, with robust tiesbreaker
     potential.sort((a, b) => {
       const curA = currentlyAssignedCount[a.userId] || 0;
       const curB = currentlyAssignedCount[b.userId] || 0;
@@ -122,8 +110,23 @@ export function balanceChoreSlots(
   return assignments;
 }
 
+async function readCommunicationProfile(userId: string): Promise<UserProfile | undefined> {
+  try {
+    const snapshot = await getDoc(doc(db, 'users', userId));
+    return snapshot.exists() ? ({ uid: snapshot.id, ...snapshot.data() } as UserProfile) : undefined;
+  } catch (error) {
+    console.warn('Duty communication: member preferences unavailable; falling back to durable Inbox only.', error);
+    return undefined;
+  }
+}
+
 /**
- * Main legacy automatic assigner keeping backward compatibility
+ * Main legacy automatic assigner keeping backward compatibility.
+ *
+ * The duty assignment behavior remains unchanged. Its durable Portal Inbox record now
+ * uses the shared KCFC notification schema. PWA/email execution remains deliberately
+ * disabled here because the legacy service never executed those transports; this avoids
+ * claiming a delivery channel that was not actually attempted.
  */
 export async function autoAssignDuties(pollId: string, date: string) {
   const responsesQ = query(
@@ -133,9 +136,8 @@ export async function autoAssignDuties(pollId: string, date: string) {
   const responsesSnap = await getDocs(responsesQ);
   const attendees = responsesSnap.docs.map(d => d.data() as PollResponse);
 
-  if (attendees.length < 1) return { success: false, message: "Not enough attendees" };
+  if (attendees.length < 1) return { success: false, message: 'Not enough attendees' };
 
-  // Shuffling attendees for random mock dispatching
   const shuffled = [...attendees].sort(() => Math.random() - 0.5);
   const assignments: Omit<DutyAssignment, 'id'>[] = [
     {
@@ -162,23 +164,31 @@ export async function autoAssignDuties(pollId: string, date: string) {
   }
 
   for (const assignment of assignments) {
-    await addDoc(collection(db, 'duties'), {
+    const dutyRef = await addDoc(collection(db, 'duties'), {
       ...assignment,
       assignedAt: serverTimestamp()
     });
 
     try {
-      await addDoc(collection(db, 'notifications'), {
+      const member = await readCommunicationProfile(assignment.userId);
+      const notificationPlan = buildDutyAssignmentNotification({
         userId: assignment.userId,
+        dutyId: dutyRef.id,
         title: 'Auto-Assigned Duty',
         message: `You have been automatically assigned to ${assignment.type} duty on ${new Date(date).toLocaleDateString()}.`,
-        type: 'system',
-        status: 'unread',
-        link: '/duties',
-        createdAt: serverTimestamp()
+        link: '/duties?view=mine',
+        preferences: member?.preferences,
+        connectedCommunicationApps: member?.connectedCommunicationApps,
+        allowPwa: false,
+        allowEmail: false,
       });
+
+      await addDoc(
+        collection(db, 'notifications'),
+        materializeNotificationRecord(notificationPlan.record, serverTimestamp()),
+      );
     } catch (err) {
-      console.error("Failed to create auto-duty notification", err);
+      console.error('Failed to create auto-duty notification', err);
     }
   }
 
