@@ -8,7 +8,7 @@ Status: **build/readiness evidence only.** This does not authorize deployment, p
 
 Tie a future KCFC deployment artifact back to an exact source commit and the exact files produced by the repository build.
 
-After `npm run build`, CI now generates `dist/kcfc-build-manifest.json` and verifies it before the build is treated as ready evidence. CI then retains only that non-secret manifest as a GitHub Actions artifact for 30 days; it does not upload environment files, credentials or the full runtime filesystem.
+After `npm run build`, CI generates `dist/kcfc-build-manifest.json` and verifies it before the build is treated as ready evidence. CI then retains only that non-secret manifest as a GitHub Actions artifact for 30 days; it does not upload environment files, credentials or the full runtime filesystem.
 
 ## Manifest contents
 
@@ -61,6 +61,25 @@ For a future explicitly approved production release, the deployment evidence sho
 
 The repository manifest proves what the repository built. Its GitHub Actions artifact proves the manifest was retained for the configured evidence window. Neither proves what a hosting provider deployed, nor that a previous provider artifact is still redeployable. Provider-specific rollback evidence therefore remains an open release gate.
 
-## Current retained evidence
+## Current retained evidence — 2026-09-12
 
-CI #1459 / run `34596788624` for source `8ea202c552d88712ffe34b53e7697caa40b6d6b2` retained artifact `kcfc-build-manifest-8ea202c552d88712ffe34b53e7697caa40b6d6b2` (artifact id `10261723910`) with archive digest `sha256:b523ba2c7062b58e4d2451726a9e435140ded21934548c160b5f9f984c7d5ccb`, expiring `2026-10-11T12:01:45Z`. This is repository-side evidence only.
+Latest branch checkpoint:
+
+- source/head: `7278998c072591e6667682bab7358d2d2b2e91ec` (documentation-only checkpoint on top of the validated code/config state);
+- CI run: #1631 / `34668140521` — **SUCCESS**;
+- retained artifact: `kcfc-build-manifest-7278998c072591e6667682bab7358d2d2b2e91ec`;
+- artifact id: `10288749545`;
+- archive digest: `sha256:54450c9df171ef15ceb23c38702fcc4c797877e5b61d2e40b8052f19b664bbc5`;
+- retention expiry: 2026-10-12.
+
+Latest substantive code/config checkpoint beneath that documentation head:
+
+- source: `9764c502ae6386fd182f9834fe7b129a881a9e05`;
+- push CI #1629 / `34668011181` — **SUCCESS**;
+- exact-head PR CI #1630 / `34668012763` — **SUCCESS**;
+- retained artifact: `kcfc-build-manifest-9764c502ae6386fd182f9834fe7b129a881a9e05`;
+- artifact id: `10289604349`;
+- archive digest: `sha256:58ee866bdea5adb7e78932543c9fc806f8d8954b4d5bdca830a841104089ef34`;
+- retention expiry: 2026-10-12.
+
+These are repository-side artifacts only. They do **not** establish Firebase/App Hosting deployment identity, provider backup availability, or redeployability of a last-known-good provider revision. Those remain provider-side release gates to capture separately.
