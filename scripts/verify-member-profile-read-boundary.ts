@@ -53,8 +53,11 @@ if (unexpected.length > 0) {
 }
 
 const debtStillPresent = directConsumers.filter((file) => memberFacingPrivacyDebt.has(file));
-const privateFieldMarkers = [
-  '.email',
+
+// The current Directory still reads member.email solely to exclude the bootstrap account.
+// That known dependency is part of the migration debt above; do not expand it to other
+// contact/device-delivery fields while the public/private profile split is pending.
+const forbiddenDirectoryFieldReferences = [
   '.birthdate',
   '.homeAddress',
   '.phoneNumber',
@@ -63,10 +66,15 @@ const privateFieldMarkers = [
   '.connectedCommunicationApps',
 ];
 const directorySource = fs.readFileSync('src/pages/Members.tsx', 'utf8');
-for (const marker of privateFieldMarkers) {
+for (const marker of forbiddenDirectoryFieldReferences) {
   if (directorySource.includes(`member${marker}`)) {
-    throw new Error(`Community Directory must not render private profile field: member${marker}`);
+    throw new Error(`Community Directory must not consume private profile field: member${marker}`);
   }
+}
+
+const bootstrapEmailUses = directorySource.match(/member\.email/g)?.length || 0;
+if (bootstrapEmailUses > 1) {
+  throw new Error('Community Directory email dependency expanded beyond the single known bootstrap-account exclusion');
 }
 
 console.log(`Member profile read-boundary containment: PASS (${directConsumers.length} known full-list consumers; ${debtStillPresent.length} member-facing migration debt paths remain)`);
