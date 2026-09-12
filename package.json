@@ -8,7 +8,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit && npx tsx scripts/verify-browser-secret-boundary.ts && npx tsx scripts/verify-firestore-index-contracts.ts",
+    "lint": "tsc --noEmit && npx tsx scripts/verify-browser-secret-boundary.ts && npx tsx scripts/verify-firestore-index-contracts.ts && npx tsx scripts/verify-accounting-authorization-contract.ts",
     "staging:preflight": "node scripts/staging-preflight.mjs",
     "staging:evidence": "node scripts/staging-runtime-evidence.mjs"
   },
