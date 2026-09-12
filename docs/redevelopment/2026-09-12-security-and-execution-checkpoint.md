@@ -9,13 +9,13 @@ Status: **redevelopment repository GREEN; production remains untouched and not a
 
 ## Current validated code/config checkpoint
 
-- Head: `dbba278c8b8e02004b4d6705c82dbc303bf2d0b5`
-- Push CI: `KCFC Redevelopment CI` run #1623 / id `34667884007` — **SUCCESS**
-- Exact-head PR CI: run #1624 / id `34667886504` — **SUCCESS**
+- Head: `9764c502ae6386fd182f9834fe7b129a881a9e05`
+- Push CI: `KCFC Redevelopment CI` run #1629 / id `34668011181` — **SUCCESS**
+- Exact-head PR CI: run #1630 / id `34668012763` — **SUCCESS**
 - All existing named validation/build/security steps passed.
-- Retained build manifest: `kcfc-build-manifest-dbba278c8b8e02004b4d6705c82dbc303bf2d0b5`
-- Artifact id: `10289344490`
-- Artifact archive digest: `sha256:2684909eb8bf8735bcf31a429a1d4214bf6e1f8e0ffcda1d6eddbf2b59fd8cc0`
+- Retained build manifest: `kcfc-build-manifest-9764c502ae6386fd182f9834fe7b129a881a9e05`
+- Artifact id: `10289604349`
+- Artifact archive digest: `sha256:58ee866bdea5adb7e78932543c9fc806f8d8954b4d5bdca830a841104089ef34`
 - Retention expiry: 2026-10-12.
 
 ## Browser provider-secret boundary hardening
@@ -29,9 +29,22 @@ Validated remediation:
 - added `scripts/verify-browser-secret-boundary.ts`;
 - wired the guard into `npm run lint` so ordinary typecheck CI also rejects future browser-side provider-secret regressions;
 - the guard rejects secret-shaped `process.env.*` Vite definitions and secret-shaped `VITE_*` client accesses for provider secret/token/private-key classes;
-- existing `.env.example` CI checks still prohibit provider credentials from being declared as browser-exposed `VITE_*` variables.
+- existing `.env.example` CI checks still prohibit provider credentials from being declared as browser-exposed `VITE_*` variables;
+- removed obsolete README instructions requiring a Gemini key;
+- removed the unused `GEMINI_API_KEY` placeholder from `.env.example`.
 
 This change does **not** activate Gemini, add a new AI workflow, or expose any credential value.
+
+## Unused `@google/genai` dependency disposition
+
+`@google/genai` remains declared in `package.json` / `package-lock.json`, but no current KCFC application source uses `GoogleGenAI` or imports the SDK.
+
+Disposition for this checkpoint:
+
+- dependency is **unused but not a runtime-secret exposure path** after the Vite injection removal;
+- no manual lockfile surgery will be performed;
+- remove it only from a tooling environment where npm can regenerate and verify the v3 lockfile atomically, followed by the full KCFC CI/build gate;
+- until then, retain it as a bounded cleanup item rather than introduce package/lock drift.
 
 ## Current bundle/loading position
 
@@ -93,6 +106,7 @@ The remaining material blockers are empirical/provider-side rather than ordinary
 - provider/environment backup evidence;
 - exact deployable rollback-artifact/redeployability evidence;
 - continued bounded disposition or supported parent remediation for the remaining optional Firebase Admin Storage-path `uuid` / `gaxios` moderate findings;
+- atomic npm-managed cleanup of the currently unused `@google/genai` dependency when an appropriate package-tooling environment is available;
 - explicit user approval before production merge/deploy or any separately gated production-sensitive action.
 
 ## Approval gates remain unchanged
@@ -111,4 +125,4 @@ Do **not** without explicit approval:
 
 ## Next autonomous Chat-mode priority
 
-Continue with supported dependency and secret-boundary cleanup research, then repository-side release-evidence synchronization. Return to Work mode only when the next blocker requires direct Firebase/App Hosting/browser state.
+Repository-side code/security and bundle work is now largely saturated without crossing into higher-risk refactors. Continue with evidence synchronization and supported dependency research. Return to Work mode when the next actionable blocker requires direct Firebase/App Hosting/browser state.
