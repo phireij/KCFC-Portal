@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize creation o
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Latest validated staging/readiness checkpoint: `49c34b9833b7dc2036a0e1bab948689608108ed4`, with `KCFC Redevelopment CI` run **#1443** / id `34595996778` completing successfully with all **58** named validation/build/security steps green. This includes the synthetic staging runtime-evidence validator, complete build-artifact manifest/hash verification, and retention of the non-secret verified manifest as a GitHub Actions artifact.
+Before every staging deployment, verify the **live** branch head and Draft PR #1 instead of relying on a hard-coded historical SHA. As of 2026-09-12, the latest validated substantive code/config checkpoint is `9764c502ae6386fd182f9834fe7b129a881a9e05`, with push CI #1629 / id `34668011181` and exact-head PR CI #1630 / id `34668012763` both successful. The current evidence-only branch head immediately before this runbook refresh is `c6c7a85d32b32e90287dd70cc7af05a1523bdf3a`, with push CI #1635 / id `34684838899` and exact-head PR CI #1636 / id `34684839617` both successful. Current retained build identity and later evidence-only heads are tracked in Draft PR #1 and `build-artifact-identity-2026-09-11.md`; a staging rollout must always be correlated with the exact SHA actually selected for deployment.
 
 ## Non-negotiable isolation rules
 
