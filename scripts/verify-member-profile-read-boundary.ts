@@ -5,25 +5,46 @@ const srcRoot = path.resolve('src');
 const extensions = new Set(['.ts', '.tsx']);
 const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/g;
 
+// These reachable member/Core/ministry-leader surfaces still list full private user
+// documents and must migrate to the public/private profile boundary before privacy
+// acceptance can be GREEN.
 const memberFacingPrivacyDebt = new Set([
+  'src/pages/Dashboard.tsx',
   'src/pages/Members.tsx',
   'src/pages/Duties.tsx',
   'src/pages/Polls.tsx',
   'src/pages/LegacyPollsImpl.tsx',
   'src/pages/LegacyDutiesImpl.tsx',
+  'src/components/CommitteeAssignments.tsx',
 ]);
 
+// Existing governance/administration consumers. These are not proof that every
+// role should retain private-profile access forever; they are the bounded set that
+// may continue while the final private-profile authorization matrix is reviewed.
 const privilegedKnownConsumers = new Set([
   'src/lib/seeder.ts',
-  'src/pages/Dashboard.tsx',
   'src/pages/Announcements.tsx',
   'src/pages/Admin.tsx',
+  'src/pages/LegacyAdmin.tsx',
   'src/components/admin/BroadcastTool.tsx',
+  'src/components/admin/CoreStatusPlanner.tsx',
+  'src/components/admin/LeadershipOverview.tsx',
+  'src/components/admin/MemberAccountOverview.tsx',
+  'src/components/admin/MemberApprovalQueue.tsx',
+  'src/components/admin/MemberPreRegistration.tsx',
+  'src/components/admin/MemberRoleEditor.tsx',
+]);
+
+// Retained source that is not routed by the current App shell. Keep it visible in
+// the containment report so reintroducing it requires deliberate review.
+const unroutedLegacyConsumers = new Set([
+  'src/pages/LegacyDashboard.tsx',
 ]);
 
 const knownConsumers = new Set([
   ...memberFacingPrivacyDebt,
   ...privilegedKnownConsumers,
+  ...unroutedLegacyConsumers,
 ]);
 
 const files: string[] = [];
@@ -53,6 +74,8 @@ if (unexpected.length > 0) {
 }
 
 const debtStillPresent = directConsumers.filter((file) => memberFacingPrivacyDebt.has(file));
+const privilegedStillPresent = directConsumers.filter((file) => privilegedKnownConsumers.has(file));
+const unroutedStillPresent = directConsumers.filter((file) => unroutedLegacyConsumers.has(file));
 
 // The current Directory still reads member.email solely to exclude the bootstrap account.
 // That known dependency is part of the migration debt above; do not expand it to other
@@ -77,7 +100,11 @@ if (bootstrapEmailUses > 1) {
   throw new Error('Community Directory email dependency expanded beyond the single known bootstrap-account exclusion');
 }
 
-console.log(`Member profile read-boundary containment: PASS (${directConsumers.length} known full-list consumers; ${debtStillPresent.length} member-facing migration debt paths remain)`);
+console.log(
+  `Member profile read-boundary containment: PASS (${directConsumers.length} known direct-list consumers; `
+  + `${debtStillPresent.length} reachable privacy-debt paths; ${privilegedStillPresent.length} privileged paths; `
+  + `${unroutedStillPresent.length} unrouted legacy path)`,
+);
 if (debtStillPresent.length > 0) {
   console.warn(`Privacy remediation remains open for: ${debtStillPresent.join(', ')}`);
 }
