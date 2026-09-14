@@ -13,6 +13,8 @@ Use synthetic staging identities with no production member data:
 - `STG_ALTAR` — verified Altar Server member.
 - `STG_LEADER` — liturgical ministry leader.
 - `STG_ADMIN` — KCFC administrator/president equivalent.
+- `STG_SECRETARY` — Secretary governance role; no broad private-profile read/list grant.
+- `STG_VP` — Vice President; read-only Treasury role and no broad private-profile read/list grant.
 - `STG_TREASURER` — accounting editor.
 - `STG_AUDITOR` — accounting approver/read role.
 - `STG_PENDING` — pending/unverified account.
@@ -25,7 +27,11 @@ Use synthetic staging identities with no production member data:
 | AUTH-01 | STG_REGULAR | Email/password sign-in | Existing UID/profile loads; no account recreation |
 | AUTH-02 | STG_PENDING | Sign in | Pending state shown; protected member workflows blocked as designed |
 | AUTH-03 | STG_DISABLED | Sign in | Disabled account cannot use protected Portal |
-| AUTH-04 | STG_PENDING | First Login/Google profile migration with email still unverified | Real Firebase UID is preserved, but profile email-verification remains false unless Firebase Auth/pending evidence says otherwise |
+| AUTH-04 | STG_PENDING | First Login/Google pending-profile claim with email still unverified | Real Firebase UID is preserved; claim occurs through the trusted server route; profile email-verification remains false unless Firebase Auth/pending evidence says otherwise |
+| AUTH-05 | STG_PENDING | Pre-register synthetic member, then authenticate with exact same email | Trusted route claims the one exact-email pending profile into `users/{authenticatedUid}` and removes the pending document transactionally |
+| AUTH-06 | STG_PENDING | Pre-register `person@example.com` and `person@other.example` (or equivalent synthetic pair) | Full-email pending IDs are distinct; each account can claim only its exact-email pending profile |
+| AUTH-07 | STG_PENDING | Synthetic historical `pending_<localpart>` record with exact stored email | Trusted route can claim the legacy-ID record by exact stored email without browser direct pending-document access |
+| AUTH-08 | STG_PENDING | Exact email has duplicate non-pending profile or multiple pending profiles | Claim fails closed; no heuristic record is selected or overwritten |
 | NAV-01 | STG_REGULAR | Phone-width navigation | Exactly Home / Schedule / Community / Updates / More; no horizontal scrolling |
 | NAV-02 | STG_REGULAR | Open More | Resources, Inbox, Profile visible; leadership/accounting only when authorized |
 | NAV-03 | STG_LECTOR | Open `/duties?view=mine` directly | My Ministry is selected and the URL remains shareable/reload-safe |
@@ -55,12 +61,23 @@ Use synthetic staging identities with no production member data:
 | UPDATE-04 | STG_REGULAR | Manually open `/announcements?scope=all` | Ordinary member remains limited to published updates; the URL cannot reveal drafts |
 | DIR-01 | STG_REGULAR | Browse Community Directory | Private email/phone/address are absent from general cards |
 | DIR-02 | STG_REGULAR | Select Core/Regular and one or more ministry filters, then reload/use Back/Forward | `type` + repeated `ministry` query state restores the same directory filter; invalid values fail safely to supported filters and text search remains local |
+| PRIV-01 | STG_REGULAR | Direct Firestore `get` own private `users/{uid}` | Own private profile is readable |
+| PRIV-02 | STG_REGULAR | Direct Firestore list/query private `users` | Denied |
+| PRIV-03 | STG_REGULAR | Direct Firestore `get` another known user UID | Denied |
+| PRIV-04 | STG_ADMIN | Member administration requiring cross-member private profile read/list | Allowed for Admin/President equivalent only |
+| PRIV-05 | STG_SECRETARY | Perform an explicitly authorized role/verification/Core/ministry/liturgical governance mutation | Governed mutation succeeds where intended, but direct cross-member private `get`/`list` remains denied |
+| PRIV-06 | STG_VP | Attempt direct cross-member private-profile `get`/`list` | Denied; VP role alone does not grant member-administration private reads |
+| PRIV-07 | STG_AUDITOR | Attempt direct cross-member private-profile `get`/`list` | Denied; Auditor role alone does not grant member-administration private reads |
+| PRIV-08 | STG_LEADER | Attempt direct cross-member private-profile `get`/`list` | Denied; ministry leadership does not grant broad private reads |
 | RES-01 | STG_REGULAR | Browse Resources | Search/ministry filters work; resource links open |
 | RES-02 | STG_LEADER | Add Resource | Authorized leader can add trusted resource reference |
 | RES-03 | STG_REGULAR | Attempt resource management | Add/delete controls unavailable or denied |
 | RES-04 | STG_REGULAR | Select a Resource category, then reload/share/use Back/Forward | `?category=` restores the category; All removes the query and free-text search remains local |
-| ACCT-01 | STG_TREASURER | Open Accounting | Existing preserved accounting engine loads inside new shell |
+| ACCT-01 | STG_TREASURER | Open Accounting, create/edit/delete transaction and manage category | Allowed |
 | ACCT-02 | STG_REGULAR | Open Accounting URL | Access denied |
+| ACCT-03 | STG_AUDITOR | Read Accounting and approve eligible transaction | Read + approval allowed; edit/delete/category management denied |
+| ACCT-04 | STG_VP | Open Accounting and attempt mutation/approval | Read allowed; edit/delete/category management/approval denied |
+| ACCT-05 | STG_TREASURER | Attempt transaction approval | Approval denied unless another separately authorized role applies |
 | ADMIN-01 | STG_ADMIN | Open Admin | Focused leadership workspace loads; Advanced legacy tools remain separately labelled |
 | ADMIN-02 | STG_REGULAR | Open Admin URL | Access denied |
 | ADMIN-03 | STG_ADMIN | Pre-register a synthetic member | Only one unverified `pending_*` Firestore profile is created; no Firebase Auth user, verification grant, role or ministry assignment is created |
@@ -139,4 +156,4 @@ For each execution capture:
 - Firestore document IDs only from staging for data-flow tests.
 - Defect link/notes if failed.
 
-Do not capture production personal data in test evidence.
+Do not capture production personal data, Firebase ID tokens, synthetic passwords, FCM tokens or PushSubscription endpoints in test evidence.
