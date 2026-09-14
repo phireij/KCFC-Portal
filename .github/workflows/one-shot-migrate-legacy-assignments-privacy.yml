@@ -1,5 +1,6 @@
 name: One-shot final legacy assignment privacy migration
 
+# Retry after correcting the two compiler-proven email boundary leftovers.
 on:
   push:
     branches:
