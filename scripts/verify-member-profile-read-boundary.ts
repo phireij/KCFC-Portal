@@ -10,12 +10,17 @@ const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/
 // acceptance can be GREEN.
 const memberFacingPrivacyDebt = new Set([
   'src/pages/Dashboard.tsx',
-  'src/pages/Members.tsx',
   'src/pages/Duties.tsx',
   'src/pages/Polls.tsx',
   'src/pages/LegacyPollsImpl.tsx',
   'src/pages/LegacyDutiesImpl.tsx',
   'src/components/CommitteeAssignments.tsx',
+]);
+
+// Member-facing surfaces already migrated to the public-safe projection. Keep this
+// list explicit so a future regression back to the private users collection fails CI.
+const migratedMemberFacingConsumers = new Map([
+  ['src/pages/Members.tsx', 'subscribeMemberDirectory'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
@@ -73,37 +78,42 @@ if (unexpected.length > 0) {
   );
 }
 
+for (const [file, requiredMarker] of migratedMemberFacingConsumers) {
+  const source = fs.readFileSync(file, 'utf8');
+  directUsersListPattern.lastIndex = 0;
+  if (directUsersListPattern.test(source)) {
+    throw new Error(`Migrated member-facing surface regressed to direct private users collection access: ${file}`);
+  }
+  if (!source.includes(requiredMarker)) {
+    throw new Error(`Migrated member-facing surface must retain its public projection data source (${requiredMarker}): ${file}`);
+  }
+}
+
 const debtStillPresent = directConsumers.filter((file) => memberFacingPrivacyDebt.has(file));
 const privilegedStillPresent = directConsumers.filter((file) => privilegedKnownConsumers.has(file));
 const unroutedStillPresent = directConsumers.filter((file) => unroutedLegacyConsumers.has(file));
 
-// The current Directory still reads member.email solely to exclude the bootstrap account.
-// That known dependency is part of the migration debt above; do not expand it to other
-// contact/device-delivery fields while the public/private profile split is pending.
+const directorySource = fs.readFileSync('src/pages/Members.tsx', 'utf8');
 const forbiddenDirectoryFieldReferences = [
+  '.email',
   '.birthdate',
   '.homeAddress',
   '.phoneNumber',
+  '.preferences',
   '.fcmTokens',
   '.webPushSubscriptions',
   '.connectedCommunicationApps',
 ];
-const directorySource = fs.readFileSync('src/pages/Members.tsx', 'utf8');
 for (const marker of forbiddenDirectoryFieldReferences) {
   if (directorySource.includes(`member${marker}`)) {
     throw new Error(`Community Directory must not consume private profile field: member${marker}`);
   }
 }
 
-const bootstrapEmailUses = directorySource.match(/member\.email/g)?.length || 0;
-if (bootstrapEmailUses > 1) {
-  throw new Error('Community Directory email dependency expanded beyond the single known bootstrap-account exclusion');
-}
-
 console.log(
   `Member profile read-boundary containment: PASS (${directConsumers.length} known direct-list consumers; `
-  + `${debtStillPresent.length} reachable privacy-debt paths; ${privilegedStillPresent.length} privileged paths; `
-  + `${unroutedStillPresent.length} unrouted legacy path)`,
+  + `${debtStillPresent.length} reachable privacy-debt paths; ${migratedMemberFacingConsumers.size} migrated member-facing path; `
+  + `${privilegedStillPresent.length} privileged paths; ${unroutedStillPresent.length} unrouted legacy path)`,
 );
 if (debtStillPresent.length > 0) {
   console.warn(`Privacy remediation remains open for: ${debtStillPresent.join(', ')}`);
