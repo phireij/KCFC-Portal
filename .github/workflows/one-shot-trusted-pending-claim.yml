@@ -1,6 +1,6 @@
 name: One-shot trusted pending profile claim
 
-# Retry after aligning the normal lint-script anchor.
+# Retry after tightening the Google-login normal-profile replacement anchor.
 on:
   push:
     branches:
