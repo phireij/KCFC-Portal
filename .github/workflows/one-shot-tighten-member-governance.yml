@@ -1,0 +1,58 @@
+name: One-shot tighten member governance authorization
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/one-shot-tighten-member-governance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  tighten:
+    if: github.ref == 'refs/heads/redesign/mobile-first-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Apply fail-closed governance tightening
+        run: node scripts/one-shot-tighten-member-governance.mjs
+
+      - name: Verify authorization boundary and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tsx scripts/verify-member-directory-sync-boundary.ts
+          npm run lint
+          npm run build
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/one-shot-tighten-member-governance.mjs
+          rm .github/workflows/one-shot-tighten-member-governance.yml
+
+      - name: Commit branch-only governance tightening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'kcfc-ci-bot'
+          git config user.email 'kcfc-ci-bot@users.noreply.github.com'
+          git add firestore.rules server/memberDirectorySyncRoutes.ts scripts/verify-member-directory-sync-boundary.ts scripts/one-shot-tighten-member-governance.mjs .github/workflows/one-shot-tighten-member-governance.yml
+          git diff --cached --check
+          git commit -m 'security: tighten managed member governance permissions'
+          git push origin HEAD:redesign/mobile-first-v2
