@@ -66,16 +66,20 @@ export default function MemberApprovalQueue() {
 
     setBusyUid(member.uid);
     setMessage(null);
+    let verificationApplied = false;
     try {
       await updateDoc(doc(db, 'users', member.uid), {
         isVerified: true,
         updatedAt: serverTimestamp(),
       });
+      verificationApplied = true;
       await syncManagedMemberDirectoryProfile(member.uid);
       setMessage(`${name} is now verified. Roles and ministries were left unchanged.`);
     } catch (error) {
       console.error('Member verification failed', error);
-      setMessage(`Could not verify ${name}. No member data was changed.`);
+      setMessage(verificationApplied
+        ? `${name} was verified, but the public member directory could not be refreshed after retries. Do not repeat the verification; retry a directory refresh from member administration or have the member sign in to self-heal the projection.`
+        : `Could not verify ${name}. No member data was changed.`);
     } finally {
       setBusyUid(null);
     }
