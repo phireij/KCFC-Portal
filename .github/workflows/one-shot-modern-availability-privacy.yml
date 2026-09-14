@@ -1,6 +1,6 @@
 name: One-shot modern Availability privacy migration
 
-# One-shot retry after moving the UserProfile assertion behind the subscription replacement.
+# One-shot retry with a complete public-safe signed-in-member fallback.
 on:
   push:
     branches:
