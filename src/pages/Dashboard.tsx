@@ -19,7 +19,10 @@ import {
 import { collection, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../App';
-import { Announcement, DutyAssignment, Poll, UserProfile } from '../types';
+import { Announcement, DutyAssignment, Poll } from '../types';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
+import { subscribePendingMemberCount } from '../lib/privilegedMemberQueries';
 import { cn } from '../lib/utils';
 
 type HomeAssignment = {
@@ -92,7 +95,8 @@ export default function Dashboard() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [duties, setDuties] = useState<DutyAssignment[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [members, setMembers] = useState<MemberDirectoryProfile[]>([]);
+  const [pendingMemberCount, setPendingMemberCount] = useState(0);
   const [availabilityResponses, setAvailabilityResponses] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
@@ -152,14 +156,13 @@ export default function Dashboard() {
       },
     );
 
-    const unsubMembers = onSnapshot(
-      collection(db, 'users'),
-      (snapshot) => {
-        setMembers(snapshot.docs.map((item) => ({ uid: item.id, ...item.data() } as UserProfile)));
+    const unsubMembers = subscribeMemberDirectory(
+      (nextMembers) => {
+        setMembers(nextMembers);
         markReady();
       },
       (error) => {
-        console.error('Home: failed to load members', error);
+        console.error('Home: failed to load public member projection', error);
         markReady();
       },
     );
@@ -171,6 +174,20 @@ export default function Dashboard() {
       unsubMembers();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setPendingMemberCount(0);
+      return;
+    }
+    return subscribePendingMemberCount(
+      setPendingMemberCount,
+      (error) => {
+        console.error('Home: failed to load privileged pending-member count', error);
+        setPendingMemberCount(0);
+      },
+    );
+  }, [isAdmin]);
 
   const activeAvailabilityPolls = useMemo(() => {
     if (!profile) return [];
@@ -318,7 +335,6 @@ export default function Dashboard() {
   const pendingAvailability = activeAvailabilityPolls.filter((poll) => !availabilityResponses[poll.id]);
   const nextAssignment = upcomingAssignments[0];
   const nextMass = upcomingMasses[0];
-  const pendingMembers = members.filter((member) => !member.isVerified && member.email !== 'kcfc.jp@gmail.com');
   const displayName = profile?.nickname?.trim() || profile?.displayName || 'KCFC Member';
 
   return (
@@ -374,7 +390,7 @@ export default function Dashboard() {
         </section>
       )}
 
-      {isAdmin && pendingMembers.length > 0 && (
+      {isAdmin && pendingMemberCount > 0 && (
         <section className="rounded-[22px] border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-400/20 dark:bg-blue-500/10 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
@@ -383,7 +399,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <p className="text-[12px] font-extrabold uppercase tracking-[0.08em] text-[#2563EB]">Leadership attention</p>
-                <h2 className="mt-0.5 text-[15px] font-extrabold text-[#172033] dark:text-white">{pendingMembers.length} membership {pendingMembers.length === 1 ? 'request needs' : 'requests need'} review</h2>
+                <h2 className="mt-0.5 text-[15px] font-extrabold text-[#172033] dark:text-white">{pendingMemberCount} membership {pendingMemberCount === 1 ? 'request needs' : 'requests need'} review</h2>
               </div>
             </div>
             <Link to="/admin" className="inline-flex min-h-10 items-center gap-1 text-[12px] font-bold text-[#123B66] dark:text-blue-200">
@@ -504,7 +520,7 @@ export default function Dashboard() {
       </section>
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <QuickLink icon={UsersRound} label="Community" detail={`${Math.max(0, members.filter((member) => member.isVerified && member.email !== 'kcfc.jp@gmail.com').length)} members`} path="/members" />
+        <QuickLink icon={UsersRound} label="Community" detail={`${members.length} members`} path="/members" />
         <QuickLink icon={Inbox} label="Inbox" detail="Messages & notices" path="/inbox" />
         <QuickLink icon={BookOpen} label="Resources" detail="Ministry library" path="/resources" />
         <QuickLink icon={CheckCircle2} label="Availability" detail={pendingAvailability.length ? 'Response needed' : 'You are up to date'} path="/polls" />
