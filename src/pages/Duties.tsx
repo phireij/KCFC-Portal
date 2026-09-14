@@ -20,7 +20,9 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../App';
-import { DutyAssignment, Poll, UserProfile } from '../types';
+import { DutyAssignment, Poll } from '../types';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
 import { cn } from '../lib/utils';
 import LegacyDuties from './LegacyDuties';
 
@@ -148,7 +150,7 @@ export default function Duties() {
   const [scheduleSearch, setScheduleSearch] = useState('');
   const [polls, setPolls] = useState<ExtendedPoll[]>([]);
   const [duties, setDuties] = useState<DutyAssignment[]>([]);
-  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [members, setMembers] = useState<MemberDirectoryProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
 
@@ -186,14 +188,14 @@ export default function Duties() {
     const unsubDuties = onSnapshot(collection(db, 'duties'), (snapshot) => {
       setDuties(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as DutyAssignment))); markLoaded();
     }, (error) => { console.error('Schedule: failed to load duties', error); markLoaded(); });
-    const unsubMembers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setMembers(snapshot.docs.map((item) => ({ uid: item.id, ...item.data() } as UserProfile))); markLoaded();
-    }, (error) => { console.error('Schedule: failed to load member names', error); markLoaded(); });
+    const unsubMembers = subscribeMemberDirectory((nextMembers) => {
+      setMembers(nextMembers); markLoaded();
+    }, (error) => { console.error('Schedule: failed to load public member names', error); markLoaded(); });
     return () => { unsubPolls(); unsubDuties(); unsubMembers(); };
   }, []);
 
   const membersById = useMemo(() => {
-    const map = new Map<string, UserProfile>();
+    const map = new Map<string, MemberDirectoryProfile>();
     members.forEach((member) => map.set(member.uid, member));
     return map;
   }, [members]);
