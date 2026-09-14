@@ -1,5 +1,6 @@
 name: One-shot trusted pending profile claim
 
+# Retry after aligning the normal lint-script anchor.
 on:
   push:
     branches:
