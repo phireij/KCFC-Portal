@@ -28,6 +28,8 @@ function parseMemberDirectoryProfile(documentId: string, input: unknown): Member
     !record.roles.every((role) => typeof role === 'string') ||
     !Array.isArray(record.ministries) ||
     !record.ministries.every((ministry) => typeof ministry === 'string') ||
+    !Array.isArray(record.lcRoles) ||
+    !record.lcRoles.every((role) => typeof role === 'string') ||
     typeof record.isCoreMember !== 'boolean'
   ) {
     throw new Error('Member directory returned a malformed public member record.');
