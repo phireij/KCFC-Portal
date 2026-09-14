@@ -40,6 +40,12 @@ service cloud.firestore {
         )
       );
     }
+    function canAdministerMembers() {
+      return hasRole('admin') || hasRole('president');
+    }
+    function canGovernMemberAssignments() {
+      return canAdministerMembers() || hasRole('secretary');
+    }
     function isAdmin() { 
       let data = getUserData();
       let roles = data != null ? data.get('roles', []) : [];
@@ -166,9 +172,10 @@ service cloud.firestore {
           isBootstrapAdmin() || 
           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'ministries', 'updatedAt', 'nickname', 'birthdate', 'homeAddress', 'phoneNumber', 'preferences', 'isEmailVerified', 'fcmTokens', 'webPushSubscriptions'])
         )) ||
-        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens', 'webPushSubscriptions']))
+        (canAdministerMembers() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens', 'webPushSubscriptions'])) ||
+        (hasRole('secretary') && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'updatedAt', 'ministries', 'lcRoles']))
       ) && isValidUser(incoming());
-      allow delete: if isAdmin();
+      allow delete: if canAdministerMembers();
     }
 
     // --- Public-safe Member Directory Projection ---

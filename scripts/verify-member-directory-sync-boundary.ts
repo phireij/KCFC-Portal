@@ -9,8 +9,8 @@ const requireMarkers = (file: string, markers: string[]) => {
 
 requireMarkers('server.ts', [
   'registerMemberDirectorySyncRoutes',
-  'collection("member_directory").doc(targetUserId).delete()',
-  'collection("member_directory").doc(currentUid).delete()',
+  'collection(\"member_directory\").doc(targetUserId).delete()',
+  'collection(\"member_directory\").doc(currentUid).delete()',
 ]);
 requireMarkers('server/memberDirectorySyncRoutes.ts', [
   '/api/member-directory/sync-self',
@@ -24,61 +24,45 @@ requireMarkers('src/App.tsx', ['syncOwnMemberDirectoryProfile']);
 requireMarkers('src/components/admin/MemberApprovalQueue.tsx', ['syncManagedMemberDirectoryProfile']);
 requireMarkers('src/components/admin/MemberRoleEditor.tsx', ['syncManagedMemberDirectoryProfile']);
 requireMarkers('src/pages/LegacyAdmin.tsx', ['syncManagedMemberDirectoryProfile']);
-requireMarkers('scripts/backfill-member-directory-staging.ts', [
-  'staleProjectionDocuments',
-  'Refusing apply:',
-]);
+requireMarkers('scripts/backfill-member-directory-staging.ts', ['staleProjectionDocuments', 'Refusing apply:']);
 
-const governanceRoles = [
-  'admin',
-  'president',
-  'vice_president',
-  'secretary',
-  'auditor',
-  'pro',
-  'spiritual_director',
-] as const;
+const governanceRoles = ['admin', 'president', 'secretary'] as const;
+const forbiddenGovernanceRoles = ['vice_president', 'treasurer', 'auditor', 'pro', 'spiritual_director', 'member', 'leader', 'chore_leader'] as const;
 
 const syncRoutes = fs.readFileSync('server/memberDirectorySyncRoutes.ts', 'utf8');
 const syncRoleStart = syncRoutes.indexOf('const GOVERNANCE_SYNC_ROLES = new Set([');
 const syncRoleEnd = syncRoutes.indexOf(']);', syncRoleStart);
-if (syncRoleStart < 0 || syncRoleEnd < 0) {
-  throw new Error('Unable to locate bounded GOVERNANCE_SYNC_ROLES definition.');
-}
+if (syncRoleStart < 0 || syncRoleEnd < 0) throw new Error('Unable to locate bounded GOVERNANCE_SYNC_ROLES definition.');
 const syncRoleBlock = syncRoutes.slice(syncRoleStart, syncRoleEnd);
 for (const role of governanceRoles) {
-  if (!syncRoleBlock.includes(`'${role}'`)) {
-    throw new Error(`Trusted member-directory synchronization is missing Firestore governance role: ${role}`);
-  }
+  if (!syncRoleBlock.includes(`'${role}'`)) throw new Error(`Trusted member-directory synchronization is missing managed-member role: ${role}`);
 }
-for (const disallowed of ['treasurer', 'member', 'leader', 'chore_leader']) {
-  if (syncRoleBlock.includes(`'${disallowed}'`)) {
-    throw new Error(`Trusted member-directory synchronization unexpectedly grants governance sync to: ${disallowed}`);
-  }
+for (const role of forbiddenGovernanceRoles) {
+  if (syncRoleBlock.includes(`'${role}'`)) throw new Error(`Trusted member-directory synchronization unexpectedly grants managed-member sync to: ${role}`);
 }
 
 const rules = fs.readFileSync('firestore.rules', 'utf8');
-const adminStart = rules.indexOf('function isAdmin()');
-const adminEnd = rules.indexOf('function isLeader()', adminStart);
-if (adminStart < 0 || adminEnd < 0) throw new Error('Unable to locate bounded Firestore isAdmin() role contract.');
-const adminBlock = rules.slice(adminStart, adminEnd);
-for (const role of governanceRoles) {
-  if (!adminBlock.includes(`'${role}' in roles`)) {
-    throw new Error(`Firestore isAdmin() governance contract is missing role: ${role}`);
-  }
+for (const marker of [
+  "function canAdministerMembers()",
+  "return hasRole('admin') || hasRole('president');",
+  "function canGovernMemberAssignments()",
+  "return canAdministerMembers() || hasRole('secretary');",
+  "allow delete: if canAdministerMembers();",
+  "(hasRole('secretary') && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'updatedAt', 'ministries', 'lcRoles']))",
+]) {
+  if (!rules.includes(marker)) throw new Error(`Firestore managed-member authorization marker missing: ${marker}`);
 }
-for (const disallowed of ['treasurer', 'member', 'leader', 'chore_leader']) {
-  if (adminBlock.includes(`'${disallowed}' in roles`)) {
-    throw new Error(`Firestore isAdmin() unexpectedly contains non-governance role: ${disallowed}`);
-  }
-}
+const usersStart = rules.indexOf('match /users/{userId}');
+const usersEnd = rules.indexOf('// --- Public-safe Member Directory Projection ---', usersStart);
+if (usersStart < 0 || usersEnd < 0) throw new Error('Unable to locate bounded users rules.');
+const usersBlock = rules.slice(usersStart, usersEnd);
+if (usersBlock.includes('(isAdmin() && incoming().diff(existing()).affectedKeys()')) throw new Error('Broad isAdmin() user-profile mutation authorization must not return.');
+if (usersBlock.includes('allow delete: if isAdmin();')) throw new Error('Broad isAdmin() member deletion authorization must not return.');
 
-const start = rules.indexOf('match /member_directory/{userId}');
-const end = rules.indexOf('// --- Polls Collection ---', start);
-if (start < 0 || end < 0) throw new Error('Unable to locate bounded member_directory rules.');
-const block = rules.slice(start, end);
-if (!block.includes('allow create, update, delete: if false;')) {
-  throw new Error('member_directory browser writes must remain disabled.');
-}
+const projectionStart = rules.indexOf('match /member_directory/{userId}');
+const projectionEnd = rules.indexOf('// --- Polls Collection ---', projectionStart);
+if (projectionStart < 0 || projectionEnd < 0) throw new Error('Unable to locate bounded member_directory rules.');
+const projectionBlock = rules.slice(projectionStart, projectionEnd);
+if (!projectionBlock.includes('allow create, update, delete: if false;')) throw new Error('member_directory browser writes must remain disabled.');
 
 console.log('Member directory synchronization boundary: PASS');
