@@ -26,9 +26,11 @@ export function normalizeMemberPreRegistrationEmail(email: string) {
 
 export function buildPendingMemberDocumentId(email: string) {
   const normalizedEmail = normalizeMemberPreRegistrationEmail(email);
-  const localPart = normalizedEmail.split('@')[0] || '';
-  const safeLocalPart = localPart.replace(/[^a-z0-9]/gi, '_');
-  return `pending_${safeLocalPart}`;
+  // New pending records encode the complete normalized email so two accounts that
+  // share a local-part at different domains cannot collide. The trusted claim route
+  // resolves historical and new pending records by exact stored email, so existing
+  // legacy pending_<localpart> documents remain compatible without migration.
+  return `pending_${encodeURIComponent(normalizedEmail)}`;
 }
 
 export function buildMemberPreRegistrationPlan(input: MemberPreRegistrationInput): MemberPreRegistrationPlan {
