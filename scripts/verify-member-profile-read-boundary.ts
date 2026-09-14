@@ -5,13 +5,9 @@ const srcRoot = path.resolve('src');
 const extensions = new Set(['.ts', '.tsx']);
 const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/g;
 
-// These reachable member/Core/ministry-leader surfaces still list full private user
-// documents and must migrate to the public/private profile boundary before privacy
-// acceptance can be GREEN.
-const memberFacingPrivacyDebt = new Set([
-  'src/pages/LegacyDutiesImpl.tsx',
-  'src/components/CommitteeAssignments.tsx',
-]);
+// All reachable member/Core/ministry-leader surfaces have migrated away from direct
+// full users-collection lists. Any new reachable path must fail closed as unexpected.
+const memberFacingPrivacyDebt = new Set<string>();
 
 // Member-facing surfaces already migrated to the public-safe projection. Keep this
 // list explicit so a future regression back to the private users collection fails CI.
@@ -21,6 +17,9 @@ const migratedMemberFacingConsumers = new Map([
   ['src/pages/Dashboard.tsx', 'subscribeMemberDirectory'],
   ['src/pages/Polls.tsx', 'subscribeMemberDirectory'],
   ['src/pages/LegacyPollsImpl.tsx', 'subscribeMemberDirectory'],
+  ['src/pages/LegacyDutiesImpl.tsx', 'subscribeMemberDirectory'],
+  ['src/components/CommitteeAssignments.tsx', 'MemberDirectoryProfile'],
+  ['src/components/ChoreCommitteeDashboard.tsx', 'MemberDirectoryProfile'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
@@ -86,7 +85,7 @@ for (const [file, requiredMarker] of migratedMemberFacingConsumers) {
     throw new Error(`Migrated member-facing surface regressed to direct private users collection access: ${file}`);
   }
   if (!source.includes(requiredMarker)) {
-    throw new Error(`Migrated member-facing surface must retain its public projection data source (${requiredMarker}): ${file}`);
+    throw new Error(`Migrated member-facing surface must retain its public projection boundary (${requiredMarker}): ${file}`);
   }
 }
 
@@ -102,6 +101,16 @@ for (const requiredMarker of [
   }
 }
 
+for (const file of [
+  'src/components/CommitteeAssignments.tsx',
+  'src/components/ChoreCommitteeDashboard.tsx',
+]) {
+  const source = fs.readFileSync(file, 'utf8');
+  if (!source.includes('listPrivilegedPollEmailRecipients')) {
+    throw new Error(`Legacy assignment email sends must retain privileged recipient lookup: ${file}`);
+  }
+}
+
 const homeSource = fs.readFileSync('src/pages/Dashboard.tsx', 'utf8');
 if (!homeSource.includes('subscribePendingMemberCount')) {
   throw new Error('Routine Home must keep pending-registration access behind the privileged member-query helper.');
@@ -110,6 +119,9 @@ if (!homeSource.includes('subscribePendingMemberCount')) {
 const debtStillPresent = directConsumers.filter((file) => memberFacingPrivacyDebt.has(file));
 const privilegedStillPresent = directConsumers.filter((file) => privilegedKnownConsumers.has(file));
 const unroutedStillPresent = directConsumers.filter((file) => unroutedLegacyConsumers.has(file));
+if (debtStillPresent.length !== 0) {
+  throw new Error(`Reachable member-facing private-profile debt must remain zero: ${debtStillPresent.join(', ')}`);
+}
 
 const directorySource = fs.readFileSync('src/pages/Members.tsx', 'utf8');
 const forbiddenDirectoryFieldReferences = [
@@ -130,9 +142,6 @@ for (const marker of forbiddenDirectoryFieldReferences) {
 
 console.log(
   `Member profile read-boundary containment: PASS (${directConsumers.length} known direct-list consumers; `
-  + `${debtStillPresent.length} reachable privacy-debt paths; ${migratedMemberFacingConsumers.size} migrated member-facing paths; `
+  + `0 reachable privacy-debt paths; ${migratedMemberFacingConsumers.size} migrated member-facing paths; `
   + `${privilegedStillPresent.length} privileged paths; ${unroutedStillPresent.length} unrouted legacy path)`,
 );
-if (debtStillPresent.length > 0) {
-  console.warn(`Privacy remediation remains open for: ${debtStillPresent.join(', ')}`);
-}
