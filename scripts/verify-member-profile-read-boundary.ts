@@ -10,7 +10,6 @@ const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/
 // acceptance can be GREEN.
 const memberFacingPrivacyDebt = new Set([
   'src/pages/Dashboard.tsx',
-  'src/pages/Duties.tsx',
   'src/pages/Polls.tsx',
   'src/pages/LegacyPollsImpl.tsx',
   'src/pages/LegacyDutiesImpl.tsx',
@@ -21,6 +20,7 @@ const memberFacingPrivacyDebt = new Set([
 // list explicit so a future regression back to the private users collection fails CI.
 const migratedMemberFacingConsumers = new Map([
   ['src/pages/Members.tsx', 'subscribeMemberDirectory'],
+  ['src/pages/Duties.tsx', 'subscribeMemberDirectory'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
@@ -112,7 +112,7 @@ for (const marker of forbiddenDirectoryFieldReferences) {
 
 console.log(
   `Member profile read-boundary containment: PASS (${directConsumers.length} known direct-list consumers; `
-  + `${debtStillPresent.length} reachable privacy-debt paths; ${migratedMemberFacingConsumers.size} migrated member-facing path; `
+  + `${debtStillPresent.length} reachable privacy-debt paths; ${migratedMemberFacingConsumers.size} migrated member-facing paths; `
   + `${privilegedStillPresent.length} privileged paths; ${unroutedStillPresent.length} unrouted legacy path)`,
 );
 if (debtStillPresent.length > 0) {
