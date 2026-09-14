@@ -13,6 +13,7 @@ import { buildPwaDeliveryEvidence, type PwaTransportAttempt } from "./src/lib/pw
 import { registerLiturgicalCommunicationRoutes } from "./server/liturgicalCommunicationRoutes";
 import { registerMemberDirectorySyncRoutes } from "./server/memberDirectorySyncRoutes";
 import { registerAnnouncementCommunicationRoutes } from "./server/announcementCommunicationRoutes";
+import { registerPrivilegedMemberQueryRoutes } from "./server/privilegedMemberQueryRoutes";
 
 // The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().
 const currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
@@ -521,6 +522,7 @@ async function startServer() {
   // Trusted recipient resolution stays server-side; browser callers provide only poll identity.
   registerLiturgicalCommunicationRoutes(app, { auth: authAdmin, db: dbAdmin });
   registerMemberDirectorySyncRoutes(app, { auth: authAdmin, db: dbAdmin });
+  registerPrivilegedMemberQueryRoutes(app, { auth: authAdmin, db: dbAdmin });
   registerAnnouncementCommunicationRoutes(app, {
     auth: authAdmin,
     db: dbAdmin,
