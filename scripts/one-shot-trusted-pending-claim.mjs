@@ -66,13 +66,13 @@ const appReplacement = `                // Pending pre-registration claims are r
 app = `${app.slice(0, appStart)}${appReplacement}${app.slice(appEnd)}`;
 fs.writeFileSync('src/App.tsx', app, 'utf8');
 
-// Add the new contract to the normal lint gate.
+// Add the new contract to the normal lint gate beside the other privacy/profile guards.
 let pkg = fs.readFileSync('package.json', 'utf8');
-const lintAnchor = 'npx tsx scripts/verify-member-pre-registration.ts && npx tsx scripts/verify-preregistration-email-verification-migration.ts';
-if (!pkg.includes(lintAnchor)) throw new Error('package.json pre-registration lint anchor not found.');
+const lintAnchor = 'npx tsx scripts/verify-member-profile-read-boundary.ts && npx tsx scripts/report-private-user-document-consumers.ts';
+if (!pkg.includes(lintAnchor)) throw new Error('package.json member-profile lint anchor not found.');
 pkg = pkg.replace(
   lintAnchor,
-  'npx tsx scripts/verify-member-pre-registration.ts && npx tsx scripts/verify-pending-profile-claim-boundary.ts && npx tsx scripts/verify-preregistration-email-verification-migration.ts',
+  'npx tsx scripts/verify-member-profile-read-boundary.ts && npx tsx scripts/verify-pending-profile-claim-boundary.ts && npx tsx scripts/report-private-user-document-consumers.ts',
 );
 fs.writeFileSync('package.json', pkg, 'utf8');
 
