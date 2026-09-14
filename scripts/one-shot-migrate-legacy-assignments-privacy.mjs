@@ -40,6 +40,7 @@ const replaceOnce = (source, before, after, label) => {
     '  users?: UserProfile[];',
     '  users?: MemberDirectoryProfile[];',
     'Committee users prop');
+  source = source.replace("  // Exclude Admin from responders\n  const adminProfiles = users.filter(u => u.email === 'kcfc.jp@gmail.com').map(u => u.uid);\n  adminProfiles.forEach(adminId => respondersMap.delete(adminId));\n\n", '');
   source = source.replace('          const usersSnap = await getDocs(collection(db, \'users\'));\n', '');
   source = source.replace('          const usersToEmail: UserProfile[] = [];\n\n          usersSnap.docs.forEach(userDoc => {\n            if (assignedUserIds.has(userDoc.id)) {\n              usersToEmail.push({ uid: userDoc.id, ...userDoc.data() } as UserProfile);\n              const notificationRef = doc(collection(db, \'notifications\'));\n              batch.set(notificationRef, {\n                userId: userDoc.id,', "          const usersToEmail = users.filter(member => assignedUserIds.has(member.uid));\n\n          usersToEmail.forEach(member => {\n            if (assignedUserIds.has(member.uid)) {\n              const notificationRef = doc(collection(db, 'notifications'));\n              batch.set(notificationRef, {\n                userId: member.uid,");
   source = source.replace('          usersSnap.docs.forEach(userDoc => {', '          usersToEmail.forEach(member => {');
@@ -53,7 +54,9 @@ const replaceOnce = (source, before, after, label) => {
   source = source.replace('      const baseUrl = window.location.origin;\n\n      // We should also write system notifications in Firestore', "      const baseUrl = window.location.origin;\n      const privilegedRecipients = await listPrivilegedPollEmailRecipients();\n\n      // We should also write system notifications in Firestore");
   source = source.replace('      for (const member of recipientUsers) {\n        if (member.email) {\n          try {', "      for (const member of recipientUsers) {\n        const emailRecipient = privilegedRecipients.find(recipient => recipient.uid === member.uid);\n        if (emailRecipient?.email) {\n          try {");
   source = source.replaceAll('member.email', 'emailRecipient.email');
-  if (source.includes("getDocs(collection(db, 'users'))")) throw new Error('CommitteeAssignments still fetches the private users collection.');
+  if (source.includes("getDocs(collection(db, 'users'))") || source.includes('.email === \'kcfc.jp@gmail.com\'')) {
+    throw new Error('CommitteeAssignments still contains private-profile lookup markers.');
+  }
   if (!source.includes('listPrivilegedPollEmailRecipients')) throw new Error('CommitteeAssignments lost privileged email boundary.');
   fs.writeFileSync(path, source, 'utf8');
 }
@@ -77,6 +80,7 @@ const replaceOnce = (source, before, after, label) => {
   source = source.replace('      for (const recipient of recipientUsers) {\n        if (!recipient.email) continue;\n\n        let contentHtml = \'\';', "      for (const recipient of recipientUsers) {\n        const emailRecipient = privilegedRecipients.find(candidate => candidate.uid === recipient.uid);\n        if (!emailRecipient?.email) continue;\n\n        let contentHtml = '';");
   source = source.replaceAll('sendGmail(recipient.email, customSubject, body)', 'sendGmail(emailRecipient.email, customSubject, body)');
   source = source.replaceAll('Could not dispatch Gmail to ${recipient.email}', 'Could not dispatch Gmail to ${emailRecipient.email}');
+  source = source.replace('console.warn(`Could not dispatch Gmail to ${emailRecipient.email}:`, mErr);', 'console.warn(`Could not dispatch Gmail to ${recipient.email}:`, mErr);');
   if (!source.includes('listPrivilegedPollEmailRecipients')) throw new Error('Chore dashboard lost privileged email boundary.');
   fs.writeFileSync(path, source, 'utf8');
 }
