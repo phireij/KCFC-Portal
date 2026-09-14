@@ -218,8 +218,8 @@ const replaceOnce = (source, before, after, label) => {
   let source = fs.readFileSync(path, 'utf8');
   source = replaceOnce(
     source,
-    'npx tsx scripts/verify-member-public-projection.ts && npx tsx scripts/verify-trusted-liturgical-recipient-resolution.ts',
-    'npx tsx scripts/verify-member-public-projection.ts && npx tsx scripts/verify-member-directory-sync-boundary.ts && npx tsx scripts/verify-trusted-liturgical-recipient-resolution.ts',
+    'npx tsx scripts/verify-member-public-projection.ts && npx tsx scripts/verify-private-user-read-boundary.ts && npx tsx scripts/verify-trusted-liturgical-recipient-resolution.ts',
+    'npx tsx scripts/verify-member-public-projection.ts && npx tsx scripts/verify-member-directory-sync-boundary.ts && npx tsx scripts/verify-private-user-read-boundary.ts && npx tsx scripts/verify-trusted-liturgical-recipient-resolution.ts',
     'package lint sync guard',
   );
   fs.writeFileSync(path, source, 'utf8');
