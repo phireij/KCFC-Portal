@@ -6,16 +6,14 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
-  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Announcement, ConnectedCommunicationApp, NotificationPreferences } from '../types';
+import { Announcement } from '../types';
 import {
   Bell,
   Check,
@@ -33,9 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { buildCommunicationRoutingPlan } from '../lib/communicationRouting';
-import { buildNotificationRecord } from '../lib/notificationRecord';
-import { CommunicationAudience, isProfileEligibleForAudience } from '../lib/communicationAudience';
+import { CommunicationAudience } from '../lib/communicationAudience';
 
 type Audience = CommunicationAudience;
 type ExtendedAnnouncement = Announcement & {
@@ -92,11 +88,6 @@ const audienceIcon = (audience?: Audience) => {
   if (audience === 'leadership') return ShieldCheck;
   return UsersRound;
 };
-
-const connectedProvidersFor = (apps?: ConnectedCommunicationApp[]) =>
-  (apps || [])
-    .filter((app) => app.status === 'connected')
-    .map((app) => app.provider);
 
 export default function Announcements() {
   const { profile, user } = useAuth();
@@ -189,80 +180,22 @@ export default function Announcements() {
     setEditorOpen(true);
   };
 
-  const publishNotifications = async (announcementId: string, title: string, audience: Audience, push: boolean) => {
-    const usersSnapshot = await getDocs(collection(db, 'users'));
-    const batch = writeBatch(db);
-    const recipientTokens = new Set<string>();
-
-    usersSnapshot.docs.forEach((userDoc) => {
-      const userData = userDoc.data() as {
-        isDisabled?: boolean;
-        isVerified?: boolean;
-        roles?: any[];
-        preferences?: NotificationPreferences;
-        connectedCommunicationApps?: ConnectedCommunicationApp[];
-        fcmTokens?: unknown[];
-      };
-
-      if (!isProfileEligibleForAudience(userData, audience)) return;
-
-      const routing = buildCommunicationRoutingPlan({
-        kind: 'announcement',
-        preferences: userData.preferences,
-        connectedProviders: connectedProvidersFor(userData.connectedCommunicationApps),
-        allowPwa: push,
-        allowEmail: true,
-        allowExternalConnectors: false,
-      });
-
-      const notificationRef = doc(collection(db, 'notifications'));
-      batch.set(notificationRef, {
-        ...buildNotificationRecord({
-          userId: userDoc.id,
-          title: 'KCFC Update',
-          message: title,
-          type: 'announcement',
-          link: `/announcements?id=${announcementId}`,
-          sourceId: announcementId,
-          sourceType: 'announcement',
-          urgency: routing.urgency,
-          channels: routing.channels,
-          extra: {
-            audience,
-            routingRationale: routing.rationale,
-          },
-        }),
-        createdAt: serverTimestamp(),
-      });
-
-      if (push && routing.channels.includes('pwa') && Array.isArray(userData.fcmTokens)) {
-        userData.fcmTokens.forEach((token) => {
-          if (typeof token === 'string' && token.trim()) recipientTokens.add(token.trim());
-        });
-      }
+  const publishNotifications = async (announcementId: string) => {
+    if (!user) throw new Error('A signed-in announcement creator is required.');
+    const idToken = await user.getIdToken();
+    const response = await fetch('/api/announcements/publish-notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ announcementId }),
     });
-
-    await batch.commit();
-
-    if (push && recipientTokens.size > 0 && user) {
-      try {
-        const idToken = await user.getIdToken();
-        const response = await fetch('/api/admin/broadcast-announcement-push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({
-            title: `KCFC Update: ${title}`,
-            body: form.summary || form.content,
-            recipientTokens: Array.from(recipientTokens),
-          }),
-        });
-        if (!response.ok) console.warn('Announcements: push broadcast returned non-success status');
-      } catch (error) {
-        console.error('Announcements: push broadcast failed; Inbox records were still created', error);
-      }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Announcement notification dispatch failed (${response.status}).`);
     }
   };
-
   const handleSave = async (status: 'draft' | 'published') => {
     if (!user || !profile || saving) return;
     if (!form.title.trim() || !form.content.trim()) return;
@@ -294,7 +227,7 @@ export default function Announcements() {
       }
 
       if (status === 'published' && announcementId && !previouslyPublished) {
-        await publishNotifications(announcementId, form.title.trim(), form.audience, form.push);
+        await publishNotifications(announcementId);
       }
       resetEditor();
     } catch (error) {
