@@ -21,6 +21,7 @@ import {
   User,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { syncOwnMemberDirectoryProfile } from '../lib/memberDirectorySyncClient';
 import InstallPWA from '../components/InstallPWA';
 import NotificationHealth from '../components/NotificationHealth';
 import { ConnectedCommunicationApp } from '../types';
@@ -152,6 +153,7 @@ export default function Profile() {
         preferences: formData.preferences,
         updatedAt: serverTimestamp(),
       });
+      await syncOwnMemberDirectoryProfile();
       setMessage({ type: 'success', text: 'Your profile and communication preferences were saved.' });
     } catch (error) {
       console.error(error);
@@ -178,6 +180,7 @@ export default function Profile() {
           photoURL: reader.result as string,
           updatedAt: serverTimestamp(),
         });
+        await syncOwnMemberDirectoryProfile();
         setMessage({ type: 'success', text: 'Profile photo updated.' });
       } catch (error) {
         console.error(error);

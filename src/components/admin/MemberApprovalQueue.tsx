@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { CheckCircle2, Search, ShieldCheck, UserCheck, UsersRound } from 'lucide-react';
 import { db } from '../../lib/firebase';
+import { syncManagedMemberDirectoryProfile } from '../../lib/memberDirectorySyncClient';
 import type { UserProfile } from '../../types';
 
 function memberName(member: UserProfile) {
@@ -70,6 +71,7 @@ export default function MemberApprovalQueue() {
         isVerified: true,
         updatedAt: serverTimestamp(),
       });
+      await syncManagedMemberDirectoryProfile(member.uid);
       setMessage(`${name} is now verified. Roles and ministries were left unchanged.`);
     } catch (error) {
       console.error('Member verification failed', error);

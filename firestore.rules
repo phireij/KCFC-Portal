@@ -191,8 +191,8 @@ service cloud.firestore {
       }
 
       allow read: if isApproved();
-      allow create, update: if isAdmin() && isValidMemberDirectoryProfile(incoming());
-      allow delete: if isAdmin();
+      // Projection synchronization is trusted-server only; Admin SDK bypasses client rules.
+      allow create, update, delete: if false;
     }
 
     // --- Polls Collection ---

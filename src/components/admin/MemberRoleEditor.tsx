@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { Check, Search, ShieldCheck, UsersRound } from 'lucide-react';
 import { db } from '../../lib/firebase';
+import { syncManagedMemberDirectoryProfile } from '../../lib/memberDirectorySyncClient';
 import {
   CHORE_MINISTRIES,
   LITURGICAL_MINISTRIES,
@@ -162,6 +163,7 @@ export default function MemberRoleEditor() {
       };
       if (!draftMinistries.includes('lector_commentator')) updates.lcRoles = [];
       await updateDoc(doc(db, 'users', selected.uid), updates);
+      await syncManagedMemberDirectoryProfile(selected.uid);
       setFeedback(`${name}'s roles and ministries were updated without changing the account identity.`);
     } catch (error) {
       console.error('Focused member role save failed', error);

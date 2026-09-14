@@ -71,11 +71,8 @@ const projectionRules = firestoreRules.slice(projectionStart, projectionEnd);
 if (!projectionRules.includes('allow read: if isApproved();')) {
   throw new Error('member_directory reads must remain restricted to approved authenticated members.');
 }
-if (!projectionRules.includes('allow create, update: if isAdmin() && isValidMemberDirectoryProfile(incoming());')) {
-  throw new Error('member_directory writes must remain restricted to validated administrative writes.');
-}
-if (!projectionRules.includes('allow delete: if isAdmin();')) {
-  throw new Error('member_directory deletion must remain administrative.');
+if (!projectionRules.includes('allow create, update, delete: if false;')) {
+  throw new Error('member_directory browser writes must remain disabled; synchronization is trusted-server only.');
 }
 for (const field of MEMBER_DIRECTORY_PUBLIC_FIELDS) {
   if (!projectionRules.includes(`'${field}'`)) {

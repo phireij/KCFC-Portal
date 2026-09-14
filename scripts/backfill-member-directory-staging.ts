@@ -35,6 +35,11 @@ const usersSnapshot = await db.collection('users').get();
 const projections = usersSnapshot.docs
   .map((document) => toMemberDirectoryProfile(document.id, document.data()))
   .filter((member): member is NonNullable<typeof member> => Boolean(member));
+const existingDirectorySnapshot = await db.collection('member_directory').get();
+const desiredIds = new Set(projections.map((member) => member.uid));
+const staleProjectionDocuments = existingDirectorySnapshot.docs
+  .map((document) => document.id)
+  .filter((uid) => !desiredIds.has(uid));
 
 console.log(JSON.stringify({
   mode: apply ? 'apply' : 'plan',
@@ -43,12 +48,19 @@ console.log(JSON.stringify({
   databaseId,
   sourceUserDocuments: usersSnapshot.size,
   publicProjectionDocuments: projections.length,
+  sourceDocumentsNotProjected: usersSnapshot.size - projections.length,
+  existingProjectionDocuments: existingDirectorySnapshot.size,
+  staleProjectionDocuments: staleProjectionDocuments.length,
   destructiveDeletes: 0,
 }, null, 2));
 
 if (!apply) {
   console.log('Plan only. No Firestore writes performed. Set KCFC_MEMBER_DIRECTORY_BACKFILL_APPLY=true to write to isolated staging.');
   process.exit(0);
+}
+
+if (staleProjectionDocuments.length > 0) {
+  throw new Error(`Refusing apply: ${staleProjectionDocuments.length} stale member_directory document(s) would remain because this backfill is intentionally non-destructive. Review cleanup before applying.`);
 }
 
 for (let offset = 0; offset < projections.length; offset += 400) {

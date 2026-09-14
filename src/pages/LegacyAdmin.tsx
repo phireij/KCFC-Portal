@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Shield, ShieldAlert, UserCheck, UserPlus, Search, Ban, UserX, Trash2, X, ChevronDown, ChevronRight, Megaphone, FileText, RefreshCw, Mail, Inbox, Archive, Check, AlertCircle, Eye, EyeOff, Reply, Send, Loader2 } from 'lucide-react';
 import BroadcastTool from '../components/admin/BroadcastTool';
 import { sendGmail } from '../lib/gmail';
+import { syncManagedMemberDirectoryProfile } from '../lib/memberDirectorySyncClient';
 import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 
@@ -422,6 +423,7 @@ export default function Admin() {
 
     try {
       await updateDoc(doc(db, 'users', userId), updates);
+      await syncManagedMemberDirectoryProfile(userId);
       setUsers(prev => prev.map(u => u.uid === userId ? { ...u, ...updates } : u));
       setEditingRoles(prev => ({ ...prev, [userId]: null }));
       setEditingMinistries(prev => ({ ...prev, [userId]: null }));
@@ -482,6 +484,7 @@ export default function Admin() {
       };
 
       await updateDoc(doc(db, 'users', userId), dbUpdates);
+      await syncManagedMemberDirectoryProfile(userId);
       setUsers(prev => prev.map(u => u.uid === userId ? { ...u, ...localUpdates } : u));
       setEditingProfiles(prev => ({ ...prev, [userId]: null }));
     } catch (err: any) {
@@ -501,6 +504,7 @@ export default function Admin() {
         isVerified: nextStatus,
         updatedAt: serverTimestamp()
       });
+      await syncManagedMemberDirectoryProfile(userId);
       setUsers(prev => prev.map(u => u.uid === userId ? { ...u, isVerified: nextStatus } : u));
       
       if (nextStatus) {
@@ -561,6 +565,7 @@ export default function Admin() {
       }
 
       await updateDoc(doc(db, 'users', userId), updates);
+      await syncManagedMemberDirectoryProfile(userId);
       setUsers(prev => prev.map(u => u.uid === userId ? { ...u, ...updates } : u));
     } catch (err) {
       console.error(err);
@@ -590,6 +595,7 @@ export default function Admin() {
           isDisabled: false,
           updatedAt: serverTimestamp()
         });
+        await syncManagedMemberDirectoryProfile(userId);
         setUsers(prev => prev.map(u => u.uid === userId ? { ...u, isDisabled: false } : u));
       } catch (err) {
         console.error(err);
@@ -648,6 +654,7 @@ export default function Admin() {
       // Direct client-side delete using authenticated administrator privileges to guarantee instant permanent deletion from the correct database
       try {
         await deleteDoc(doc(db, 'users', userId));
+        await syncManagedMemberDirectoryProfile(userId);
       } catch (clientFsError: any) {
         console.warn("Client-side direct users doc delete ignored: ", clientFsError);
       }
@@ -752,6 +759,7 @@ export default function Admin() {
       if (targetDeletedUid) {
         try {
           await deleteDoc(doc(db, 'users', targetDeletedUid));
+          await syncManagedMemberDirectoryProfile(targetDeletedUid);
         } catch (clientFsError: any) {
           console.warn("Client-side direct users doc delete ignored: ", clientFsError);
         }
@@ -2056,6 +2064,7 @@ export default function Admin() {
                         isDisabled: true,
                         updatedAt: serverTimestamp()
                       });
+                      await syncManagedMemberDirectoryProfile(u.uid);
                       setUsers(prev => prev.map(item => item.uid === u.uid ? { ...item, isDisabled: true } : item));
                     } catch (err) {
                       console.error(err);

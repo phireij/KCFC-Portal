@@ -11,6 +11,7 @@ import webpush from "web-push";
 import { initializeDeliveryDiagnostics, recordDeliveryOutcome } from "./src/lib/deliveryDiagnostics";
 import { buildPwaDeliveryEvidence, type PwaTransportAttempt } from "./src/lib/pwaDeliveryEvidence";
 import { registerLiturgicalCommunicationRoutes } from "./server/liturgicalCommunicationRoutes";
+import { registerMemberDirectorySyncRoutes } from "./server/memberDirectorySyncRoutes";
 
 // The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().
 const currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
@@ -518,6 +519,7 @@ async function startServer() {
 
   // Trusted recipient resolution stays server-side; browser callers provide only poll identity.
   registerLiturgicalCommunicationRoutes(app, { auth: authAdmin, db: dbAdmin });
+  registerMemberDirectorySyncRoutes(app, { auth: authAdmin, db: dbAdmin });
 
   // API routes
   app.get("/api/health", (req, res) => {
@@ -709,7 +711,8 @@ async function startServer() {
       logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/[redacted]...`);
       try {
         await dbAdmin.collection("users").doc(targetUserId).delete();
-        logMessage(`[SUCCESS] Deleted document from users collection for UID: [redacted]`);
+        await dbAdmin.collection("member_directory").doc(targetUserId).delete();
+        logMessage(`[SUCCESS] Deleted private profile and public directory projection for UID: [redacted]`);
       } catch (e: any) {
         logMessage(`[WARN] Firestore profile cleanup skipped/errored: ${e.message}`);
       }
@@ -993,7 +996,8 @@ async function startServer() {
         logMessage(`[PROCESS] Attempting to clean up Firestore profile document users/[redacted]...`);
         try {
           await dbAdmin.collection("users").doc(currentUid).delete();
-          logMessage(`[SUCCESS] Document deleted from users collection for UID: [redacted]`);
+          await dbAdmin.collection("member_directory").doc(currentUid).delete();
+          logMessage(`[SUCCESS] Private profile and public directory projection deleted for UID: [redacted]`);
         } catch (e: any) {
           logMessage(`[WARN] Firestore profile cleanup skipped/errored for UID [redacted]: ${e.message}`);
         }
