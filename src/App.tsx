@@ -8,6 +8,7 @@ import { cn } from './lib/utils';
 import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
 import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites, observeForegroundMessages } from './lib/fcmClient';
 import { syncOwnMemberDirectoryProfile } from './lib/memberDirectorySyncClient';
+import { claimPendingProfile } from './lib/pendingProfileClaimClient';
 
 // Route pages are lazy-loaded so members download only the workflow they open.
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -132,49 +133,16 @@ export default function App() {
                   }
                 }
               } else {
-                // Check if there is an existing pre-registered pending document with this email
-                const emailLower = (authenticatedUser.email || '').trim().toLowerCase();
+                // Pending pre-registration claims are resolved by exact authenticated email on the trusted server.
                 let migrated = false;
-
-                if (emailLower) {
-                  try {
-                    const pendingDocId = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
-                    const pendingDocRef = doc(db, 'users', pendingDocId);
-                    const pendingDocSnap = await getDoc(pendingDocRef);
-
-                    if (pendingDocSnap.exists()) {
-                      const pendingData = pendingDocSnap.data();
-                      const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
-
-                      const newProfile: UserProfile = {
-                        uid: authenticatedUser.uid,
-                        email: emailLower,
-                        displayName: pendingData.displayName || authenticatedUser.displayName || 'Member',
-                        photoURL: pendingData.photoURL || authenticatedUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingData.displayName || 'Member')}&background=123B66&color=fff`,
-                        roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
-                        ministries: pendingData.ministries || [],
-                        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || false,
-                        isVerified: isBootstrapAdmin || pendingData.isVerified || false,
-                        isDisabled: pendingData.isDisabled || false,
-                        createdAt: pendingData.createdAt || new Date().toISOString(),
-                        updatedAt: new Date().toISOString(),
-                      };
-
-                      // Write to standard UID
-                      await setDoc(userDocRef, {
-                        ...newProfile,
-                        updatedAt: serverTimestamp()
-                      });
-
-                      // Delete old pending document
-                      await deleteDoc(pendingDocRef);
-                      await syncOwnMemberDirectoryProfile();
-                      console.log("Successfully migrated pre-registered pending member profile to the authenticated account.");
-                      migrated = true;
-                    }
-                  } catch (migrationErr) {
-                    console.error("Failed to migrate pre-registered pending document:", migrationErr);
+                try {
+                  const pendingClaim = await claimPendingProfile();
+                  migrated = pendingClaim.claimed;
+                  if (migrated) {
+                    console.log('Successfully claimed pre-registered member profile through the trusted server boundary.');
                   }
+                } catch (migrationErr) {
+                  console.error('Failed to claim pre-registered pending profile:', migrationErr);
                 }
 
                 if (!migrated) {

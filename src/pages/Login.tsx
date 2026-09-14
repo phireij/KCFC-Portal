@@ -7,7 +7,7 @@ import {
   signInWithPopup,
   updateProfile,
 } from 'firebase/auth';
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
   ArrowRight,
   CheckCircle2,
@@ -26,6 +26,7 @@ import { auth, db, googleProvider } from '../lib/firebase';
 import { Logo } from '../components/ui/Logo';
 import { cn } from '../lib/utils';
 import { syncOwnMemberDirectoryProfile } from '../lib/memberDirectorySyncClient';
+import { claimPendingProfile } from '../lib/pendingProfileClaimClient';
 
 const avatarUrl = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'KCFC')}&background=123B66&color=fff`;
@@ -58,37 +59,8 @@ export default function Login() {
 
     const emailLower = accountEmail.trim().toLowerCase();
     const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
-    let pendingData: Record<string, any> | null = null;
-    let pendingDocId: string | null = null;
-
-    if (emailLower) {
-      const candidateId = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
-      try {
-        const pendingSnapshot = await getDoc(doc(db, 'users', candidateId));
-        if (pendingSnapshot.exists()) {
-          pendingData = pendingSnapshot.data();
-          pendingDocId = candidateId;
-        }
-      } catch (pendingError) {
-        console.error('Login: failed to check pending pre-registration', pendingError);
-      }
-    }
-
-    if (pendingData) {
-      await setDoc(userDocRef, {
-        uid,
-        email: emailLower,
-        displayName: pendingData.displayName || displayName || 'Member',
-        photoURL: pendingData.photoURL || photoURL || avatarUrl(pendingData.displayName || displayName || 'Member'),
-        roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
-        ministries: pendingData.ministries || [],
-        isEmailVerified: isBootstrapAdmin || emailVerified || pendingData.isEmailVerified || false,
-        isVerified: isBootstrapAdmin || pendingData.isVerified || false,
-        isDisabled: pendingData.isDisabled || false,
-        createdAt: pendingData.createdAt || serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      if (pendingDocId) await deleteDoc(doc(db, 'users', pendingDocId));
+    const pendingClaim = await claimPendingProfile();
+    if (pendingClaim.claimed) {
       await syncOwnMemberDirectoryProfile();
       return;
     }
@@ -172,38 +144,8 @@ export default function Login() {
       const userDocRef = doc(db, 'users', cred.user.uid);
       const emailLower = (cred.user.email || '').trim().toLowerCase();
       const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
-      let pendingData: Record<string, any> | null = null;
-      let pendingDocId: string | null = null;
-
-      if (emailLower) {
-        const candidateId = `pending_${emailLower.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')}`;
-        try {
-          const pendingSnapshot = await getDoc(doc(db, 'users', candidateId));
-          if (pendingSnapshot.exists()) {
-            pendingData = pendingSnapshot.data();
-            pendingDocId = candidateId;
-          }
-        } catch (pendingError) {
-          console.error('Registration: failed to check pending pre-registration', pendingError);
-        }
-      }
-
-      if (pendingData) {
-        await setDoc(userDocRef, {
-          uid: cred.user.uid,
-          email: emailLower,
-          displayName: pendingData.displayName || name.trim(),
-          photoURL: pendingData.photoURL || avatarUrl(name.trim()),
-          roles: pendingData.roles || (isBootstrapAdmin ? ['admin'] : ['member']),
-          ministries: pendingData.ministries || [],
-          isEmailVerified: isBootstrapAdmin || pendingData.isEmailVerified || false,
-          isVerified: isBootstrapAdmin || pendingData.isVerified || false,
-          isDisabled: pendingData.isDisabled || false,
-          createdAt: pendingData.createdAt || serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        if (pendingDocId) await deleteDoc(doc(db, 'users', pendingDocId));
-      } else {
+      const pendingClaim = await claimPendingProfile();
+      if (!pendingClaim.claimed) {
         await setDoc(userDocRef, {
           uid: cred.user.uid,
           email: cred.user.email || '',

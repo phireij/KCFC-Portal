@@ -14,6 +14,7 @@ import { registerLiturgicalCommunicationRoutes } from "./server/liturgicalCommun
 import { registerMemberDirectorySyncRoutes } from "./server/memberDirectorySyncRoutes";
 import { registerAnnouncementCommunicationRoutes } from "./server/announcementCommunicationRoutes";
 import { registerPrivilegedMemberQueryRoutes } from "./server/privilegedMemberQueryRoutes";
+import { registerPendingProfileClaimRoutes } from "./server/pendingProfileClaimRoutes";
 
 // The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().
 const currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
@@ -523,6 +524,7 @@ async function startServer() {
   registerLiturgicalCommunicationRoutes(app, { auth: authAdmin, db: dbAdmin });
   registerMemberDirectorySyncRoutes(app, { auth: authAdmin, db: dbAdmin });
   registerPrivilegedMemberQueryRoutes(app, { auth: authAdmin, db: dbAdmin });
+  registerPendingProfileClaimRoutes(app, { auth: authAdmin, db: dbAdmin });
   registerAnnouncementCommunicationRoutes(app, {
     auth: authAdmin,
     db: dbAdmin,
