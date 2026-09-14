@@ -1,0 +1,63 @@
+name: One-shot Legacy Polls privacy migration
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/one-shot-migrate-legacy-polls-privacy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/redesign/mobile-first-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Apply fail-closed Legacy Polls migration
+        run: node scripts/one-shot-migrate-legacy-polls-privacy.mjs
+
+      - name: Verify Legacy Polls privacy postconditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -F "collection(db, 'users')" src/pages/LegacyPollsImpl.tsx
+          ! grep -F 'UserProfile' src/pages/LegacyPollsImpl.tsx
+          grep -F 'subscribeMemberDirectory(' src/pages/LegacyPollsImpl.tsx
+          grep -F 'notifyLegacyPollPublished(' src/pages/LegacyPollsImpl.tsx
+          grep -F 'notifyLegacyPollCompletion(' src/pages/LegacyPollsImpl.tsx
+          grep -F 'notifyLegacyPollClosed(' src/pages/LegacyPollsImpl.tsx
+          grep -F 'listPrivilegedPollEmailRecipients()' src/pages/LegacyPollsImpl.tsx
+          npx tsc --noEmit
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/one-shot-migrate-legacy-polls-privacy.mjs
+          rm .github/workflows/one-shot-migrate-legacy-polls-privacy.yml
+
+      - name: Commit branch-only migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'kcfc-ci-bot'
+          git config user.email 'kcfc-ci-bot@users.noreply.github.com'
+          git add src/pages/LegacyPollsImpl.tsx scripts/one-shot-migrate-legacy-polls-privacy.mjs .github/workflows/one-shot-migrate-legacy-polls-privacy.yml
+          git diff --cached --check
+          git commit -m 'privacy: move Legacy Polls off private profile lists'
+          git push origin HEAD:redesign/mobile-first-v2
