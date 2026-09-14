@@ -6,14 +6,22 @@ import {
 } from '../src/lib/memberPreRegistration';
 
 assert.equal(normalizeMemberPreRegistrationEmail('  MEMBER@Example.COM  '), 'member@example.com');
-assert.equal(buildPendingMemberDocumentId('first.last+kcfc@example.com'), 'pending_first_last_kcfc');
+assert.equal(
+  buildPendingMemberDocumentId('first.last+kcfc@example.com'),
+  'pending_first.last%2Bkcfc%40example.com',
+);
+assert.notEqual(
+  buildPendingMemberDocumentId('member@example.com'),
+  buildPendingMemberDocumentId('member@other.example'),
+  'same local-part at different domains must not collide',
+);
 
 const plan = buildMemberPreRegistrationPlan({
   email: '  MEMBER@Example.COM  ',
   displayName: '  Sample Member  ',
 });
 
-assert.equal(plan.documentId, 'pending_member');
+assert.equal(plan.documentId, 'pending_member%40example.com');
 assert.equal(plan.email, 'member@example.com');
 assert.equal(plan.displayName, 'Sample Member');
 assert.equal(plan.profile.uid, plan.documentId);
