@@ -9,7 +9,6 @@ const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/
 // documents and must migrate to the public/private profile boundary before privacy
 // acceptance can be GREEN.
 const memberFacingPrivacyDebt = new Set([
-  'src/pages/LegacyPollsImpl.tsx',
   'src/pages/LegacyDutiesImpl.tsx',
   'src/components/CommitteeAssignments.tsx',
 ]);
@@ -21,6 +20,7 @@ const migratedMemberFacingConsumers = new Map([
   ['src/pages/Duties.tsx', 'subscribeMemberDirectory'],
   ['src/pages/Dashboard.tsx', 'subscribeMemberDirectory'],
   ['src/pages/Polls.tsx', 'subscribeMemberDirectory'],
+  ['src/pages/LegacyPollsImpl.tsx', 'subscribeMemberDirectory'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
@@ -87,6 +87,18 @@ for (const [file, requiredMarker] of migratedMemberFacingConsumers) {
   }
   if (!source.includes(requiredMarker)) {
     throw new Error(`Migrated member-facing surface must retain its public projection data source (${requiredMarker}): ${file}`);
+  }
+}
+
+const legacyPollsSource = fs.readFileSync('src/pages/LegacyPollsImpl.tsx', 'utf8');
+for (const requiredMarker of [
+  'notifyLegacyPollPublished',
+  'notifyLegacyPollCompletion',
+  'notifyLegacyPollClosed',
+  'listPrivilegedPollEmailRecipients',
+]) {
+  if (!legacyPollsSource.includes(requiredMarker)) {
+    throw new Error(`Legacy Polls must retain trusted/private boundary marker: ${requiredMarker}`);
   }
 }
 
