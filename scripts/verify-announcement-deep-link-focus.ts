@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const source = fs.readFileSync('src/pages/Announcements.tsx', 'utf8');
+const trustedRoute = fs.readFileSync('server/announcementCommunicationRoutes.ts', 'utf8');
 
 const required = [
   "import { useSearchParams } from 'react-router-dom';",
@@ -21,8 +22,15 @@ for (const marker of required) {
   }
 }
 
-if (!source.includes("link: `/announcements?id=${announcementId}`")) {
-  throw new Error('Announcement notification link must remain compatible with the focused Updates deep link.');
+for (const marker of [
+  "link: `/announcements?id=${announcementId}`",
+  "click_action: `/announcements?id=${announcementId}`",
+  "clickAction: `/announcements?id=${announcementId}`",
+  "url: `/announcements?id=${announcementId}`",
+]) {
+  if (!trustedRoute.includes(marker)) {
+    throw new Error(`Trusted announcement route must retain focused Updates deep-link marker: ${marker}`);
+  }
 }
 
 console.log('Updates announcement deep-link focus contract: PASS');
