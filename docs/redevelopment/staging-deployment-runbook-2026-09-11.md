@@ -8,7 +8,7 @@ Status: **readiness procedure only.** This runbook does not authorize production
 
 Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Before every staging deployment, verify the **live** branch head and Draft PR #1 instead of relying on a hard-coded historical SHA. As of the 2026-09-14 privacy-readiness checkpoint, the last fully validated head before this runbook refresh is `68a9a3bf08a59c4a067833babb5e89983f7bd363`, with push CI #1800 / id `34816926571` and exact-head PR CI #1801 / id `34816930303` both successful. Its retained manifest is artifact `10337281005`, digest `sha256:90f37026e9bc2bd31cbf430e840878da8e7ca81bdae75c450cb217ffc6caa993`. If the live branch has advanced, use the newer validated SHA and evidence recorded in Draft PR #1.
+Before every staging deployment, verify the **live** branch head and Draft PR #1 instead of relying on a hard-coded historical SHA. As of the 2026-09-14 privacy/readiness checkpoint, the fully validated repository head is `f555ca31686e3eba77ab35f5eeb7bb07adc6064c`, with push CI #1935 / id `34838644929` and exact-head PR CI #1936 / id `34838648676` both successful. The retained PR manifest is artifact `10345161758`, digest `sha256:c46ec4a28b6879b2856ea82a79ab9e43e660e75b08a505955407e3908b60d240`, retained through 2026-10-14. If the live branch has advanced, use the newer validated SHA and evidence recorded in Draft PR #1.
 
 ## Non-negotiable isolation rules
 
@@ -138,7 +138,7 @@ The current application uses the sanitized `member_directory/{uid}` projection a
 uid
 displayName
 photoURL
-nickname? 
+nickname?
 roles[]
 ministries[]
 lcRoles[]
@@ -163,11 +163,32 @@ Proceed in this exact order:
    - ordinary member cannot list private `users`;
    - ordinary member cannot `get` another member's private profile by known UID;
    - approved ordinary member can read `member_directory`;
-   - Admin/authorized Leader can get/list private profiles required for governance.
+   - Admin/President can get/list private profiles required for member administration;
+   - Vice President, Secretary, Auditor, P.R.O., Spiritual Director and ministry leaders do not gain broad cross-member private-profile read/list access merely from their role.
 11. Verify self-profile edit/device registration remains functional.
-12. Verify explicit manager email actions remain suppressed/simulated in staging and do not place member emails into ordinary assignment state.
+12. Verify explicitly authorized Secretary governance mutations still work without granting Secretary broad private-profile read/list access.
+13. Verify explicit manager email actions remain suppressed/simulated in staging and do not place member emails into ordinary assignment state.
 
 If any member-facing page fails because the projection is absent/malformed, **do not** work around it by restoring broad ordinary-member `users` reads. Fix the isolated staging projection/backfill instead.
+
+## Pending pre-registration claim gate
+
+Use synthetic staging identities only. The purpose is to prove that tightening private `users` reads did not break pre-registered member onboarding and that the browser cannot use pending profiles as a private-data side channel.
+
+1. Create a synthetic unverified pending member through the normal staging pre-registration workflow.
+2. Confirm the pending document stores the exact normalized synthetic email and that the new document ID is based on the full normalized email, not only the local-part.
+3. Create/sign in to Firebase Authentication with the **same exact email**.
+4. Confirm the application calls the authenticated trusted claim route and the pending profile is claimed into `users/{authenticatedUid}`.
+5. Confirm the original pending document is removed only as part of the successful trusted transaction.
+6. Confirm the claimed profile retains the intended roles/ministries/status fields and that `member_directory` is created only when the resulting profile is eligible for the public projection.
+7. For an unverified synthetic account, confirm `isEmailVerified` remains false unless Firebase Auth or the stored pending profile explicitly provides verified state; confirm the email-verification holding state remains reachable.
+8. From an ordinary browser session, confirm direct Firestore `get`/`list` access to another pending/private profile is denied by the tightened rules.
+9. Collision test: pre-register `person@example.com` and `person@other.example` (or equivalent synthetic addresses) and confirm they produce distinct pending document IDs and can each be claimed only by an authenticated account with the exact matching email.
+10. Legacy compatibility test: create a synthetic historical-style `pending_<localpart>` staging record with an exact stored email, then confirm the trusted route can claim it by email without relying on its legacy ID format.
+11. Confirm duplicate non-pending profiles or multiple pending profiles for one exact email fail closed rather than choosing a record heuristically.
+12. Retain only non-secret PASS/FAIL evidence; never record Firebase ID tokens or synthetic passwords.
+
+Failure of this gate must not be worked around by restoring browser read/delete access to arbitrary `pending_*` private documents.
 
 ## Firestore composite-index gate
 
@@ -228,6 +249,7 @@ Use only synthetic staging identities. Baseline coverage should include:
 - Core member;
 - liturgical ministry members/leaders;
 - Admin/President equivalent;
+- Secretary;
 - Treasurer;
 - Auditor;
 - Vice President;
@@ -257,6 +279,7 @@ Before physical-device notification testing, complete the browser/responsive sub
 - Leadership workspace history and unauthorized denial;
 - staging badge visibility at phone/tablet/desktop widths;
 - public/private member-profile boundary;
+- pending-profile trusted claim and collision/legacy compatibility cases;
 - explicit roster publication/privacy boundaries; and
 - destructive controls remaining outside routine leadership surfaces.
 
@@ -289,6 +312,7 @@ Create a dated evidence entry containing only non-secret information:
 - `/api/health` result plus `staging:evidence` PASS;
 - index readiness state;
 - projection/backfill/rule deployment state;
+- pending-profile claim matrix state;
 - screenshot showing the staging badge;
 - browser/device matrix results;
 - defects/remediation commits; and
@@ -326,6 +350,7 @@ The gate may be marked complete only when all of the following are retained as e
 - current `member_directory` projection backfilled/verified including `lcRoles`;
 - migrated member-facing workflows working against that projection;
 - tightened staging private-profile access matrix empirically verified;
+- trusted pending-profile claim, collision isolation and legacy-ID compatibility empirically verified;
 - staging Treasury role matrix empirically verified; and
 - provider backup/rollback/redeployability evidence retained.
 
