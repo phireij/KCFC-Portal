@@ -20,6 +20,7 @@ const migratedMemberFacingConsumers = new Map([
   ['src/pages/LegacyDutiesImpl.tsx', 'subscribeMemberDirectory'],
   ['src/components/CommitteeAssignments.tsx', 'MemberDirectoryProfile'],
   ['src/components/ChoreCommitteeDashboard.tsx', 'MemberDirectoryProfile'],
+  ['src/pages/LegacyDashboard.tsx', 'subscribeMemberDirectory'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
@@ -40,11 +41,8 @@ const privilegedKnownConsumers = new Set([
   'src/components/admin/MemberRoleEditor.tsx',
 ]);
 
-// Retained source that is not routed by the current App shell. Keep it visible in
-// the containment report so reintroducing it requires deliberate review.
-const unroutedLegacyConsumers = new Set([
-  'src/pages/LegacyDashboard.tsx',
-]);
+// No retained unrouted source may list the private users collection.
+const unroutedLegacyConsumers = new Set<string>();
 
 const knownConsumers = new Set([
   ...memberFacingPrivacyDebt,
@@ -114,6 +112,10 @@ for (const file of [
 const homeSource = fs.readFileSync('src/pages/Dashboard.tsx', 'utf8');
 if (!homeSource.includes('subscribePendingMemberCount')) {
   throw new Error('Routine Home must keep pending-registration access behind the privileged member-query helper.');
+}
+const legacyHomeSource = fs.readFileSync('src/pages/LegacyDashboard.tsx', 'utf8');
+if (!legacyHomeSource.includes('subscribePendingMembers')) {
+  throw new Error('Legacy Dashboard pending-registration access must remain behind the privileged member-query helper.');
 }
 
 const debtStillPresent = directConsumers.filter((file) => memberFacingPrivacyDebt.has(file));

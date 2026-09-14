@@ -4,10 +4,13 @@ import { collection, query, getDocs, where, getCountFromServer, onSnapshot, orde
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { motion } from 'motion/react';
 import { Users, ClipboardCheck, CalendarRange, FolderOpen, AlertCircle, ArrowRight, UserCheck, Wallet, Database as DatabaseIcon, CheckCircle2 as CheckCircle, Loader2, Trash2 } from 'lucide-react';
-import { UserProfile, Poll, Resource, Announcement, MinistryType, Transaction } from '../types';
+import { Poll, Resource, Announcement, MinistryType, Transaction } from '../types';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { seedDatabase, purgeAllDummyData } from '../lib/seeder';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import { subscribePendingMembers } from '../lib/privilegedMemberQueries';
+import type { PendingMemberSummary } from '../lib/privilegedMemberQueries';
 
 const formatSafeDate = (val: any, formatStr: string, fallback: string = '') => {
   if (!val) return fallback;
@@ -35,7 +38,7 @@ export default function Dashboard() {
     resources: 0,
     pendingUsers: 0
   });
-  const [pendingList, setPendingList] = useState<UserProfile[]>([]);
+  const [pendingList, setPendingList] = useState<PendingMemberSummary[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [committeeCounts, setCommitteeCounts] = useState<{ [key: string]: number }>({});
   const [balance, setBalance] = useState<number | null>(null);
@@ -90,11 +93,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (!profile) return;
 
-    // Real-time listener for pending users if admin
+    // Privileged pending-member summaries remain behind the audited helper boundary.
     let unsubscribePending = () => {};
     if (isAdmin) {
-      unsubscribePending = onSnapshot(query(collection(db, 'users'), where('isVerified', '==', false)), (snap) => {
-        const pending = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+      unsubscribePending = subscribePendingMembers((pending) => {
         setPendingList(pending);
         setStats(prev => ({ ...prev, pendingUsers: pending.length }));
       }, (err) => {
@@ -115,21 +117,18 @@ export default function Dashboard() {
       console.error("Error listening to announcements on Dashboard:", err);
     });
 
-    // Real-time listener for users to compute committee stats
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      const users = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(u => u.email !== 'kcfc.jp@gmail.com');
+    // Public member/ministry statistics come only from the sanitized directory projection.
+    const unsubscribeUsers = subscribeMemberDirectory((users) => {
       const counts: { [key: string]: number } = {};
-      
       users.forEach(u => {
         u.ministries?.forEach(m => {
           counts[m] = (counts[m] || 0) + 1;
         });
       });
-      
       setCommitteeCounts(counts);
       setStats(prev => ({ ...prev, members: users.length }));
     }, (err) => {
-      console.error("Error listing users on Dashboard:", err);
+      console.error("Error listing public member directory on Dashboard:", err);
     });
 
     let unsubscribeAccounting = () => {};
