@@ -1,6 +1,6 @@
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { PollResponse, DutyAssignment, UserProfile } from '../types';
+import { PollResponse, DutyAssignment } from '../types';
 import { buildDutyAssignmentNotification } from '../lib/dutyCommunication';
 import { materializeNotificationRecord } from '../lib/notificationPersistence';
 
@@ -110,23 +110,13 @@ export function balanceChoreSlots(
   return assignments;
 }
 
-async function readCommunicationProfile(userId: string): Promise<UserProfile | undefined> {
-  try {
-    const snapshot = await getDoc(doc(db, 'users', userId));
-    return snapshot.exists() ? ({ uid: snapshot.id, ...snapshot.data() } as UserProfile) : undefined;
-  } catch (error) {
-    console.warn('Duty communication: member preferences unavailable; falling back to durable Inbox only.', error);
-    return undefined;
-  }
-}
-
 /**
  * Main legacy automatic assigner keeping backward compatibility.
  *
  * The duty assignment behavior remains unchanged. Its durable Portal Inbox record now
  * uses the shared KCFC notification schema. PWA/email execution remains deliberately
- * disabled here because the legacy service never executed those transports; this avoids
- * claiming a delivery channel that was not actually attempted.
+ * disabled here because the legacy service never executed those transports; therefore
+ * no private member communication profile is required in this browser-side path.
  */
 export async function autoAssignDuties(pollId: string, date: string) {
   const responsesQ = query(
@@ -170,15 +160,12 @@ export async function autoAssignDuties(pollId: string, date: string) {
     });
 
     try {
-      const member = await readCommunicationProfile(assignment.userId);
       const notificationPlan = buildDutyAssignmentNotification({
         userId: assignment.userId,
         dutyId: dutyRef.id,
         title: 'Auto-Assigned Duty',
         message: `You have been automatically assigned to ${assignment.type} duty on ${new Date(date).toLocaleDateString()}.`,
         link: '/duties?view=mine',
-        preferences: member?.preferences,
-        connectedCommunicationApps: member?.connectedCommunicationApps,
         allowPwa: false,
         allowEmail: false,
       });
