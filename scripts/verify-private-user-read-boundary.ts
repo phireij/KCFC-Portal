@@ -8,8 +8,8 @@ if (usersStart < 0 || usersEnd < 0) {
 }
 const usersRules = rules.slice(usersStart, usersEnd);
 
-const expectedGet = 'allow get: if isOwner(userId) || isAdmin() || isLeader();';
-const expectedList = 'allow list: if isAdmin() || isLeader();';
+const expectedGet = 'allow get: if isOwner(userId) || canAdministerMembers();';
+const expectedList = 'allow list: if canAdministerMembers();';
 if (!usersRules.includes(expectedGet)) {
   throw new Error('Private users get must be limited to self or authorized governance roles.');
 }
