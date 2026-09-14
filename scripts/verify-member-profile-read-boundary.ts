@@ -9,7 +9,6 @@ const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/
 // documents and must migrate to the public/private profile boundary before privacy
 // acceptance can be GREEN.
 const memberFacingPrivacyDebt = new Set([
-  'src/pages/Polls.tsx',
   'src/pages/LegacyPollsImpl.tsx',
   'src/pages/LegacyDutiesImpl.tsx',
   'src/components/CommitteeAssignments.tsx',
@@ -21,6 +20,7 @@ const migratedMemberFacingConsumers = new Map([
   ['src/pages/Members.tsx', 'subscribeMemberDirectory'],
   ['src/pages/Duties.tsx', 'subscribeMemberDirectory'],
   ['src/pages/Dashboard.tsx', 'subscribeMemberDirectory'],
+  ['src/pages/Polls.tsx', 'subscribeMemberDirectory'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
