@@ -6,7 +6,7 @@ Status: **repository security evidence only.** This document does not authorize 
 
 ## Purpose
 
-Record the current supported-upstream disposition for the two remaining moderate runtime audit findings on the optional Firebase Admin Storage dependency path, and prevent speculative dependency overrides from being mistaken for a supported remediation.
+Record the current supported-upstream disposition for the remaining moderate runtime audit findings on the optional Firebase Admin Storage dependency path, and prevent speculative dependency overrides from being mistaken for a supported remediation.
 
 ## Current repository position
 
@@ -14,6 +14,7 @@ The redevelopment branch currently declares:
 
 - `firebase-admin`: `^14.4.0`
 - no direct `@google-cloud/storage` dependency
+- no `@google/genai` dependency
 - no KCFC application import/use of Firebase Admin Storage; the repository CI permanently guards that assumption.
 
 The current package lock resolves the optional Firebase Admin Storage chain to:
@@ -53,7 +54,7 @@ Reasoning:
 - the remaining vulnerable path is optional and not used by KCFC application source;
 - CI guards the no-Storage-use assumption;
 - forcing a major transitive override would move outside the parent package's declared compatibility range and could create an untested authentication/storage behavior change;
-- the remaining audit severity is moderate, with 0 critical and 0 high findings in the current repository position.
+- the remaining audit severity is bounded to the optional Storage path, with no supported parent-package remediation currently available.
 
 A leaf override may only be reconsidered if there is a separate reviewed compatibility test demonstrating that the parent package supports it. It must not be introduced merely to make the audit count read zero.
 
@@ -68,12 +69,20 @@ Revisit this finding when any of the following occurs:
 
 When a supported parent remediation exists, update dependencies with npm so `package.json` and the v3 lockfile are regenerated atomically, then require the full KCFC CI/build/security gate before accepting the change.
 
-## Separate unused dependency cleanup
+## Unused Google GenAI cleanup — completed
 
-`@google/genai` remains a separate bounded cleanup item. Current KCFC application source does not use the SDK, and the legacy browser-side Gemini key injection has already been removed and guarded.
+The previously unused `@google/genai` package has now been removed from both `package.json` and the npm v3 lockfile using `npm uninstall` in an isolated GitHub Actions runner.
 
-Do not combine `@google/genai` cleanup with speculative transitive security overrides. Remove `@google/genai` only in an environment where npm can regenerate and verify the lockfile atomically, followed by the full KCFC CI/build gate.
+The cleanup was accepted only after the one-shot workflow verified all of the following before committing:
+
+- `@google/genai` was absent from `package.json`;
+- `node_modules/@google/genai` was absent from `package-lock.json`;
+- a fresh `npm ci` succeeded from the regenerated lockfile;
+- `npm run lint` succeeded; and
+- `npm run build` succeeded.
+
+The temporary cleanup workflow self-deleted after the validated commit. No manual lockfile surgery, dependency override, production deployment, or provider mutation was performed.
 
 ## Release implication
 
-This disposition does not clear the empirical staging/device/rollback gates and does not approve production. It narrows the dependency-security blocker to a documented upstream-parent remediation watch rather than an unresolved local code defect.
+This disposition does not clear the empirical staging/device/rollback gates and does not approve production. Dependency cleanup is now reduced to the supported upstream-parent remediation watch for the optional Firebase Admin Storage chain; the separate unused `@google/genai` cleanup item is closed.
