@@ -10,6 +10,7 @@ import multer from "multer";
 import webpush from "web-push";
 import { initializeDeliveryDiagnostics, recordDeliveryOutcome } from "./src/lib/deliveryDiagnostics";
 import { buildPwaDeliveryEvidence, type PwaTransportAttempt } from "./src/lib/pwaDeliveryEvidence";
+import { registerLiturgicalCommunicationRoutes } from "./server/liturgicalCommunicationRoutes";
 
 // The server bundle is CommonJS, where __dirname is available. During tsx development execution it may not be, so fall back to process.cwd().
 const currentDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
@@ -514,6 +515,9 @@ async function startServer() {
   // Middleware
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Trusted recipient resolution stays server-side; browser callers provide only poll identity.
+  registerLiturgicalCommunicationRoutes(app, { auth: authAdmin, db: dbAdmin });
 
   // API routes
   app.get("/api/health", (req, res) => {
