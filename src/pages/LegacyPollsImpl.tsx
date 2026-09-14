@@ -3,19 +3,26 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../App';
 import { collection, query, where, getDocs, getDoc, addDoc, updateDoc, doc, serverTimestamp, orderBy, deleteDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Poll, PollResponse, PollStatus, UserProfile } from '../types';
+import { Poll, PollResponse, PollStatus } from '../types';
 import { cn } from '../lib/utils';
-import { CommitteeAssignments } from '../components/CommitteeAssignments';
 import { motion } from 'motion/react';
 import { CheckCircle2, XCircle, HelpCircle, Calendar, Plus, Trash2, ChevronDown, Play, Pause, Settings, Check, Mail, Loader2, Copy, User, BookOpen, Users, Lock, Share2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { sendGmail } from '../lib/gmail';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
+import { listPrivilegedPollEmailRecipients } from '../lib/privilegedMemberQueries';
+import {
+  notifyLegacyPollClosed,
+  notifyLegacyPollCompletion,
+  notifyLegacyPollPublished,
+} from '../lib/legacyPollCommunicationClient';
 
 export default function Polls() {
   const { profile, user } = useAuth();
   const [searchParams] = useSearchParams();
   const [polls, setPolls] = useState<Poll[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<MemberDirectoryProfile[]>([]);
   const [userResponses, setUserResponses] = useState<Record<string, PollResponse>>({});
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({});
@@ -54,13 +61,11 @@ export default function Polls() {
   const canDelete = (profile?.roles || []).some(r => ['admin', 'president'].includes(r));
 
   useEffect(() => {
-    // 1. Listen to users
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      const fetchedUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
-      setUsers(fetchedUsers.filter(u => u.email !== 'kcfc.jp@gmail.com'));
-    }, (err) => {
-      console.error("Error listening to users in Polls page:", err);
-    });
+    // 1. Listen only to the public-safe member directory.
+    const unsubUsers = subscribeMemberDirectory(
+      setUsers,
+      (err) => console.error("Error listening to public member directory in Polls page:", err),
+    );
 
     // 2. Listen to polls
     const q = query(collection(db, 'polls'), orderBy('createdAt', 'desc'));
@@ -171,44 +176,11 @@ export default function Polls() {
           createdAt: serverTimestamp()
         });
 
-        // Create notifications for all users (or targeted users) - ONLY if not draft
         if (!isDraft) {
           try {
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const batch = writeBatch(db);
-            usersSnap.docs.forEach(userDoc => {
-              const userData = userDoc.data();
-              if (userData.isDisabled) return;
-              if (!userData.isVerified) return;
-
-              // Target logic
-              let shouldNotify = false;
-              if (formData.category === 'core_member') {
-                shouldNotify = !!userData.isCoreMember;
-              } else if (formData.category === 'committee') {
-                const committeeRoles = ['lector_commentator_leader', 'usher_leader', 'altar_server_leader'];
-                const committeeMinistries = ['lector_commentator', 'usher', 'altar_server'];
-                const userRoles = userData.roles || [];
-                const userMinistries = userData.ministries || [];
-                shouldNotify = userRoles.some((r: string) => committeeRoles.includes(r)) || userMinistries.some((m: string) => committeeMinistries.includes(m));
-              }
-
-              if (shouldNotify) {
-                const notificationRef = doc(collection(db, 'notifications'));
-                batch.set(notificationRef, {
-                  userId: userDoc.id,
-                  title: `New ${formData.category === 'core_member' ? 'Core Group' : formData.category === 'committee' ? 'Committee' : 'Community'} Poll`,
-                  message: `New poll published: ${formData.title}`,
-                  type: 'system',
-                  status: 'unread',
-                  link: '/polls',
-                  createdAt: serverTimestamp()
-                });
-              }
-            });
-            await batch.commit();
+            await notifyLegacyPollPublished(docRef.id);
           } catch (err) {
-            console.error("Failed to create notifications", err);
+            console.error("Failed to create trusted poll notifications", err);
           }
         }
 
@@ -240,72 +212,9 @@ export default function Polls() {
 
   const checkAndNotifyCoreCompletion = async (pollId: string) => {
     try {
-      const pollRef = doc(db, 'polls', pollId);
-      const pollSnap = await getDoc(pollRef);
-      if (!pollSnap.exists()) return;
-      const pollData = pollSnap.data() as Poll;
-
-      // Get all active, verified, enabled users excluding kcfc.jp@gmail.com
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const activeUsers = usersSnap.docs
-        .map(d => ({ uid: d.id, ...d.data() } as UserProfile))
-        .filter(u => !u.isDisabled && u.isVerified && u.email !== 'kcfc.jp@gmail.com');
-
-      let eligibleUids: string[] = [];
-      if (pollData.category === 'core_member') {
-        eligibleUids = activeUsers.filter(u => u.isCoreMember).map(u => u.uid);
-      } else if (pollData.category === 'committee') {
-        eligibleUids = activeUsers
-          .filter(u => u.ministries?.some(m => ['lector_commentator', 'usher', 'altar_server', 'ppt'].includes(m)))
-          .map(u => u.uid);
-      } else {
-        eligibleUids = activeUsers.map(u => u.uid);
-      }
-
-      if (eligibleUids.length === 0) return;
-
-      // Get all responses
-      const respQ = collection(db, `polls/${pollId}/responses`);
-      const respSnap = await getDocs(respQ);
-      const respondedUids = new Set(
-        respSnap.docs
-          .map(d => d.data() as PollResponse)
-          .filter(r => r.attendance !== null && r.attendance !== undefined)
-          .map(r => r.userId)
-      );
-
-      // Check if all eligible members have responded
-      const allDone = eligibleUids.every(uid => respondedUids.has(uid));
-
-      if (allDone) {
-        // Find admins & presidents to notify
-        const adminsSnap = await getDocs(collection(db, 'users'));
-        const adminUsers = adminsSnap.docs.filter(d => {
-          const roles = d.data().roles || [];
-          return roles.includes('admin') || roles.includes('president');
-        });
-
-        const notifyUids = new Set<string>();
-        if (pollData.createdBy) notifyUids.add(pollData.createdBy);
-        adminUsers.forEach(d => notifyUids.add(d.id));
-
-        const batch = writeBatch(db);
-        notifyUids.forEach(uid => {
-          const notificationRef = doc(collection(db, 'notifications'));
-          batch.set(notificationRef, {
-            userId: uid,
-            title: `Poll Response Completed`,
-            message: `All eligible members have responded to: "${pollData.title}". You can now close the poll and review results.`,
-            type: 'system',
-            status: 'unread',
-            link: pollData.category === 'core_member' ? '/duties?tab=core' : '/duties?tab=liturgical',
-            createdAt: serverTimestamp()
-          });
-        });
-        await batch.commit();
-      }
+      await notifyLegacyPollCompletion(pollId);
     } catch (err) {
-      console.error("Error in checkAndNotifyCoreCompletion", err);
+      console.error("Error in trusted completion notification", err);
     }
   };
 
@@ -453,80 +362,23 @@ export default function Polls() {
 
     try {
       await updateDoc(doc(db, 'polls', pollId), { status: nextStatus, updatedAt: serverTimestamp() });
-      
       const updatedPoll = polls.find(p => p.id === pollId);
-      if (updatedPoll) {
-        setPolls(prev => prev.map(p => p.id === pollId ? { ...p, status: nextStatus } : p));
+      if (!updatedPoll) return;
+      setPolls(prev => prev.map(p => p.id === pollId ? { ...p, status: nextStatus } : p));
 
-        // If poll is closed and it is a core_member poll, notify creator & admin/president
-        if (nextStatus === 'closed' && updatedPoll.category === 'core_member') {
-          try {
-            const usersQ = query(collection(db, 'users'));
-            const usersSnap = await getDocs(usersQ);
-            const adminOrPres = usersSnap.docs.filter(d => {
-              const roles = d.data().roles || [];
-              return roles.includes('admin') || roles.includes('president');
-            });
-            const notifyUids = new Set<string>();
-            if (updatedPoll.createdBy) notifyUids.add(updatedPoll.createdBy);
-            adminOrPres.forEach(d => notifyUids.add(d.id));
-
-            const batch = writeBatch(db);
-            notifyUids.forEach(uid => {
-              const notificationRef = doc(collection(db, 'notifications'));
-              batch.set(notificationRef, {
-                userId: uid,
-                title: 'Chore Poll Closed',
-                message: `Chore committee poll "${updatedPoll.title}" has been successfully closed. You can proceed with duty assignments.`,
-                type: 'system',
-                status: 'unread',
-                link: '/duties',
-                createdAt: serverTimestamp()
-              });
-            });
-            await batch.commit();
-          } catch (err) {
-            console.error("Failed to notify on chore poll close", err);
-          }
+      if (nextStatus === 'closed' && updatedPoll.category === 'core_member') {
+        try {
+          await notifyLegacyPollClosed(updatedPoll.id);
+        } catch (err) {
+          console.error("Failed to notify on trusted chore poll close", err);
         }
+      }
 
-        // If move from draft to active, send notifications
-        if (currentStatus === 'draft' && nextStatus === 'active') {
-          try {
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const batch = writeBatch(db);
-            usersSnap.docs.forEach(userDoc => {
-              const userData = userDoc.data();
-              if (userData.isDisabled || !userData.isVerified) return;
-
-              let shouldNotify = false;
-              if (updatedPoll.category === 'core_member') {
-                shouldNotify = !!userData.isCoreMember;
-              } else if (updatedPoll.category === 'committee') {
-                const committeeRoles = ['lector_commentator_leader', 'usher_leader', 'altar_server_leader'];
-                const committeeMinistries = ['lector_commentator', 'usher', 'altar_server'];
-                const userRoles = userData.roles || [];
-                const userMinistries = userData.ministries || [];
-                shouldNotify = userRoles.some((r: string) => committeeRoles.includes(r)) || userMinistries.some((m: string) => committeeMinistries.includes(m));
-              }
-
-              if (shouldNotify) {
-                const notificationRef = doc(collection(db, 'notifications'));
-                batch.set(notificationRef, {
-                  userId: userDoc.id,
-                  title: `New ${updatedPoll.category === 'core_member' ? 'Core Group' : updatedPoll.category === 'committee' ? 'Committee' : 'Community'} Poll`,
-                  message: `New poll published: ${updatedPoll.title}`,
-                  type: 'system',
-                  status: 'unread',
-                  link: '/polls',
-                  createdAt: serverTimestamp()
-                });
-              }
-            });
-            await batch.commit();
-          } catch (err) {
-            console.error("Failed to create notifications on publish", err);
-          }
+      if (currentStatus === 'draft' && nextStatus === 'active') {
+        try {
+          await notifyLegacyPollPublished(updatedPoll.id);
+        } catch (err) {
+          console.error("Failed to create trusted notifications on publish", err);
         }
       }
     } catch (err) {
@@ -642,10 +494,8 @@ export default function Polls() {
 
     setNotifying(poll.id);
     try {
-      // 1. Fetch all verified members
-      const q = query(collection(db, 'users'), where('isVerified', '==', true));
-      const snap = await getDocs(q);
-      let members = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(m => !!m.email && !m.isDisabled);
+      // 1. Fetch email recipients only through the audited privileged query boundary.
+      let members = await listPrivilegedPollEmailRecipients();
 
       // Filter members based on poll category to match eligible responders
       if (poll.category === 'core_member') {
@@ -1091,12 +941,11 @@ export default function Polls() {
                 )
                 .map(r => r.userId)
             );
-            const eligibleUsers = (poll.category === 'core_member'
-              ? users.filter(u => u.isCoreMember && !u.isDisabled && u.isVerified)
+            const eligibleUsers = poll.category === 'core_member'
+              ? users.filter(u => u.isCoreMember)
               : poll.category === 'committee'
-                ? users.filter(u => u.ministries?.some(m => ['lector_commentator', 'usher', 'altar_server', 'ppt'].includes(m)) && !u.isDisabled && u.isVerified)
-                : users.filter(u => !u.isDisabled && u.isVerified)
-            ).filter(u => u.email !== 'kcfc.jp@gmail.com');
+                ? users.filter(u => u.ministries?.some(m => ['lector_commentator', 'usher', 'altar_server', 'ppt'].includes(m as string)))
+                : users;
             const pendingUsers = eligibleUsers.filter(u => !respondedUserIds.has(u.uid));
             const isAdminOrPresident = (profile?.roles || []).some(r => ['admin', 'president'].includes(r)) || profile?.email === 'kcfc.jp@gmail.com';
             const isPollCreator = poll.createdBy === user?.uid;
