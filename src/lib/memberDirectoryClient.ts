@@ -1,4 +1,5 @@
-import type { User } from 'firebase/auth';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
 import {
   MEMBER_DIRECTORY_PUBLIC_FIELDS,
   type MemberDirectoryProfile,
@@ -6,7 +7,7 @@ import {
 
 const allowedKeys = new Set<string>(MEMBER_DIRECTORY_PUBLIC_FIELDS);
 
-function parseMemberDirectoryProfile(input: unknown): MemberDirectoryProfile {
+function parseMemberDirectoryProfile(documentId: string, input: unknown): MemberDirectoryProfile {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Member directory returned an invalid member record.');
   }
@@ -19,6 +20,7 @@ function parseMemberDirectoryProfile(input: unknown): MemberDirectoryProfile {
 
   if (
     typeof record.uid !== 'string' ||
+    record.uid !== documentId ||
     typeof record.displayName !== 'string' ||
     typeof record.photoURL !== 'string' ||
     (record.nickname !== undefined && typeof record.nickname !== 'string') ||
@@ -34,25 +36,22 @@ function parseMemberDirectoryProfile(input: unknown): MemberDirectoryProfile {
   return record as MemberDirectoryProfile;
 }
 
-export async function fetchMemberDirectory(user: User): Promise<MemberDirectoryProfile[]> {
-  const idToken = await user.getIdToken();
-  const response = await fetch('/api/member-directory', {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${idToken}`,
+export function subscribeMemberDirectory(
+  onMembers: (members: MemberDirectoryProfile[]) => void,
+  onError?: (error: Error) => void,
+) {
+  return onSnapshot(
+    collection(db, 'member_directory'),
+    (snapshot) => {
+      try {
+        const members = snapshot.docs
+          .map((document) => parseMemberDirectoryProfile(document.id, document.data()))
+          .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        onMembers(members);
+      } catch (error) {
+        onError?.(error instanceof Error ? error : new Error('Member directory parsing failed.'));
+      }
     },
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Member directory request failed with HTTP ${response.status}.`);
-  }
-
-  const body = await response.json() as { members?: unknown };
-  if (!Array.isArray(body.members)) {
-    throw new Error('Member directory response is missing the members array.');
-  }
-
-  return body.members.map(parseMemberDirectoryProfile);
+    (error) => onError?.(error),
+  );
 }
