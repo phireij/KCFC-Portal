@@ -38,8 +38,9 @@ replaceOnce(
 let login = fs.readFileSync('src/pages/Login.tsx', 'utf8');
 const firstPending = login.indexOf('    let pendingData: Record<string, any> | null = null;');
 if (firstPending < 0) throw new Error('Login Google pending migration start not found.');
-const firstNewProfileWrite = login.indexOf('    await setDoc(userDocRef, {', firstPending);
-if (firstNewProfileWrite < 0) throw new Error('Login Google new-profile write anchor not found.');
+const normalGoogleProfileMarker = "    await setDoc(userDocRef, {\n      uid,\n      email: emailLower,\n      displayName: isBootstrapAdmin ? 'ADMIN' : (displayName || 'Member'),";
+const firstNewProfileWrite = login.indexOf(normalGoogleProfileMarker, firstPending);
+if (firstNewProfileWrite < 0) throw new Error('Login Google normal-profile write anchor not found.');
 login = `${login.slice(0, firstPending)}    const pendingClaim = await claimPendingProfile();\n    if (pendingClaim.claimed) {\n      await syncOwnMemberDirectoryProfile();\n      return;\n    }\n\n${login.slice(firstNewProfileWrite)}`;
 
 const secondPending = login.indexOf('      let pendingData: Record<string, any> | null = null;');
