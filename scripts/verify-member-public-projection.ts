@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { MEMBER_DIRECTORY_PUBLIC_FIELDS, toMemberDirectoryProfile } from '../src/lib/memberPublicProjection';
 
 const privateSentinels = {
@@ -58,6 +59,36 @@ if (toMemberDirectoryProfile('bootstrap-admin', {
   isVerified: true,
 }) !== null) {
   throw new Error('Bootstrap service/admin identity must not appear in the member directory projection.');
+}
+
+const firestoreRules = fs.readFileSync('firestore.rules', 'utf8');
+const projectionStart = firestoreRules.indexOf('match /member_directory/{userId}');
+const projectionEnd = firestoreRules.indexOf('// --- Polls Collection ---', projectionStart);
+if (projectionStart < 0 || projectionEnd < 0) {
+  throw new Error('Firestore rules must contain a bounded member_directory rule block.');
+}
+const projectionRules = firestoreRules.slice(projectionStart, projectionEnd);
+if (!projectionRules.includes('allow read: if isApproved();')) {
+  throw new Error('member_directory reads must remain restricted to approved authenticated members.');
+}
+if (!projectionRules.includes('allow create, update: if isAdmin() && isValidMemberDirectoryProfile(incoming());')) {
+  throw new Error('member_directory writes must remain restricted to validated administrative writes.');
+}
+if (!projectionRules.includes('allow delete: if isAdmin();')) {
+  throw new Error('member_directory deletion must remain administrative.');
+}
+for (const field of MEMBER_DIRECTORY_PUBLIC_FIELDS) {
+  if (!projectionRules.includes(`'${field}'`)) {
+    throw new Error(`Firestore member_directory allowlist is missing public field: ${field}`);
+  }
+}
+for (const privateField of [
+  'email', 'birthdate', 'homeAddress', 'phoneNumber', 'preferences',
+  'fcmTokens', 'webPushSubscriptions', 'connectedCommunicationApps',
+]) {
+  if (projectionRules.includes(`'${privateField}'`)) {
+    throw new Error(`Private field must not be allowed in member_directory rules: ${privateField}`);
+  }
 }
 
 console.log('Member public projection boundary: PASS');
