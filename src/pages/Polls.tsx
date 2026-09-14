@@ -8,7 +8,6 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
-  writeBatch,
 } from 'firebase/firestore';
 import {
   ArrowRight,
@@ -38,16 +37,17 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../App';
-import { Poll, PollResponse, UserProfile } from '../types';
+import { Poll, PollResponse } from '../types';
 import { cn } from '../lib/utils';
 import LegacyPolls from './LegacyPolls';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
 import {
-  buildAvailabilityCompletionCreatorPlan,
-  buildAvailabilityRequestCreatorPlan,
-  buildPublishedRosterCreatorPlan,
-} from '../lib/liturgicalCreatorPlan';
-import { appendCommunicationNotificationsToBatch } from '../lib/communicationFirestore';
-import { buildLiturgicalPublicationPlan } from '../lib/liturgicalPublicationPlan';
+  notifyAvailabilityCompletion,
+  notifyAvailabilityRequest,
+  planLiturgicalRosterPublication,
+  publishLiturgicalRoster,
+} from '../lib/liturgicalCommunicationClient';
 
 type PageMode = 'availability' | 'leader' | 'legacy';
 type LeaderPanel = 'progress' | 'matrix' | 'assignments';
@@ -158,21 +158,13 @@ const massDatesForPoll = (poll: Poll) =>
       ? [{ date: poll.massDate, description: poll.description }]
       : [];
 
-const assignedUserIds = (poll: Poll) => {
-  const ids = new Set<string>();
-  Object.values(poll.assignments || {}).forEach((dateAssignments) => {
-    Object.keys(dateAssignments || {}).forEach((uid) => ids.add(uid));
-  });
-  return ids;
-};
-
 export default function Polls() {
   const { profile, user } = useAuth();
   const [searchParams] = useSearchParams();
   const focusedPollId = searchParams.get('id');
   const [mode, setMode] = useState<PageMode>('availability');
   const [polls, setPolls] = useState<ExtendedPoll[]>([]);
-  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [members, setMembers] = useState<MemberDirectoryProfile[]>([]);
   const [responses, setResponses] = useState<Record<string, PollResponse[]>>({});
   const [loading, setLoading] = useState(true);
   const [draftSelections, setDraftSelections] = useState<Record<string, string[]>>({});
@@ -197,12 +189,9 @@ export default function Polls() {
   const hasLegacyPollAccess = Boolean(profile?.isCoreMember || canLead);
 
   useEffect(() => {
-    const unsubMembers = onSnapshot(
-      collection(db, 'users'),
-      (snapshot) => {
-        setMembers(snapshot.docs.map((item) => ({ uid: item.id, ...item.data() } as UserProfile)));
-      },
-      (error) => console.error('Availability: failed to load members', error),
+    const unsubMembers = subscribeMemberDirectory(
+      setMembers,
+      (error) => console.error('Availability: failed to load public member directory', error),
     );
 
     const unsubPolls = onSnapshot(
@@ -307,9 +296,6 @@ export default function Polls() {
 
   const eligibleMembers = useMemo(
     () => members.filter((member) =>
-      member.email !== 'kcfc.jp@gmail.com' &&
-      member.isVerified &&
-      !member.isDisabled &&
       (member.ministries || []).some((ministry) => memberMinistries.includes(ministry)),
     ),
     [members],
@@ -317,27 +303,9 @@ export default function Polls() {
 
   const checkAndNotifyCompletion = async (poll: Poll) => {
     try {
-      const responseSnapshot = await getDocs(collection(db, 'polls', poll.id, 'responses'));
-      const responseMap = latestResponsesByUser(responseSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as PollResponse)));
-      const allDone = eligibleMembers.length > 0 && eligibleMembers.every((member) => responseMap.has(member.uid));
-      if (!allDone) return;
-
-      const pollRecord = polls.find((item) => item.id === poll.id) as ExtendedPoll & { availabilityCompletionNotifiedAt?: unknown };
-      if (pollRecord?.availabilityCompletionNotifiedAt) return;
-
-      const creatorPlan = buildAvailabilityCompletionCreatorPlan({
-        members,
-        pollId: poll.id,
-        pollTitle: poll.title,
-        createdBy: poll.createdBy,
-      });
-
-      const batch = writeBatch(db);
-      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
-      batch.update(doc(db, 'polls', poll.id), { availabilityCompletionNotifiedAt: serverTimestamp() });
-      await batch.commit();
+      await notifyAvailabilityCompletion(poll.id);
     } catch (error) {
-      console.error('Availability: completion notification failed', error);
+      console.error('Availability: trusted completion notification failed', error);
     }
   };
 
@@ -436,14 +404,7 @@ export default function Polls() {
         updatedAt: serverTimestamp(),
       });
 
-      const creatorPlan = buildAvailabilityRequestCreatorPlan({
-        eligibleMembers,
-        pollId: created.id,
-        pollTitle: form.title.trim(),
-      });
-      const batch = writeBatch(db);
-      appendCommunicationNotificationsToBatch(batch, db, creatorPlan);
-      await batch.commit();
+      await notifyAvailabilityRequest(created.id);
 
       setForm({
         title: '',
@@ -536,43 +497,21 @@ export default function Polls() {
       return;
     }
 
-    const publicationPlan = buildLiturgicalPublicationPlan({
-      members,
-      pollId: poll.id,
-      pollTitle: poll.title,
-      state: {
-        assignments: poll.assignments || {},
-        lastPublishedAssignments: poll.lastPublishedAssignments,
-        rosterRevision: poll.rosterRevision,
-      },
-    });
-    const notifyCount = publicationPlan.communicationPlan.notifications.length;
-    const confirmation = publicationPlan.mode === 'revision'
-      ? `Publish revised liturgical roster now? ${notifyCount} affected members will receive an updated-schedule Portal notification.`
-      : publicationPlan.mode === 'no_change'
-        ? 'Publish this roster again? No member assignments changed, so no new assignment notification will be created.'
-        : `Publish this liturgical roster now? ${notifyCount} assigned members will receive a Portal notification.`;
-    if (!window.confirm(confirmation)) return;
-
     setPublishingPollId(poll.id);
     try {
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'polls', poll.id), {
-        rosterPublished: true,
-        rosterPublishedAt: serverTimestamp(),
-        rosterPublishedBy: user.uid,
-        rosterPublishedByName: profile.displayName,
-        publicationMode: 'explicit',
-        lastPublishedAssignments: poll.assignments || {},
-        rosterRevision: publicationPlan.nextRevision,
-        updatedAt: serverTimestamp(),
-      });
+      const publicationPlan = await planLiturgicalRosterPublication(poll.id);
+      const notifyCount = publicationPlan.notificationCount || 0;
+      const confirmation = publicationPlan.mode === 'revision'
+        ? `Publish revised liturgical roster now? ${notifyCount} affected members will receive an updated-schedule Portal notification.`
+        : publicationPlan.mode === 'no_change'
+          ? 'Publish this roster again? No member assignments changed, so no new assignment notification will be created.'
+          : `Publish this liturgical roster now? ${notifyCount} assigned members will receive a Portal notification.`;
+      if (!window.confirm(confirmation)) return;
 
-      appendCommunicationNotificationsToBatch(batch, db, publicationPlan.communicationPlan);
-      await batch.commit();
+      await publishLiturgicalRoster(poll.id);
     } catch (error) {
-      console.error('Assignments: failed to publish roster', error);
-      alert('The roster could not be published.');
+      console.error('Assignments: trusted roster publication failed', error);
+      alert(error instanceof Error ? error.message : 'The roster could not be published.');
     } finally {
       setPublishingPollId(null);
     }
@@ -793,7 +732,7 @@ function StatusPill({ poll }: { poll: ExtendedPoll }) {
   return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-300">{poll.status}</span>;
 }
 
-function ResponseProgress({ eligibleMembers, latest }: { eligibleMembers: UserProfile[]; latest: Map<string, PollResponse> }) {
+function ResponseProgress({ eligibleMembers, latest }: { eligibleMembers: MemberDirectoryProfile[]; latest: Map<string, PollResponse> }) {
   return (
     <div className="mt-4 rounded-2xl bg-[#F7F9FC] p-3.5 dark:bg-white/5">
       <p className="text-[12px] font-extrabold text-[#172033] dark:text-white">Response status</p>
@@ -814,7 +753,7 @@ function ResponseProgress({ eligibleMembers, latest }: { eligibleMembers: UserPr
   );
 }
 
-function AvailabilityMatrix({ poll, eligibleMembers, latest }: { poll: Poll; eligibleMembers: UserProfile[]; latest: Map<string, PollResponse> }) {
+function AvailabilityMatrix({ poll, eligibleMembers, latest }: { poll: Poll; eligibleMembers: MemberDirectoryProfile[]; latest: Map<string, PollResponse> }) {
   const dates = massDatesForPoll(poll);
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
@@ -829,7 +768,7 @@ function AvailabilityMatrix({ poll, eligibleMembers, latest }: { poll: Poll; eli
   );
 }
 
-function AssignmentBuilder({ poll, eligibleMembers, latest, members, onAssign }: { poll: ExtendedPoll; eligibleMembers: UserProfile[]; latest: Map<string, PollResponse>; members: UserProfile[]; onAssign: (date: string, role: string, uid: string) => void }) {
+function AssignmentBuilder({ poll, eligibleMembers, latest, members, onAssign }: { poll: ExtendedPoll; eligibleMembers: MemberDirectoryProfile[]; latest: Map<string, PollResponse>; members: MemberDirectoryProfile[]; onAssign: (date: string, role: string, uid: string) => void }) {
   const dates = massDatesForPoll(poll);
   if (poll.status !== 'closed') return <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-[12px] leading-5 text-[#123B66] dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-200"><CircleAlert className="mr-2 inline h-4 w-4" />Close the availability request before assigning roles. This keeps member responses stable while leaders plan.</div>;
 
