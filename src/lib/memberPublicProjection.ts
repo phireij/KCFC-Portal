@@ -7,6 +7,7 @@ export type MemberDirectoryProfile = {
   nickname?: string;
   roles: UserRole[];
   ministries: MinistryType[];
+  lcRoles: string[];
   isCoreMember: boolean;
 };
 
@@ -17,6 +18,7 @@ export const MEMBER_DIRECTORY_PUBLIC_FIELDS = [
   'nickname',
   'roles',
   'ministries',
+  'lcRoles',
   'isCoreMember',
 ] as const;
 
@@ -46,6 +48,7 @@ export function toMemberDirectoryProfile(
     ...(optionalString(data.nickname) ? { nickname: optionalString(data.nickname) } : {}),
     roles: strings(data.roles) as UserRole[],
     ministries: strings(data.ministries) as MinistryType[],
+    lcRoles: strings(data.lcRoles),
     isCoreMember: data.isCoreMember === true,
   };
 }
