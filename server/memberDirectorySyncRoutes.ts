@@ -8,7 +8,18 @@ type MemberDirectorySyncDependencies = {
   db: Firestore;
 };
 
-const GOVERNANCE_SYNC_ROLES = new Set(['admin', 'president']);
+// Keep this aligned with the Firestore isAdmin() governance roles that are already
+// allowed to mutate managed member profiles. If a governance mutation is allowed,
+// its resulting public projection must be synchronizable in the same transaction flow.
+const GOVERNANCE_SYNC_ROLES = new Set([
+  'admin',
+  'president',
+  'vice_president',
+  'secretary',
+  'auditor',
+  'pro',
+  'spiritual_director',
+]);
 
 function bearerToken(req: Request) {
   const header = req.headers.authorization;
