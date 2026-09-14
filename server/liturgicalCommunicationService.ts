@@ -39,9 +39,10 @@ export type TrustedLiturgicalCommunicationKind =
 const liturgicalMinistries = new Set(['lector_commentator', 'usher', 'altar_server']);
 
 const isActiveMember = (profile: PrivateMemberProfile) =>
-  profile.isVerified === true &&
-  profile.isDisabled !== true &&
-  String(profile.email || '').trim().toLowerCase() !== 'kcfc.jp@gmail.com';
+  profile.isVerified === true && profile.isDisabled !== true;
+
+const isBootstrapProfile = (profile: PrivateMemberProfile) =>
+  String(profile.email || '').trim().toLowerCase() === 'kcfc.jp@gmail.com';
 
 const toRecipient = (profile: PrivateMemberProfile): LiturgicalCommunicationRecipient => ({
   uid: profile.uid,
@@ -64,6 +65,7 @@ export const eligibleLiturgicalMemberIds = (profiles: PrivateMemberProfile[]) =>
   profiles
     .filter((profile) =>
       isActiveMember(profile) &&
+      !isBootstrapProfile(profile) &&
       (profile.ministries || []).some((ministry) => liturgicalMinistries.has(ministry)),
     )
     .map((profile) => profile.uid)
