@@ -9,7 +9,6 @@ const directUsersListPattern = /collection\s*\(\s*db\s*,\s*['"`]users['"`]\s*\)/
 // documents and must migrate to the public/private profile boundary before privacy
 // acceptance can be GREEN.
 const memberFacingPrivacyDebt = new Set([
-  'src/pages/Dashboard.tsx',
   'src/pages/Polls.tsx',
   'src/pages/LegacyPollsImpl.tsx',
   'src/pages/LegacyDutiesImpl.tsx',
@@ -21,6 +20,7 @@ const memberFacingPrivacyDebt = new Set([
 const migratedMemberFacingConsumers = new Map([
   ['src/pages/Members.tsx', 'subscribeMemberDirectory'],
   ['src/pages/Duties.tsx', 'subscribeMemberDirectory'],
+  ['src/pages/Dashboard.tsx', 'subscribeMemberDirectory'],
 ]);
 
 // Existing governance/administration consumers. These are not proof that every
@@ -28,6 +28,7 @@ const migratedMemberFacingConsumers = new Map([
 // may continue while the final private-profile authorization matrix is reviewed.
 const privilegedKnownConsumers = new Set([
   'src/lib/seeder.ts',
+  'src/lib/privilegedMemberQueries.ts',
   'src/pages/Announcements.tsx',
   'src/pages/Admin.tsx',
   'src/pages/LegacyAdmin.tsx',
@@ -87,6 +88,11 @@ for (const [file, requiredMarker] of migratedMemberFacingConsumers) {
   if (!source.includes(requiredMarker)) {
     throw new Error(`Migrated member-facing surface must retain its public projection data source (${requiredMarker}): ${file}`);
   }
+}
+
+const homeSource = fs.readFileSync('src/pages/Dashboard.tsx', 'utf8');
+if (!homeSource.includes('subscribePendingMemberCount')) {
+  throw new Error('Routine Home must keep pending-registration access behind the privileged member-query helper.');
 }
 
 const debtStillPresent = directConsumers.filter((file) => memberFacingPrivacyDebt.has(file));
