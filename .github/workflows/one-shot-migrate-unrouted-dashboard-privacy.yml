@@ -1,0 +1,60 @@
+name: One-shot migrate unrouted Legacy Dashboard privacy
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/one-shot-migrate-unrouted-dashboard-privacy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/redesign/mobile-first-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Apply fail-closed Legacy Dashboard migration
+        run: node scripts/one-shot-migrate-unrouted-dashboard-privacy.mjs
+
+      - name: Verify privacy postconditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -F "collection(db, 'users')" src/pages/LegacyDashboard.tsx
+          grep -F 'subscribeMemberDirectory' src/pages/LegacyDashboard.tsx
+          grep -F 'subscribePendingMembers' src/pages/LegacyDashboard.tsx
+          npm run lint
+          npx tsc --noEmit
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/one-shot-migrate-unrouted-dashboard-privacy.mjs
+          rm .github/workflows/one-shot-migrate-unrouted-dashboard-privacy.yml
+
+      - name: Commit branch-only migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'kcfc-ci-bot'
+          git config user.email 'kcfc-ci-bot@users.noreply.github.com'
+          git add src/pages/LegacyDashboard.tsx src/lib/privilegedMemberQueries.ts scripts/verify-member-profile-read-boundary.ts scripts/one-shot-migrate-unrouted-dashboard-privacy.mjs .github/workflows/one-shot-migrate-unrouted-dashboard-privacy.yml
+          git diff --cached --check
+          git commit -m 'privacy: remove final unrouted private profile list'
+          git push origin HEAD:redesign/mobile-first-v2
