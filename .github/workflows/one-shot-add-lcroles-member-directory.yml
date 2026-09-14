@@ -1,0 +1,55 @@
+name: One-shot member-directory assignment metadata update
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/one-shot-add-lcroles-member-directory.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/redesign/mobile-first-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Apply fail-closed rule update
+        run: node scripts/one-shot-add-lcroles-member-directory.mjs
+
+      - name: Verify projection contract
+        run: |
+          npm run lint
+          npx tsc --noEmit
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/one-shot-add-lcroles-member-directory.mjs
+          rm .github/workflows/one-shot-add-lcroles-member-directory.yml
+
+      - name: Commit branch-only projection update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'kcfc-ci-bot'
+          git config user.email 'kcfc-ci-bot@users.noreply.github.com'
+          git add firestore.rules scripts/one-shot-add-lcroles-member-directory.mjs .github/workflows/one-shot-add-lcroles-member-directory.yml
+          git diff --cached --check
+          git commit -m 'privacy: allow assignment metadata in member directory'
+          git push origin HEAD:redesign/mobile-first-v2
