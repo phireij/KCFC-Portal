@@ -153,8 +153,8 @@ service cloud.firestore {
                (!('webPushSubscriptions' in data) || data.webPushSubscriptions is list);
       }
 
-      allow get: if isSignedIn();
-      allow list: if isApproved();
+      allow get: if isOwner(userId) || isAdmin() || isLeader();
+      allow list: if isAdmin() || isLeader();
       allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
                     (isBootstrapAdmin() || (
                       incoming().roles.hasAll(['member']) && 
