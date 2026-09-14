@@ -56,3 +56,5 @@ jobs:
           git diff --cached --check
           git commit -m 'privacy: synchronize member directory through trusted server'
           git push origin HEAD:redesign/mobile-first-v2
+
+# Retry after correcting the exact package lint anchor.
