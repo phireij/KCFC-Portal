@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Poll, PollResponse, UserProfile, DutyAssignment } from '../types';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
+import { listPrivilegedPollEmailRecipients } from '../lib/privilegedMemberQueries';
 import { balanceChoreSlots, ChoreAttendee, ChoreDutyTemplate, AutoChoreAssignment } from '../services/dutyService';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, Edit2, Check, Sparkles, Send, Mail, User, AlertTriangle, BarChart3, RotateCw, Calendar, CheckSquare, XSquare, HelpCircle, Save, Sliders, ExternalLink } from 'lucide-react';
@@ -15,7 +17,7 @@ interface ChoreCommitteeDashboardProps {
   poll: Poll;
   pollResponses: PollResponse[];
   profile: UserProfile | null;
-  users: UserProfile[];
+  users: MemberDirectoryProfile[];
 }
 
 const DEFAULT_TEMPLATES: Omit<ChoreDutyTemplate, 'id'>[] = [
@@ -304,12 +306,14 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
 
       // Send Gmail alerting (HTML inline tables)
       try {
+        const privilegedRecipients = await listPrivilegedPollEmailRecipients();
         const resultsArray = Array.from(uniqueSelectedUsers).map(userId => {
           const userProfile = users.find(u => u.uid === userId);
           const tasks = stagedAssignments.filter(s => s.userId === userId).map(s => s.templateName);
           const recipientName = userProfile?.nickname?.trim() || userProfile?.displayName || 'Community Member';
+          const emailRecipient = privilegedRecipients.find(recipient => recipient.uid === userId);
           return {
-            email: userProfile?.email || '',
+            email: emailRecipient?.email || '',
             name: recipientName,
             tasks: tasks.join(', ')
           };
@@ -435,7 +439,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
     const assignedUserIds = Array.from(new Set(existingPollDuties.map(d => d.userId)));
     const assignedProfiles = users.filter(u => assignedUserIds.includes(u.uid));
 
-    let recipientUsers: UserProfile[] = [];
+    let recipientUsers: MemberDirectoryProfile[] = [];
     if (broadcastTarget === 'all') {
       recipientUsers = assignedProfiles;
     } else if (broadcastTarget === 'selected') {
@@ -461,6 +465,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
 
     try {
       const baseUrl = window.location.origin;
+      const privilegedRecipients = await listPrivilegedPollEmailRecipients();
       let successCount = 0;
 
       const batch = writeBatch(db);
@@ -481,7 +486,8 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
       const summaryTableHtml = broadcastType === 'summary' ? getChoreSummaryHtml() : '';
 
       for (const recipient of recipientUsers) {
-        if (!recipient.email) continue;
+        const emailRecipient = privilegedRecipients.find(candidate => candidate.uid === recipient.uid);
+        if (!emailRecipient?.email) continue;
 
         let contentHtml = '';
         const recipientName = recipient.nickname?.trim() || recipient.displayName || 'Committee Member';
@@ -523,10 +529,10 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
         `;
 
         try {
-          await sendGmail(recipient.email, customSubject, body);
+          await sendGmail(emailRecipient.email, customSubject, body);
           successCount++;
         } catch (mErr) {
-          console.warn(`Could not dispatch Gmail to ${recipient.email}:`, mErr);
+          console.warn(`Could not dispatch Gmail to ${emailRecipient.email}:`, mErr);
         }
       }
 

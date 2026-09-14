@@ -4,7 +4,9 @@ import { useAuth } from '../App';
 
 import { collection, query, getDocs, orderBy, deleteDoc, doc, where, limit, addDoc, serverTimestamp, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { DutyAssignment, UserProfile, Poll, PollResponse } from '../types';
+import { DutyAssignment, Poll, PollResponse } from '../types';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trash2, Plus, Users, Sparkles, Calendar, BookOpen, ChevronDown, ChevronRight, CheckCircle2, XCircle, AlertCircle, ThumbsUp, Check, Edit2 } from 'lucide-react';
@@ -18,7 +20,7 @@ export default function Duties() {
   const { profile, user } = useAuth();
   const [searchParams] = useSearchParams();
   const [duties, setDuties] = useState<DutyAssignment[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<MemberDirectoryProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const isChoreAllowed = !!(profile?.isCoreMember || (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r)));
@@ -139,12 +141,11 @@ export default function Duties() {
   useEffect(() => {
     fetchDuties();
     
-    // Listen to users
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      setUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)).filter(u => u.email !== 'kcfc.jp@gmail.com'));
-    }, (err) => {
-      console.error("Error listening to users in Duties page:", err);
-    });
+    // Listen only to public-safe assignment/member metadata.
+    const unsubUsers = subscribeMemberDirectory(
+      setUsers,
+      (err) => console.error("Error listening to public member directory in Duties page:", err),
+    );
 
     // Listen to committee and attendance polls
     const pollsQ = query(
