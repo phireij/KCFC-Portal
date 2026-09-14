@@ -7,6 +7,7 @@ import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
 import { Megaphone, Mail, Bell, Check, X } from 'lucide-react';
 import { registerDeviceToken, preloadVapidKeyFromServer, isStandaloneMode, prepareNativeWebPushPrerequisites, observeForegroundMessages } from './lib/fcmClient';
+import { syncOwnMemberDirectoryProfile } from './lib/memberDirectorySyncClient';
 
 // Route pages are lazy-loaded so members download only the workflow they open.
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -167,6 +168,7 @@ export default function App() {
 
                       // Delete old pending document
                       await deleteDoc(pendingDocRef);
+                      await syncOwnMemberDirectoryProfile();
                       console.log("Successfully migrated pre-registered pending member profile to the authenticated account.");
                       migrated = true;
                     }

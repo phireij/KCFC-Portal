@@ -25,6 +25,7 @@ import {
 import { auth, db, googleProvider } from '../lib/firebase';
 import { Logo } from '../components/ui/Logo';
 import { cn } from '../lib/utils';
+import { syncOwnMemberDirectoryProfile } from '../lib/memberDirectorySyncClient';
 
 const avatarUrl = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'KCFC')}&background=123B66&color=fff`;
@@ -50,7 +51,10 @@ export default function Login() {
   const migrateOrCreateGoogleProfile = async (uid: string, accountEmail: string, displayName: string, photoURL?: string | null, emailVerified?: boolean) => {
     const userDocRef = doc(db, 'users', uid);
     const existing = await getDoc(userDocRef);
-    if (existing.exists()) return;
+    if (existing.exists()) {
+      await syncOwnMemberDirectoryProfile();
+      return;
+    }
 
     const emailLower = accountEmail.trim().toLowerCase();
     const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
@@ -85,6 +89,7 @@ export default function Login() {
         updatedAt: serverTimestamp(),
       });
       if (pendingDocId) await deleteDoc(doc(db, 'users', pendingDocId));
+      await syncOwnMemberDirectoryProfile();
       return;
     }
 
@@ -100,6 +105,7 @@ export default function Login() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    await syncOwnMemberDirectoryProfile();
   };
 
   const handleGoogleLogin = async () => {
@@ -211,6 +217,7 @@ export default function Login() {
           updatedAt: serverTimestamp(),
         });
       }
+      await syncOwnMemberDirectoryProfile();
 
       try {
         const idToken = await cred.user.getIdToken();

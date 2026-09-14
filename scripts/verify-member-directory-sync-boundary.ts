@@ -19,6 +19,8 @@ requireMarkers('server/memberDirectorySyncRoutes.ts', [
   "collection('member_directory')",
 ]);
 requireMarkers('src/pages/Profile.tsx', ['syncOwnMemberDirectoryProfile']);
+requireMarkers('src/pages/Login.tsx', ['syncOwnMemberDirectoryProfile']);
+requireMarkers('src/App.tsx', ['syncOwnMemberDirectoryProfile']);
 requireMarkers('src/components/admin/MemberApprovalQueue.tsx', ['syncManagedMemberDirectoryProfile']);
 requireMarkers('src/components/admin/MemberRoleEditor.tsx', ['syncManagedMemberDirectoryProfile']);
 requireMarkers('src/pages/LegacyAdmin.tsx', ['syncManagedMemberDirectoryProfile']);
