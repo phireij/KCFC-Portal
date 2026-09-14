@@ -21,18 +21,4 @@ replaceOnce(
   'private users verifier expectations',
 );
 
-replaceOnce(
-  'scripts/verify-private-user-read-boundary.ts',
-  "    throw new Error('Private users get must be limited to self or authorized governance roles.');",
-  "    throw new Error('Private users get must be limited to self or Admin/President member administrators.');",
-  'get error message',
-);
-
-replaceOnce(
-  'scripts/verify-private-user-read-boundary.ts',
-  "    throw new Error('Private users list must be limited to authorized governance roles.');",
-  "    throw new Error('Private users list must be limited to Admin/President member administrators.');",
-  'list error message',
-);
-
 console.log('Private users read tightening patch: PASS');
