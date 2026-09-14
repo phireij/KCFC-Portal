@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { collection, onSnapshot } from 'firebase/firestore';
 import {
   Check,
   Filter,
@@ -11,8 +10,8 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { UserProfile } from '../types';
+import { subscribeMemberDirectory } from '../lib/memberDirectoryClient';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
 import { cn } from '../lib/utils';
 
 type MemberTypeFilter = 'all' | 'core' | 'regular';
@@ -69,17 +68,17 @@ const leadershipRoleLabels: Record<string, string> = {
 
 const ministryLabel = (value: string) => ministryOptions.find((item) => item.id === value)?.label || value.replaceAll('_', ' ');
 
-const bestRoleScore = (member: UserProfile) =>
+const bestRoleScore = (member: MemberDirectoryProfile) =>
   (member.roles || []).reduce((best, role) => Math.min(best, roleOrder[role] ?? 999), 999);
 
-const primaryLeadershipRole = (member: UserProfile) =>
+const primaryLeadershipRole = (member: MemberDirectoryProfile) =>
   (member.roles || [])
     .filter((role) => role in leadershipRoleLabels)
     .sort((a, b) => (roleOrder[a] ?? 999) - (roleOrder[b] ?? 999))[0];
 
 export default function Members() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [members, setMembers] = useState<MemberDirectoryProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const memberTypeParam = searchParams.get('type');
@@ -87,25 +86,16 @@ export default function Members() {
   const selectedMinistries = Array.from(new Set(searchParams.getAll('ministry').filter((id) => ministryOptions.some((option) => option.id === id))));
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'users'),
-      (snapshot) => {
-        setMembers(
-          snapshot.docs
-            .map((item) => ({ uid: item.id, ...item.data() } as UserProfile))
-            .filter((member) => member.isVerified && !member.isDisabled && member.email !== 'kcfc.jp@gmail.com'),
-        );
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Community directory: failed to load members', error);
-        setLoading(false);
-      },
-    );
-
-    return () => unsubscribe();
-  }, []);
+  useEffect(() => subscribeMemberDirectory(
+    (nextMembers) => {
+      setMembers(nextMembers);
+      setLoading(false);
+    },
+    (error) => {
+      console.error('Community directory: failed to load public member projection', error);
+      setLoading(false);
+    },
+  ), []);
 
   const filteredMembers = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -341,7 +331,7 @@ function MemberTypeButton({ active, onClick, label }: { active: boolean; onClick
   );
 }
 
-function MemberCard({ member }: { member: UserProfile }) {
+function MemberCard({ member }: { member: MemberDirectoryProfile }) {
   const primaryRole = primaryLeadershipRole(member);
   const ministries = member.ministries || [];
   const initials = (member.displayName || 'KCFC Member')
