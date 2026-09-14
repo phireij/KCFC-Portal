@@ -8,6 +8,11 @@ import {
   eligibleLiturgicalMemberIds,
   publicLiturgicalCommunicationSummary,
 } from './liturgicalCommunicationService';
+import {
+  legacyPollAudienceIds,
+  legacyPollCompletionEligibleIds,
+  legacyPollLeadershipRecipientIds,
+} from './legacyPollCommunicationService';
 
 type Dependencies = {
   auth: Auth;
@@ -95,6 +100,20 @@ async function readPoll(db: Firestore, pollId: unknown) {
 async function readPrivateProfiles(db: Firestore) {
   const snapshot = await db.collection('users').get();
   return snapshot.docs.map((document) => ({ uid: document.id, ...document.data() } as UserProfile));
+}
+
+async function readAnyPoll(db: Firestore, pollId: unknown) {
+  if (typeof pollId !== 'string' || !pollId.trim()) {
+    throw Object.assign(new Error('pollId is required'), { statusCode: 400 });
+  }
+  const reference = db.collection('polls').doc(pollId.trim());
+  const snapshot = await reference.get();
+  if (!snapshot.exists) throw Object.assign(new Error('Poll not found'), { statusCode: 404 });
+  return { reference, poll: { id: snapshot.id, ...snapshot.data() } as Poll & {
+    legacyPublishNotifiedAt?: unknown;
+    legacyCompletionNotifiedAt?: unknown;
+    legacyCloseNotifiedAt?: unknown;
+  } };
 }
 
 const massDatesForPoll = (poll: Poll) =>
@@ -300,6 +319,138 @@ export function registerLiturgicalCommunicationRoutes(
       });
 
       response.json(summary);
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  app.post('/api/polls/publish/notify', async (request, response) => {
+    try {
+      const caller = await authenticate(request, dependencies);
+      if (!isLeader(caller)) {
+        response.status(403).json({ error: 'Poll manager access required' });
+        return;
+      }
+      const { reference, poll } = await readAnyPoll(db, request.body?.pollId);
+      if (poll.status === 'draft') {
+        response.status(409).json({ error: 'Draft polls cannot notify members' });
+        return;
+      }
+      const profiles = await readPrivateProfiles(db);
+      const recipientIds = legacyPollAudienceIds(poll, profiles);
+      if (poll.legacyPublishNotifiedAt) {
+        response.json({ notificationCount: recipientIds.length, alreadyNotified: true });
+        return;
+      }
+      const committed = await db.runTransaction(async (transaction) => {
+        const fresh = await transaction.get(reference);
+        if (!fresh.exists) throw Object.assign(new Error('Poll not found'), { statusCode: 404 });
+        if (fresh.data()?.legacyPublishNotifiedAt) return false;
+        recipientIds.forEach((uid) => {
+          transaction.set(db.collection('notifications').doc(), {
+            userId: uid,
+            title: `New ${poll.category === 'core_member' ? 'Core Group' : poll.category === 'committee' ? 'Committee' : 'Community'} Poll`,
+            message: `New poll published: ${poll.title}`,
+            type: 'system',
+            status: 'unread',
+            link: '/polls',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+        transaction.update(reference, { legacyPublishNotifiedAt: FieldValue.serverTimestamp() });
+        return true;
+      });
+      response.json({ notificationCount: recipientIds.length, alreadyNotified: !committed });
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  app.post('/api/polls/completion/notify', async (request, response) => {
+    try {
+      await authenticate(request, dependencies);
+      const { reference, poll } = await readAnyPoll(db, request.body?.pollId);
+      const profiles = await readPrivateProfiles(db);
+      const eligibleIds = legacyPollCompletionEligibleIds(poll, profiles);
+      const responseSnapshot = await reference.collection('responses').get();
+      const respondedIds = new Set(
+        responseSnapshot.docs
+          .map((document) => document.data())
+          .filter((record) => record.attendance !== null && record.attendance !== undefined)
+          .map((record) => record.userId)
+          .filter((value): value is string => typeof value === 'string' && Boolean(value)),
+      );
+      const remainingCount = eligibleIds.filter((uid) => !respondedIds.has(uid)).length;
+      if (eligibleIds.length === 0 || remainingCount > 0) {
+        response.json({ complete: false, remainingCount, notificationCount: 0 });
+        return;
+      }
+      const recipientIds = legacyPollLeadershipRecipientIds(poll, profiles);
+      if (poll.legacyCompletionNotifiedAt) {
+        response.json({ complete: true, remainingCount: 0, notificationCount: recipientIds.length, alreadyNotified: true });
+        return;
+      }
+      const committed = await db.runTransaction(async (transaction) => {
+        const fresh = await transaction.get(reference);
+        if (!fresh.exists) throw Object.assign(new Error('Poll not found'), { statusCode: 404 });
+        if (fresh.data()?.legacyCompletionNotifiedAt) return false;
+        recipientIds.forEach((uid) => {
+          transaction.set(db.collection('notifications').doc(), {
+            userId: uid,
+            title: 'Poll Response Completed',
+            message: `All eligible members have responded to: "${poll.title}". You can now close the poll and review results.`,
+            type: 'system',
+            status: 'unread',
+            link: poll.category === 'core_member' ? '/duties?tab=core' : '/duties?tab=liturgical',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+        transaction.update(reference, { legacyCompletionNotifiedAt: FieldValue.serverTimestamp() });
+        return true;
+      });
+      response.json({ complete: true, remainingCount: 0, notificationCount: recipientIds.length, alreadyNotified: !committed });
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  app.post('/api/polls/close/notify', async (request, response) => {
+    try {
+      const caller = await authenticate(request, dependencies);
+      if (!isLeader(caller)) {
+        response.status(403).json({ error: 'Poll manager access required' });
+        return;
+      }
+      const { reference, poll } = await readAnyPoll(db, request.body?.pollId);
+      if (poll.category !== 'core_member' || poll.status !== 'closed') {
+        response.status(409).json({ error: 'A closed Core Group poll is required' });
+        return;
+      }
+      const profiles = await readPrivateProfiles(db);
+      const recipientIds = legacyPollLeadershipRecipientIds(poll, profiles);
+      if (poll.legacyCloseNotifiedAt) {
+        response.json({ notificationCount: recipientIds.length, alreadyNotified: true });
+        return;
+      }
+      const committed = await db.runTransaction(async (transaction) => {
+        const fresh = await transaction.get(reference);
+        if (!fresh.exists) throw Object.assign(new Error('Poll not found'), { statusCode: 404 });
+        if (fresh.data()?.legacyCloseNotifiedAt) return false;
+        recipientIds.forEach((uid) => {
+          transaction.set(db.collection('notifications').doc(), {
+            userId: uid,
+            title: 'Chore Poll Closed',
+            message: `Chore committee poll "${poll.title}" has been successfully closed. You can proceed with duty assignments.`,
+            type: 'system',
+            status: 'unread',
+            link: '/duties',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+        transaction.update(reference, { legacyCloseNotifiedAt: FieldValue.serverTimestamp() });
+        return true;
+      });
+      response.json({ notificationCount: recipientIds.length, alreadyNotified: !committed });
     } catch (error) {
       sendError(response, error);
     }
