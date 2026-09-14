@@ -1,0 +1,49 @@
+name: One-shot liturgical route registration
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/one-shot-register-liturgical-routes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.ref == 'refs/heads/redesign/mobile-first-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Apply fail-closed server integration
+        run: node scripts/one-shot-register-liturgical-routes.mjs
+
+      - name: Verify only intended registration exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -c 'registerLiturgicalCommunicationRoutes' server.ts)" -eq 2
+          grep -F 'import { registerLiturgicalCommunicationRoutes } from "./server/liturgicalCommunicationRoutes";' server.ts
+          grep -F 'registerLiturgicalCommunicationRoutes(app, { auth: authAdmin, db: dbAdmin });' server.ts
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/one-shot-register-liturgical-routes.mjs
+          rm .github/workflows/one-shot-register-liturgical-routes.yml
+
+      - name: Commit branch-only integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'kcfc-ci-bot'
+          git config user.email 'kcfc-ci-bot@users.noreply.github.com'
+          git add server.ts scripts/one-shot-register-liturgical-routes.mjs .github/workflows/one-shot-register-liturgical-routes.yml
+          git diff --cached --check
+          git commit -m 'server: register trusted liturgical communication routes'
+          git push origin HEAD:redesign/mobile-first-v2
