@@ -1,4 +1,4 @@
-import type { Express, Request } from 'express';
+import type { Express, Request, Response } from 'express';
 import type { Auth } from 'firebase-admin/auth';
 import { FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import type { Poll, UserProfile } from '../src/types';
@@ -128,7 +128,7 @@ function appendNotifications(
   });
 }
 
-function sendError(response: Parameters<Express['use']>[0] extends never ? never : any, error: unknown) {
+function sendError(response: Response, error: unknown) {
   const statusCode = typeof error === 'object' && error !== null && 'statusCode' in error
     ? Number((error as { statusCode?: unknown }).statusCode) || 500
     : 500;
@@ -263,8 +263,7 @@ export function registerLiturgicalCommunicationRoutes(
         response.status(403).json({ error: 'Liturgical leader access required' });
         return;
       }
-      const pollId = request.body?.pollId;
-      const { reference } = await readPoll(db, pollId);
+      const { reference } = await readPoll(db, request.body?.pollId);
       const profiles = await readPrivateProfiles(db);
 
       const summary = await db.runTransaction(async (transaction) => {
