@@ -14,7 +14,7 @@ Hiding those fields in React is not a data-layer privacy control. Firestore read
 
 ## Repository remediation completed
 
-The redevelopment branch now has **zero reachable member/Core/ministry-leader direct full-profile list paths**. `scripts/verify-member-profile-read-boundary.ts` fails CI if a migrated surface regresses to direct `users` collection listing or if a new unclassified browser-side full-profile list consumer appears.
+The redevelopment branch now has **zero reachable member/Core/ministry-leader direct full-profile list paths and zero retained unrouted direct full-profile list paths**. `scripts/verify-member-profile-read-boundary.ts` fails CI if a migrated surface regresses to direct `users` collection listing or if a new unclassified browser-side full-profile list consumer appears.
 
 The member-facing migration covers:
 
@@ -24,10 +24,11 @@ The member-facing migration covers:
 4. `src/pages/Polls.tsx` — modern liturgical Availability;
 5. `src/pages/LegacyPollsImpl.tsx` — preserved Core/legacy polls;
 6. `src/pages/LegacyDutiesImpl.tsx` — preserved Schedule/chore workspace;
-7. `src/components/CommitteeAssignments.tsx` — preserved liturgical assignment tooling; and
-8. `src/components/ChoreCommitteeDashboard.tsx` — chore assignment tooling.
+7. `src/components/CommitteeAssignments.tsx` — preserved liturgical assignment tooling;
+8. `src/components/ChoreCommitteeDashboard.tsx` — chore assignment tooling; and
+9. `src/pages/LegacyDashboard.tsx` — retained unrouted dashboard compatibility source.
 
-The retained `src/pages/LegacyDashboard.tsx` still contains historical full-user-list logic but is not routed/imported by the current App shell. CI classifies it separately so it cannot be silently reintroduced as an active surface.
+The retained Legacy Dashboard no longer lists private profiles directly. Its community/member/ministry statistics now come from `member_directory`, while its leadership-only pending-registration cards use the audited `subscribePendingMembers()` helper, which returns only the narrow governance summary needed by that UI. This removes the former special-case unrouted privacy allowance, so re-routing that file cannot silently restore broad private-profile reads.
 
 Privileged Leadership/Admin profile readers remain a bounded, explicit set because governance workflows legitimately require private member data. Their existence does not grant ordinary members access.
 
@@ -134,6 +135,7 @@ Using synthetic staging identities/data only, verify:
 - Admin/authorized Leader can get/list private profiles required for governance workflows;
 - Community Directory works;
 - routine Home works, including its separately privileged pending-registration count for authorized leadership;
+- retained Legacy Dashboard remains compatible if deliberately exercised, with public statistics from `member_directory` and pending summaries behind the privileged helper;
 - routine Schedule works;
 - modern Availability response/leader/roster workflows work;
 - preserved Legacy Polls works;
@@ -162,7 +164,7 @@ A production migration proposal must include at minimum:
 
 ### Repository implementation
 
-**GREEN.** Reachable member-facing direct full-profile list debt is zero; the public projection, assignment metadata boundary, trusted recipient-resolution paths and restrictive private-profile rule contract are source-controlled and CI-guarded.
+**GREEN.** Reachable and retained-unrouted browser direct full-profile list debt is zero; the public projection, privileged governance summaries, assignment metadata boundary, trusted recipient-resolution paths and restrictive private-profile rule contract are source-controlled and CI-guarded.
 
 ### Isolated staging
 
