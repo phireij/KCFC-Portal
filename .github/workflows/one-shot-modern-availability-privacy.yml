@@ -22,6 +22,15 @@ jobs:
           ref: redesign/mobile-first-v2
           fetch-depth: 0
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
       - name: Apply fail-closed Availability migration
         run: node scripts/one-shot-migrate-modern-availability-privacy.mjs
 
