@@ -36,11 +36,6 @@ replaceOnce(
   'private member subscription',
 );
 
-replaceOnce(
-  "    return [{ uid: user.uid, ministries: profileMinistries } as UserProfile];",
-  "    return [{\n      uid: user.uid,\n      displayName: profile?.displayName || user.displayName || 'KCFC Member',\n      photoURL: profile?.photoURL || user.photoURL || '',\n      ...(profile?.nickname?.trim() ? { nickname: profile.nickname.trim() } : {}),\n      roles: profile?.roles || [],\n      ministries: profileMinistries,\n      isCoreMember: profile?.isCoreMember === true,\n    }];",
-  'signed-in public member fallback',
-);
 if (source.includes('UserProfile')) throw new Error('Refusing migration: a UserProfile reference remains in modern Polls after public-profile replacements.');
 
 replaceOnce(
