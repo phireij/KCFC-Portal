@@ -171,6 +171,29 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // --- Public-safe Member Directory Projection ---
+    // This collection intentionally contains only fields approved for authenticated
+    // community workflows. Private contact, notification preference, token and Web
+    // Push subscription data must remain in the private users collection.
+    match /member_directory/{userId} {
+      function isValidMemberDirectoryProfile(data) {
+        return data.keys().hasOnly([
+                 'uid', 'displayName', 'photoURL', 'nickname', 'roles', 'ministries', 'isCoreMember'
+               ]) &&
+               data.uid == userId &&
+               data.displayName is string && data.displayName.size() <= 200 &&
+               data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 2000 &&
+               data.get('nickname', '') is string && data.get('nickname', '').size() <= 120 &&
+               data.roles is list && data.roles.size() <= 10 &&
+               data.ministries is list && data.ministries.size() <= 20 &&
+               data.isCoreMember is bool;
+      }
+
+      allow read: if isApproved();
+      allow create, update: if isAdmin() && isValidMemberDirectoryProfile(incoming());
+      allow delete: if isAdmin();
+    }
+
     // --- Polls Collection ---
     match /polls/{pollId} {
       function isValidPoll(data) {
