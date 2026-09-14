@@ -1,0 +1,58 @@
+name: One-shot trusted pending profile claim
+
+on:
+  push:
+    branches:
+      - redesign/mobile-first-v2
+    paths:
+      - .github/workflows/one-shot-trusted-pending-claim.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/redesign/mobile-first-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: redesign/mobile-first-v2
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Apply trusted pending-profile migration
+        run: node scripts/one-shot-trusted-pending-claim.mjs
+
+      - name: Verify trusted claim boundary and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tsx scripts/verify-pending-profile-claim-boundary.ts
+          npm run lint
+          npm run build
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/one-shot-trusted-pending-claim.mjs
+          rm .github/workflows/one-shot-trusted-pending-claim.yml
+
+      - name: Commit branch-only trusted pending-profile migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'kcfc-ci-bot'
+          git config user.email 'kcfc-ci-bot@users.noreply.github.com'
+          git add -A server.ts server/pendingProfileClaimRoutes.ts src/lib/pendingProfileClaimClient.ts src/pages/Login.tsx src/App.tsx package.json scripts/verify-pending-profile-claim-boundary.ts scripts/one-shot-trusted-pending-claim.mjs .github/workflows/one-shot-trusted-pending-claim.yml
+          git diff --cached --check
+          git commit -m 'privacy: claim pending profiles on trusted server'
+          git push origin HEAD:redesign/mobile-first-v2
