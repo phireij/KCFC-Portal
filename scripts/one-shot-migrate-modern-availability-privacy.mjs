@@ -57,7 +57,49 @@ replaceOnce(
 const publishStart = source.indexOf('  const publishRoster = async (poll: ExtendedPoll) => {');
 const publishEnd = source.indexOf('\n\n  const unpublishRoster = async', publishStart);
 if (publishStart < 0 || publishEnd < 0) throw new Error('Refusing migration: roster publication function boundary not found.');
-const publishReplacement = `  const publishRoster = async (poll: ExtendedPoll) => {\n    if (!canLead || !user || !profile || publishingPollId) return;\n    if (poll.status !== 'closed') {\n      alert('Close the availability request before publishing the final roster.');\n      return;\n    }\n\n    const assignments = poll.assignments || {};\n    const requiredMissing: string[] = [];\n    massDatesForPoll(poll).forEach((mass) => {\n      const values = Object.values(assignments[mass.date] || {});\n      if (!values.includes('Commentator')) requiredMissing.push(\`${formatDate(mass.date)}: Commentator\`);\n      if (!values.some((role) => role.startsWith('Lector'))) requiredMissing.push(\`${formatDate(mass.date)}: Lector\`);\n      if (!values.some((role) => role.startsWith('Altar Server'))) requiredMissing.push(\`${formatDate(mass.date)}: Altar Server\`);\n      if (!values.some((role) => role.startsWith('Usher'))) requiredMissing.push(\`${formatDate(mass.date)}: Usher\`);\n    });\n\n    if (requiredMissing.length > 0) {\n      alert(\`Please complete the required roles before publishing:\\n\\n${requiredMissing.slice(0, 12).join('\\n')}\`);\n      return;\n    }\n\n    setPublishingPollId(poll.id);\n    try {\n      const publicationPlan = await planLiturgicalRosterPublication(poll.id);\n      const notifyCount = publicationPlan.notificationCount || 0;\n      const confirmation = publicationPlan.mode === 'revision'\n        ? \`Publish revised liturgical roster now? ${notifyCount} affected members will receive an updated-schedule Portal notification.\`\n        : publicationPlan.mode === 'no_change'\n          ? 'Publish this roster again? No member assignments changed, so no new assignment notification will be created.'\n          : \`Publish this liturgical roster now? ${notifyCount} assigned members will receive a Portal notification.\`;\n      if (!window.confirm(confirmation)) return;\n\n      await publishLiturgicalRoster(poll.id);\n    } catch (error) {\n      console.error('Assignments: trusted roster publication failed', error);\n      alert(error instanceof Error ? error.message : 'The roster could not be published.');\n    } finally {\n      setPublishingPollId(null);\n    }\n  };`;
+const publishReplacement = [
+  "  const publishRoster = async (poll: ExtendedPoll) => {",
+  "    if (!canLead || !user || !profile || publishingPollId) return;",
+  "    if (poll.status !== 'closed') {",
+  "      alert('Close the availability request before publishing the final roster.');",
+  "      return;",
+  "    }",
+  "",
+  "    const assignments = poll.assignments || {};",
+  "    const requiredMissing: string[] = [];",
+  "    massDatesForPoll(poll).forEach((mass) => {",
+  "      const values = Object.values(assignments[mass.date] || {});",
+  "      if (!values.includes('Commentator')) requiredMissing.push(`${formatDate(mass.date)}: Commentator`);",
+  "      if (!values.some((role) => role.startsWith('Lector'))) requiredMissing.push(`${formatDate(mass.date)}: Lector`);",
+  "      if (!values.some((role) => role.startsWith('Altar Server'))) requiredMissing.push(`${formatDate(mass.date)}: Altar Server`);",
+  "      if (!values.some((role) => role.startsWith('Usher'))) requiredMissing.push(`${formatDate(mass.date)}: Usher`);",
+  "    });",
+  "",
+  "    if (requiredMissing.length > 0) {",
+  "      alert(`Please complete the required roles before publishing:\\n\\n${requiredMissing.slice(0, 12).join('\\n')}`);",
+  "      return;",
+  "    }",
+  "",
+  "    setPublishingPollId(poll.id);",
+  "    try {",
+  "      const publicationPlan = await planLiturgicalRosterPublication(poll.id);",
+  "      const notifyCount = publicationPlan.notificationCount || 0;",
+  "      const confirmation = publicationPlan.mode === 'revision'",
+  "        ? `Publish revised liturgical roster now? ${notifyCount} affected members will receive an updated-schedule Portal notification.`",
+  "        : publicationPlan.mode === 'no_change'",
+  "          ? 'Publish this roster again? No member assignments changed, so no new assignment notification will be created.'",
+  "          : `Publish this liturgical roster now? ${notifyCount} assigned members will receive a Portal notification.`;",
+  "      if (!window.confirm(confirmation)) return;",
+  "",
+  "      await publishLiturgicalRoster(poll.id);",
+  "    } catch (error) {",
+  "      console.error('Assignments: trusted roster publication failed', error);",
+  "      alert(error instanceof Error ? error.message : 'The roster could not be published.');",
+  "    } finally {",
+  "      setPublishingPollId(null);",
+  "    }",
+  "  };",
+].join('\n');
 source = `${source.slice(0, publishStart)}${publishReplacement}${source.slice(publishEnd)}`;
 
 const forbidden = [
