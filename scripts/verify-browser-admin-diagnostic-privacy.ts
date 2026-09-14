@@ -13,7 +13,7 @@ for (const marker of [
 }
 
 for (const marker of [
-  'Successfully migrated pre-registered pending member profile to the authenticated account.',
+  'Successfully claimed pre-registered member profile through the trusted server boundary.',
   'User profile was removed from Firestore. Force signing out stale authenticated session.',
 ]) {
   if (!app.includes(marker)) {
