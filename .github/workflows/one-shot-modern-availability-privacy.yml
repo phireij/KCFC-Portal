@@ -1,6 +1,6 @@
 name: One-shot modern Availability privacy migration
 
-# One-shot retry with a complete public-safe signed-in-member fallback.
+# One-shot retry with current Polls.tsx anchors only; fail closed on any unexpected source drift.
 on:
   push:
     branches:
