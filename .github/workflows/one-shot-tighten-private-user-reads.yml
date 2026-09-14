@@ -1,5 +1,6 @@
 name: One-shot tighten private user reads
 
+# Retry after the exact patch anchors were corrected.
 on:
   push:
     branches:
