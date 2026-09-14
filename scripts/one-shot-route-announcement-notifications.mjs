@@ -18,7 +18,7 @@ function replaceOnce(source, before, after, label) {
   source = replaceOnce(
     source,
     '  registerMemberDirectorySyncRoutes(app, { auth: authAdmin, db: dbAdmin });\n',
-    `  registerMemberDirectorySyncRoutes(app, { auth: authAdmin, db: dbAdmin });\n  registerAnnouncementCommunicationRoutes(app, {\n    auth: authAdmin,\n    db: dbAdmin,\n    staging: runtimeEnvironment === \"staging\",\n    getMessaging: () => getMessagingAdmin(appAdmin),\n    sendWebPush: sendWebPushNotification,\n  });\n`,
+    '  registerMemberDirectorySyncRoutes(app, { auth: authAdmin, db: dbAdmin });\n  registerAnnouncementCommunicationRoutes(app, {\n    auth: authAdmin,\n    db: dbAdmin,\n    staging: runtimeEnvironment === "staging",\n    getMessaging: () => getMessagingAdmin(appAdmin),\n    sendWebPush: sendWebPushNotification,\n  });\n',
     'server registration',
   );
   fs.writeFileSync(path, source, 'utf8');
@@ -41,7 +41,25 @@ function replaceOnce(source, before, after, label) {
   const publishStart = source.indexOf('  const publishNotifications = async (announcementId: string');
   const saveStart = source.indexOf('  const handleSave = async ', publishStart);
   if (publishStart < 0 || saveStart < 0) throw new Error('Unable to locate announcement publish notification block.');
-  const replacement = `  const publishNotifications = async (announcementId: string) => {\n    if (!user) throw new Error('A signed-in announcement creator is required.');\n    const idToken = await user.getIdToken();\n    const response = await fetch('/api/announcements/publish-notifications', {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n        Authorization: \`Bearer ${'${idToken}'}\`,\n      },\n      body: JSON.stringify({ announcementId }),\n    });\n    if (!response.ok) {\n      const payload = await response.json().catch(() => ({}));\n      throw new Error(payload?.error || \`Announcement notification dispatch failed (${'${response.status}'}).\`);\n    }\n  };\n\n`;
+  const replacement = [
+    '  const publishNotifications = async (announcementId: string) => {',
+    "    if (!user) throw new Error('A signed-in announcement creator is required.');",
+    '    const idToken = await user.getIdToken();',
+    "    const response = await fetch('/api/announcements/publish-notifications', {",
+    "      method: 'POST',",
+    '      headers: {',
+    "        'Content-Type': 'application/json',",
+    '        Authorization: `Bearer ${idToken}`,',
+    '      },',
+    '      body: JSON.stringify({ announcementId }),',
+    '    });',
+    '    if (!response.ok) {',
+    '      const payload = await response.json().catch(() => ({}));',
+    '      throw new Error(payload?.error || `Announcement notification dispatch failed (${response.status}).`);',
+    '    }',
+    '  };',
+    '',
+  ].join('\n');
   source = source.slice(0, publishStart) + replacement + source.slice(saveStart);
   source = source.replace(
     '        await publishNotifications(announcementId, form.title.trim(), form.audience, form.push);',
@@ -52,7 +70,30 @@ function replaceOnce(source, before, after, label) {
 
 {
   const path = 'scripts/verify-announcement-recipient-boundary.ts';
-  fs.writeFileSync(path, `import fs from 'node:fs';\n\nconst browser = fs.readFileSync('src/pages/Announcements.tsx', 'utf8');\nfor (const forbidden of [\n  \"collection(db, 'users')\",\n  'getDocs(',\n  'fcmTokens',\n  'webPushSubscriptions',\n  'connectedCommunicationApps',\n  'recipientTokens',\n]) {\n  if (browser.includes(forbidden)) throw new Error(\`Announcements browser must not resolve private recipient state: ${'${forbidden}'}\`);\n}\nfor (const marker of [\n  \"'/api/announcements/publish-notifications'\",\n  'body: JSON.stringify({ announcementId })',\n]) {\n  if (!browser.includes(marker)) throw new Error(\`Announcements browser missing trusted routing marker: ${'${marker}'}\`);\n}\n\nconst route = fs.readFileSync('server/announcementCommunicationRoutes.ts', 'utf8');\nfor (const marker of [\n  \"app.post('/api/announcements/publish-notifications'\",\n  \"db.collection('users').get()\",\n  'isProfileEligibleForAudience',\n  'buildCommunicationRoutingPlan',\n  \"doc(\\`announcement_${'${announcementId}'}_${'${recipient.uid}'}\\`)\",\n  'stagingSuppressed: staging',\n]) {\n  if (!route.includes(marker)) throw new Error(\`Trusted announcement routing missing marker: ${'${marker}'}\`);\n}\nif (route.includes('req.body?.recipientTokens') || route.includes('req.body?.userIds')) {\n  throw new Error('Announcement notification route must not accept caller-selected recipient tokens or UIDs.');\n}\n\nconst server = fs.readFileSync('server.ts', 'utf8');\nif (!server.includes('registerAnnouncementCommunicationRoutes')) throw new Error('Server must register trusted announcement communication routes.');\n\nconsole.log('Announcement recipient boundary: PASS');\n`, 'utf8');
+  const lines = [
+    "import fs from 'node:fs';",
+    '',
+    "const browser = fs.readFileSync('src/pages/Announcements.tsx', 'utf8');",
+    "for (const forbidden of [\"collection(db, 'users')\", 'getDocs(', 'fcmTokens', 'webPushSubscriptions', 'connectedCommunicationApps', 'recipientTokens']) {",
+    "  if (browser.includes(forbidden)) throw new Error('Announcements browser must not resolve private recipient state: ' + forbidden);",
+    '}',
+    "for (const marker of [\"'/api/announcements/publish-notifications'\", 'body: JSON.stringify({ announcementId })']) {",
+    "  if (!browser.includes(marker)) throw new Error('Announcements browser missing trusted routing marker: ' + marker);",
+    '}',
+    '',
+    "const route = fs.readFileSync('server/announcementCommunicationRoutes.ts', 'utf8');",
+    "for (const marker of [\"app.post('/api/announcements/publish-notifications'\", \"db.collection('users').get()\", 'isProfileEligibleForAudience', 'buildCommunicationRoutingPlan', 'notificationRef = db.collection(\\'notifications\\').doc', 'stagingSuppressed: staging']) {",
+    "  if (!route.includes(marker)) throw new Error('Trusted announcement routing missing marker: ' + marker);",
+    '}',
+    "if (route.includes('req.body?.recipientTokens') || route.includes('req.body?.userIds')) throw new Error('Announcement notification route must not accept caller-selected recipient tokens or UIDs.');",
+    '',
+    "const server = fs.readFileSync('server.ts', 'utf8');",
+    "if (!server.includes('registerAnnouncementCommunicationRoutes')) throw new Error('Server must register trusted announcement communication routes.');",
+    '',
+    "console.log('Announcement recipient boundary: PASS');",
+    '',
+  ];
+  fs.writeFileSync(path, lines.join('\n'), 'utf8');
 }
 
 {
