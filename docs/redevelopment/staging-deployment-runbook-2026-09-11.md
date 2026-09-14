@@ -2,13 +2,13 @@
 
 Branch: `redesign/mobile-first-v2`
 
-Status: **readiness procedure only.** This runbook does not authorize creation of paid cloud resources, production deployment, production credential use, production data access, connector activation, production messaging, or any production mutation.
+Status: **readiness procedure only.** This runbook does not authorize production deployment, production credential use, production data access, connector activation, production messaging, destructive migration, or any production mutation.
 
 ## Purpose
 
-Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's existing fail-closed staging contracts instead of relying on implicit provider defaults.
+Provide one provider-neutral procedure for turning the validated redevelopment branch into an **isolated staging environment** suitable for browser and physical-device QA. The procedure consumes the repository's fail-closed staging contracts instead of relying on implicit provider defaults.
 
-Before every staging deployment, verify the **live** branch head and Draft PR #1 instead of relying on a hard-coded historical SHA. As of 2026-09-12, the latest validated substantive code/config checkpoint is `9764c502ae6386fd182f9834fe7b129a881a9e05`, with push CI #1629 / id `34668011181` and exact-head PR CI #1630 / id `34668012763` both successful. The current evidence-only branch head immediately before this runbook refresh is `c6c7a85d32b32e90287dd70cc7af05a1523bdf3a`, with push CI #1635 / id `34684838899` and exact-head PR CI #1636 / id `34684839617` both successful. Current retained build identity and later evidence-only heads are tracked in Draft PR #1 and `build-artifact-identity-2026-09-11.md`; a staging rollout must always be correlated with the exact SHA actually selected for deployment.
+Before every staging deployment, verify the **live** branch head and Draft PR #1 instead of relying on a hard-coded historical SHA. As of the 2026-09-14 privacy-readiness checkpoint, the last fully validated head before this runbook refresh is `68a9a3bf08a59c4a067833babb5e89983f7bd363`, with push CI #1800 / id `34816926571` and exact-head PR CI #1801 / id `34816930303` both successful. Its retained manifest is artifact `10337281005`, digest `sha256:90f37026e9bc2bd31cbf430e840878da8e7ca81bdae75c450cb217ffc6caa993`. If the live branch has advanced, use the newer validated SHA and evidence recorded in Draft PR #1.
 
 ## Non-negotiable isolation rules
 
@@ -21,6 +21,7 @@ Before every staging deployment, verify the **live** branch head and Draft PR #1
 7. `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=false` remains the default for normal staging QA.
 8. The running UI must visibly show `Staging • Test environment` before any synthetic account/device registration is performed.
 9. Stop immediately if the running environment exposes the committed production/default Firebase project, production member data, production credentials, or any production-only endpoint/configuration.
+10. Do **not** deploy the tightened private `users` read rules before the staging `member_directory` projection is backfilled with the current schema and verified usable by the deployed application.
 
 ## Required staging resources
 
@@ -35,7 +36,7 @@ These resources must exist before the actual deployment is attempted. Provisioni
 - A non-production HTTPS application URL suitable for PWA/Web Push testing.
 - A provider deployment target capable of running Node.js and the built `dist/server.cjs` server.
 
-If any of these resources would incur billing, alter an existing external account, or require access to production secrets, stop for the applicable approval before provisioning.
+If any of these resources would incur billing beyond the approved staging ceiling, alter an existing production account/resource, or require production secrets, stop for the applicable approval.
 
 ## Required environment contract
 
@@ -80,7 +81,7 @@ FIREBASE_DATABASE_ID               # must match the client DB selection
 
 `VITE_FIREBASE_PROJECT_ID` and `FIREBASE_PROJECT_ID` must be identical to each other and different from the committed production/default project ID.
 
-The Node server initializes Firebase Admin with the configured project ID and relies on the runtime's normal Firebase Admin authentication mechanism. Therefore, project-ID environment variables alone are **not** sufficient authorization: the deployment runtime must also have staging-only Application Default Credentials / workload identity permissions.
+The Node server initializes Firebase Admin with the configured project ID and relies on the runtime's normal Firebase Admin authentication mechanism. Project-ID environment variables alone are **not** sufficient authorization: the deployment runtime must also have staging-only Application Default Credentials / workload identity permissions.
 
 ### Web Push / notification keys
 
@@ -92,7 +93,7 @@ WEB_PUSH_VAPID_PUBLIC_KEY=<same staging public key>
 WEB_PUSH_VAPID_PRIVATE_KEY=<staging private key, server-only>
 ```
 
-The browser public key and server public key must match. The private key must never use a `VITE_*` name or otherwise enter the browser bundle. When `KCFC_RUNTIME_ENV=staging`, the server itself fails closed if either explicit server VAPID key is missing. If Web Push initialization later fails for any reason, staging re-throws that error before the in-memory generated-key fallback; staging must never continue with cached, Firestore, or generated VAPID material.
+The browser public key and server public key must match. The private key must never use a `VITE_*` name or otherwise enter the browser bundle. When `KCFC_RUNTIME_ENV=staging`, the server fails closed if either explicit server VAPID key is missing. Staging must never continue with cached, Firestore, or generated VAPID material after Web Push initialization failure.
 
 ### Safety gates
 
@@ -112,7 +113,7 @@ VITE_KCFC_VIBER_CONNECTOR_ENABLED=false
 
 Provider credentials for LINE, Telegram, WhatsApp or Viber are not needed for baseline staging QA and should remain absent.
 
-For baseline staging, all server SMTP delivery is fail-safe: admin mass-email broadcast is simulation-only; public-inquiry notification email and authorized inquiry-alert SMTP are suppressed/simulated; and custom verification-email SMTP is suppressed even if SMTP credentials are inherited. The verification route still returns the generated verification link when email is not sent, allowing synthetic onboarding QA without external delivery. Inquiry records may still be persisted in the isolated staging Firestore project for workflow testing. Any future real SMTP acceptance test remains a separately approved action using synthetic/test recipients.
+For baseline staging, server SMTP delivery is fail-safe/simulated. Any future real SMTP acceptance test remains a separately approved action using synthetic/test recipients.
 
 ## Pre-deployment gate
 
@@ -127,16 +128,55 @@ npm run build
 
 Do not continue if any command fails.
 
-Retain the safe `staging:preflight` output as evidence. It should record only:
+Retain the safe `staging:preflight` output as evidence. It should record only staging project/database identity, runtime markers, connectors OFF, Core-status executor OFF, and presence/parity of staging VAPID material. Never retain secrets, tokens, PushSubscription endpoints, FCM tokens or member personal data.
 
-- staging Firebase project identifier;
-- Firestore database identifier;
-- client/server staging runtime markers;
-- connectors OFF;
-- Core-status staging executor OFF; and
-- presence/parity of staging VAPID material.
+## Member privacy migration gate — required order
 
-Do **not** retain private keys, API secrets, authentication tokens, service-account JSON, push subscription endpoints, FCM tokens, or member personal data in the evidence package.
+The current application uses the sanitized `member_directory/{uid}` projection and the strict parser requires the current schema:
+
+```text
+uid
+displayName
+photoURL
+nickname? 
+roles[]
+ministries[]
+lcRoles[]
+isCoreMember
+```
+
+`lcRoles` is assignment-role metadata. Members without an applicable liturgical sub-role must still have `lcRoles: []` in the staging projection.
+
+Proceed in this exact order:
+
+1. Verify the exact isolated staging Firebase project/database before running any backfill.
+2. Confirm `scripts/backfill-member-directory-staging.ts` targets the isolated staging project and generates the current projection schema including `lcRoles`.
+3. Run the backfill **dry-run first** and inspect only safe counts/target identity.
+4. Apply the non-destructive backfill to isolated staging only.
+5. Inspect representative `member_directory` documents and verify only allowlisted fields are present.
+6. Deploy the updated **staging-only** `member_directory` rule block.
+7. Deploy/open the current staging application and verify member-facing pages can consume the projection.
+8. Test Community Directory, Home, Schedule, modern Availability, Legacy Polls, Legacy Duties, CommitteeAssignments and ChoreCommitteeDashboard.
+9. Only after steps 1–8 pass, deploy the tightened **staging-only** private `users` read rules.
+10. Verify the private/public access matrix:
+   - ordinary member can `get` only their own private profile;
+   - ordinary member cannot list private `users`;
+   - ordinary member cannot `get` another member's private profile by known UID;
+   - approved ordinary member can read `member_directory`;
+   - Admin/authorized Leader can get/list private profiles required for governance.
+11. Verify self-profile edit/device registration remains functional.
+12. Verify explicit manager email actions remain suppressed/simulated in staging and do not place member emails into ordinary assignment state.
+
+If any member-facing page fails because the projection is absent/malformed, **do not** work around it by restoring broad ordinary-member `users` reads. Fix the isolated staging projection/backfill instead.
+
+## Firestore composite-index gate
+
+Before accepting the relevant browser workflows, confirm both declarative indexes are ready in isolated staging:
+
+- `notifications`: `userId ASC`, `createdAt DESC` — required by Inbox;
+- `polls`: `category ASC`, `createdAt DESC` — required by preserved Schedule-management polling.
+
+The Inbox index was empirically observed as **Building** on 2026-09-12. Do not infer that it is Ready; re-check provider state and then re-test the authenticated query.
 
 ## Deployment contract
 
@@ -157,79 +197,82 @@ After the service starts, verify:
 GET /api/health
 ```
 
-Expected application-level result: HTTP success containing `status: "ok"`, a timestamp, `runtime: "staging"`, the expected isolated `firebaseProjectId`, and the expected `firestoreDatabaseId` (or `(default)`). The response must not contain API keys, VAPID material, tokens, credentials, auth domains, sender IDs, or app IDs. Follow `staging-runtime-evidence-capture-2026-09-11.md` and run `npm run staging:evidence -- <saved-health-json>` so the captured payload is compared mechanically with the protected staging environment instead of being accepted by visual inspection alone.
+Expected result: HTTP success containing `status: "ok"`, timestamp, `runtime: "staging"`, the expected isolated `firebaseProjectId`, and Firestore database ID `(default)` or the explicitly reviewed staging database. The response must not contain API keys, VAPID material, tokens, credentials, auth domains, sender IDs or app IDs.
 
-A matching health response proves the running server selected the intended runtime/project/database identifiers. It does **not** prove Firebase Admin credential scope, notification delivery, authorization, or device acceptance; those require the steps below.
+Save the safe health JSON and run:
+
+```bash
+npm run staging:evidence -- <saved-health-json>
+```
+
+A matching health response proves runtime/project/database selection. It does not prove Firebase Admin credential scope, notification delivery, authorization or device acceptance.
 
 ## First-run isolation verification
 
 Before creating any test record:
 
 1. Open the staging URL in a clean browser session.
-2. Confirm `Staging • Test environment` is visibly present and non-obstructive.
-3. Confirm the URL is the non-production staging URL.
-4. Re-run/retain `npm run staging:preflight` from the deployed environment or the exact protected environment used for deployment.
-5. Confirm client/server project and database IDs match the planned staging identifiers.
-6. Confirm no production member/profile/announcement/accounting record is visible.
-7. Confirm all external connector surfaces remain disabled/future-only.
-8. Confirm the Core-status staging executor remains disabled.
+2. Confirm `Staging • Test environment` is visible.
+3. Confirm the URL is non-production.
+4. Confirm client/server project/database IDs match the planned staging identifiers.
+5. Confirm no production member/profile/announcement/accounting data is visible.
+6. Confirm connectors remain disabled and the Core-status staging executor remains disabled.
 
-**Stop condition:** if any production data, production project identifier, production push credential, or unexplained existing member account appears, do not continue QA. Preserve only non-sensitive diagnostic evidence and investigate isolation first.
+Stop immediately if production data, production project identity, production push credentials or unexplained production member accounts appear.
 
-## Synthetic account bootstrap
+## Synthetic account / authorization matrix
 
-Use the identities defined in `staging-test-matrix.md`. Create only the minimum synthetic accounts/data needed for each case.
+Use only synthetic staging identities. Baseline coverage should include:
 
-Required baseline includes representative synthetic states such as:
-
-- verified regular member;
-- core member;
-- ministry members/leaders;
-- administrator/president equivalent;
-- treasurer/auditor;
+- verified ordinary member;
+- Core member;
+- liturgical ministry members/leaders;
+- Admin/President equivalent;
+- Treasurer;
+- Auditor;
+- Vice President;
 - pending/unverified member; and
 - disabled member.
 
-No production Firebase UID should be recreated, copied or mapped into staging.
+In addition to privacy checks, verify the branch-only Treasury authorization contract:
 
-For pre-registration/onboarding tests, verify the real staging Firebase Auth UID is preserved and that Login/Google migration does not mark email verification true without Firebase Auth/pending evidence or the explicit bootstrap-admin exception.
+- Admin / President / Treasurer can read/create/edit/delete transactions and manage accounting categories;
+- Admin / President / Auditor can approve transactions;
+- Vice President / Auditor can read accounting;
+- VP cannot edit/approve;
+- Auditor cannot edit/delete/category-manage;
+- Treasurer does not gain approval authority from this correction; and
+- ordinary members are denied accounting operations.
 
 ## Browser QA gate
 
 Before physical-device notification testing, complete the browser/responsive subset of `staging-test-matrix.md` and `staging-readiness-checklist.md`, including:
 
 - Home and five-item mobile navigation;
-- Schedule direct URLs and Back/Forward history;
-- Community type/ministry history;
+- Schedule URLs/history and Plan & manage;
+- Community filters;
 - Updates Published/All history and notification focus;
-- Inbox filter/message history;
-- Resource category history;
+- Inbox filters/detail/history after index readiness;
+- Resources category history;
 - Leadership workspace history and unauthorized denial;
 - staging badge visibility at phone/tablet/desktop widths;
-- private-directory field absence;
+- public/private member-profile boundary;
 - explicit roster publication/privacy boundaries; and
 - destructive controls remaining outside routine leadership surfaces.
 
-Do not convert automated CI results into empirical PASS entries. The browser cases require actual observation against the isolated staging deployment.
+Automated CI results are not empirical browser PASS entries.
 
 ## Physical-device notification gate
 
 Use `staging-device-qa-package-2026-09-11.md` and `notification-acceptance-evidence-template-2026-09-11.md`.
 
-Baseline devices remain:
+Baseline devices:
 
 - physical iPhone;
 - physical Android tablet;
 - optional supplemental Android phone.
 
-For each notification test separately record:
-
-1. transport acceptance;
-2. OS presentation (banner/lock-screen/sound/vibration as applicable);
-3. durable KCFC Inbox persistence; and
-4. tap/deep-link result.
-
-Provider acceptance is not proof the member saw/heard the notification. Missing sound alone is not proof of transport failure.
+For each notification test separately record transport acceptance, OS presentation, durable Inbox persistence and tap/deep-link result. Missing sound alone is not proof of transport failure.
 
 ## Evidence record for an actual staging deployment
 
@@ -243,41 +286,47 @@ Create a dated evidence entry containing only non-secret information:
 - Firestore database ID;
 - deployment/revision identifier;
 - `staging:preflight` PASS output with secrets excluded;
-- `/api/health` result plus `npm run staging:evidence` PASS output;
+- `/api/health` result plus `staging:evidence` PASS;
+- index readiness state;
+- projection/backfill/rule deployment state;
 - screenshot showing the staging badge;
 - browser/device matrix results;
-- defects discovered and remediation commits; and
+- defects/remediation commits; and
 - tester/device model + OS/browser/PWA mode.
 
-Never put service-account credentials, private VAPID material, SMTP credentials, OAuth client secrets, Firebase ID tokens, FCM tokens, PushSubscription endpoints or production personal data in the evidence record.
+Never store service-account credentials, VAPID private material, SMTP credentials, OAuth secrets, Firebase ID tokens, FCM tokens, PushSubscription endpoints or production personal data in evidence.
 
 ## Staging rollback / cleanup
 
 If a staging build is defective:
 
 1. stop synthetic testing that could compound the issue;
-2. roll the staging application revision back to the last known-good staging artifact/commit where the provider supports revision rollback;
-3. keep the staging Firebase project isolated; do not redirect the app to production as a workaround;
-4. do not perform destructive Firestore restoration unless a separately reviewed staging-data recovery case actually requires it;
-5. invalidate/remove test device registrations if necessary; and
-6. record the failed revision and defect before retrying.
+2. roll the staging application revision back to the last known-good staging artifact/commit where supported;
+3. keep staging isolated; never redirect it to production as a workaround;
+4. if strict private-profile rules are implicated, roll back the **staging rules/application/projection as a coordinated staging unit** to the last verified configuration rather than broadening production access;
+5. do not perform destructive Firestore restoration unless a separately reviewed staging-data recovery case actually requires it;
+6. invalidate/remove test device registrations if necessary; and
+7. record the failed revision and defect before retrying.
 
 Staging cleanup must never delete or modify production resources.
 
 ## Completion criteria for the staging-environment gate
 
-The staging environment gate may be marked complete only when all of the following are retained as evidence:
+The gate may be marked complete only when all of the following are retained as evidence:
 
-- exact deployed SHA;
-- green redevelopment CI for that intended SHA;
-- isolated staging project/database identifiers;
-- successful real `npm run staging:preflight`;
-- staging-only Admin authentication/identity confirmed;
-- approved non-production HTTPS `APP_URL` confirmed and generated links checked against the staging origin;
-- staging badge visibly confirmed;
-- `/api/health` successful and `npm run staging:evidence` PASS confirming the expected staging runtime/project/database identifiers with no unexpected fields;
-- connectors OFF;
-- Core-status executor OFF; and
-- no production data/credentials observed.
+- exact deployed SHA and green CI for that SHA;
+- isolated staging project/database/provider identifiers and revision;
+- successful real `staging:preflight`;
+- approved non-production HTTPS `APP_URL`;
+- visible staging badge;
+- `/api/health` success plus `staging:evidence` PASS;
+- connectors OFF and Core-status executor OFF;
+- no production data/credentials observed;
+- required composite indexes Ready and empirically exercised;
+- current `member_directory` projection backfilled/verified including `lcRoles`;
+- migrated member-facing workflows working against that projection;
+- tightened staging private-profile access matrix empirically verified;
+- staging Treasury role matrix empirically verified; and
+- provider backup/rollback/redeployability evidence retained.
 
-Only after this gate is complete should browser/device empirical acceptance be treated as staging evidence. Production merge/deployment remains a separate explicit approval even after all staging gates pass.
+Production merge/deployment remains a separate explicit approval even after every staging gate passes.
