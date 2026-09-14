@@ -13,7 +13,6 @@
     "staging:evidence": "node scripts/staging-runtime-evidence.mjs"
   },
   "dependencies": {
-    "@google/genai": "^1.52.0",
     "@types/d3": "^7.4.3",
     "@vitejs/plugin-react": "^5.2.0",
     "clsx": "^2.1.1",
