@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import {
   availabilityCompletionRecipientIds,
   buildTrustedLiturgicalCommunicationPlan,
@@ -114,4 +115,20 @@ for (const forbiddenKey of ['pushTokens', 'fcmTokens', 'email', 'emails', 'userI
   }
 }
 
-console.log('Trusted liturgical recipient resolution: PASS');
+const serverSource = fs.readFileSync('server.ts', 'utf8');
+const registrationImport = 'import { registerLiturgicalCommunicationRoutes } from "./server/liturgicalCommunicationRoutes";';
+const registrationCall = 'registerLiturgicalCommunicationRoutes(app, { auth: authAdmin, db: dbAdmin });';
+if (!serverSource.includes(registrationImport)) {
+  throw new Error('Trusted liturgical communication routes must remain imported by server.ts.');
+}
+if (!serverSource.includes(registrationCall)) {
+  throw new Error('Trusted liturgical communication routes must remain registered in startServer().');
+}
+if ((serverSource.match(/registerLiturgicalCommunicationRoutes/g) || []).length !== 2) {
+  throw new Error('Expected exactly one liturgical route import and one registration call in server.ts.');
+}
+if (fs.existsSync('.github/workflows/one-shot-register-liturgical-routes.yml') || fs.existsSync('scripts/one-shot-register-liturgical-routes.mjs')) {
+  throw new Error('Temporary one-shot route integration machinery must not remain in the repository.');
+}
+
+console.log('Trusted liturgical recipient resolution + server registration: PASS');
