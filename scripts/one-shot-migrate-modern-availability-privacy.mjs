@@ -29,13 +29,13 @@ const assignedUserIdsBlock = `const assignedUserIds = (poll: Poll) => {\n  const
 replaceOnce(assignedUserIdsBlock, '', 'unused assigned-user helper');
 
 source = source.replaceAll('UserProfile[]', 'MemberDirectoryProfile[]');
-if (source.includes('UserProfile')) throw new Error('Refusing migration: a UserProfile reference remains in modern Polls.');
 
 replaceOnce(
   "    const unsubMembers = onSnapshot(\n      collection(db, 'users'),\n      (snapshot) => {\n        setMembers(snapshot.docs.map((item) => ({ uid: item.id, ...item.data() } as UserProfile)));\n      },\n      (error) => console.error('Availability: failed to load members', error),\n    );",
   "    const unsubMembers = subscribeMemberDirectory(\n      setMembers,\n      (error) => console.error('Availability: failed to load public member directory', error),\n    );",
   'private member subscription',
 );
+if (source.includes('UserProfile')) throw new Error('Refusing migration: a UserProfile reference remains in modern Polls after subscription replacement.');
 
 replaceOnce(
   "  const eligibleMembers = useMemo(\n    () => members.filter((member) =>\n      member.email !== 'kcfc.jp@gmail.com' &&\n      member.isVerified &&\n      !member.isDisabled &&\n      (member.ministries || []).some((ministry) => memberMinistries.includes(ministry)),\n    ),\n    [members],\n  );",
