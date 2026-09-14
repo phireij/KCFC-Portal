@@ -47,7 +47,7 @@ if (JSON.stringify(eligible) !== JSON.stringify(['lector-1', 'usher-1'])) {
 }
 
 const completion = availabilityCompletionRecipientIds(privateProfiles, 'lector-1');
-if (JSON.stringify(completion) !== JSON.stringify(['admin-1', 'lector-1', 'president-1'])) {
+if (JSON.stringify(completion) !== JSON.stringify(['admin-1', 'bootstrap', 'lector-1', 'president-1'])) {
   throw new Error(`Unexpected availability-completion recipients: ${JSON.stringify(completion)}`);
 }
 
@@ -59,6 +59,16 @@ const availabilityPlan = buildTrustedLiturgicalCommunicationPlan({
 if (availabilityPlan.notifications.length !== 2) throw new Error('Availability request must create two Inbox notification plans.');
 if (!availabilityPlan.pushTokens.includes('PRIVATE_LECTOR_TOKEN')) throw new Error('Trusted resolver should retain eligible private push material internally.');
 if (availabilityPlan.pushTokens.includes('PRIVATE_USHER_TOKEN')) throw new Error('Muted availability preference must suppress Usher secondary push delivery.');
+if (availabilityPlan.affectedUserIds.includes('bootstrap')) throw new Error('Bootstrap account must not enter ordinary liturgical eligibility.');
+
+const completionPlan = buildTrustedLiturgicalCommunicationPlan({
+  kind: 'availability_complete',
+  poll: { id: 'poll-1', title: 'October Mass Availability', createdBy: 'lector-1' },
+  profiles: privateProfiles,
+});
+if (!completionPlan.affectedUserIds.includes('bootstrap')) {
+  throw new Error('Bootstrap admin must retain trusted leadership-notification semantics.');
+}
 
 const initialPlan = buildTrustedLiturgicalCommunicationPlan({
   kind: 'assignment_publish',
@@ -92,7 +102,7 @@ const publicSummary = publicLiturgicalCommunicationSummary(availabilityPlan);
 const publicJson = JSON.stringify(publicSummary);
 for (const privateValue of [
   'admin@example.com', 'lector@example.com', 'usher@example.com',
-  'PRIVATE_ADMIN_TOKEN', 'PRIVATE_LECTOR_TOKEN', 'PRIVATE_USHER_TOKEN',
+  'PRIVATE_ADMIN_TOKEN', 'PRIVATE_LECTOR_TOKEN', 'PRIVATE_USHER_TOKEN', 'PRIVATE_BOOTSTRAP_TOKEN',
 ]) {
   if (publicJson.includes(privateValue)) {
     throw new Error(`Public liturgical communication summary leaked private recipient material: ${privateValue}`);
