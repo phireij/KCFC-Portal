@@ -40,6 +40,23 @@ Browser-side private-profile discovery used solely for communication/governance 
 
 `scripts/verify-announcement-recipient-boundary.ts`, `scripts/verify-privileged-member-query-boundary.ts` and the member-profile containment contracts guard these migrations. Caller-supplied arbitrary push-token lists remain prohibited.
 
+## Trusted pre-registration claim boundary
+
+The inherited pre-registration flow previously tried to derive a `pending_*` document ID from the email local-part, read that private `users` document in the browser, copy it to the authenticated UID and delete the pending document. That conflicted with the final least-privilege private-profile rules and could also create ambiguous local-part collisions across different email domains.
+
+The branch now claims pending profiles through authenticated `POST /api/auth/claim-pending-profile`:
+
+- the caller supplies only a Firebase bearer token;
+- the trusted server resolves the UID and exact account email from Firebase Auth;
+- matching pending records are found by the exact authenticated email, not by a caller-supplied email or document ID;
+- ambiguous multiple pending matches or an existing non-pending profile for the same email fail closed;
+- the target UID profile creation, pending-profile deletion and `member_directory` synchronization happen transactionally on the trusted server; and
+- Login/App no longer read or delete `pending_*` private profiles directly.
+
+Existing historical `pending_*` document names remain claimable because the trusted route filters exact-email matches rather than trusting the legacy document-name convention. The old local-part naming scheme therefore no longer determines authorization or identity.
+
+`scripts/verify-pending-profile-claim-boundary.ts` is part of normal lint and prevents browser-side pending-profile reads/deletes, caller-supplied claim identity, or loss of the trusted route registration.
+
 ## Public member projection
 
 `member_directory/{uid}` is the authenticated member-facing projection. Its canonical source contract is `src/lib/memberPublicProjection.ts`, and `src/lib/memberDirectoryClient.ts` rejects malformed documents or unexpected fields.
@@ -121,9 +138,10 @@ Staging continues to suppress real Gmail delivery. Repository migration work mus
 5. inspect staging `member_directory` documents and verify that every document contains only allowlisted public fields;
 6. deploy the updated **staging-only** projection/private-profile rules and application;
 7. verify projection synchronization/self-healing and trusted announcement/member-summary server routes;
-8. verify the final private `users` read role matrix;
-9. verify all affected member/admin workflows; and
-10. retain rollback/redeployability evidence before any production proposal.
+8. verify trusted pre-registration claiming with synthetic pending users for both Google and email/password authentication;
+9. verify the final private `users` read role matrix;
+10. verify all affected member/admin workflows; and
+11. retain rollback/redeployability evidence before any production proposal.
 
 ## Isolated-staging acceptance matrix
 
@@ -141,6 +159,11 @@ Using synthetic staging identities/data only, verify:
 - announcement creation/publishing works through trusted recipient resolution without browser `users` collection access;
 - pending-member summaries expose only their bounded governance response shape;
 - legacy poll/assignment recipient lookup exposes only the bounded email-recipient response shape;
+- a synthetic pre-registered member can sign in/register and atomically claim the correct pending profile by exact authenticated email;
+- successful claim deletes the pending source, creates the UID profile and creates/removes the public projection according to eligibility;
+- a same-local-part/different-domain account cannot claim another email's pending profile;
+- ambiguous duplicate pending profiles fail closed rather than choosing one;
+- Login/App do not require broad private `users` reads to complete the pre-registration flow;
 - explicit manager email actions remain suppressed in staging;
 - self-profile edit/device registration remains functional; and
 - no FCM token/Web Push subscription/contact field is exposed through member-facing reads.
@@ -155,13 +178,13 @@ A production migration proposal must include exact production target identity, d
 
 ### Repository implementation
 
-**GREEN / SOURCE-COMPLETE.** Ordinary/member/Core/ministry private-profile list debt is closed; the sanitized projection and trusted synchronization boundary are source-controlled; communication/summary recipient discovery is trusted-server-side; unnecessary leader private-profile reads were removed; and cross-member private `users` get/list access is source-limited to Admin/President.
+**GREEN / SOURCE-COMPLETE.** Ordinary/member/Core/ministry private-profile list debt is closed; the sanitized projection and trusted synchronization boundary are source-controlled; communication/summary recipient discovery is trusted-server-side; pending pre-registration claims are authenticated and server-side; unnecessary leader private-profile reads were removed; and cross-member private `users` get/list access is source-limited to Admin/President.
 
 Repository GREEN does not imply deployed staging or production acceptance.
 
 ### Isolated staging
 
-**AMBER / OPEN.** The projection/backfill, trusted routes and final private-profile rules require empirical isolated-staging deployment and role/browser verification.
+**AMBER / OPEN.** The projection/backfill, trusted routes, trusted pre-registration claim flow and final private-profile rules require empirical isolated-staging deployment and role/browser verification.
 
 ### Production
 
