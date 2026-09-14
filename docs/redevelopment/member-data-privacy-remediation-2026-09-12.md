@@ -2,7 +2,7 @@
 
 Branch: `redesign/mobile-first-v2`
 
-Status: **REPOSITORY REMEDIATION AMBER / TRUSTED RECIPIENT-SUMMARY MIGRATIONS SOURCE-COMPLETE / FINAL PRIVATE-READ ROLE REVIEW + ISOLATED-STAGING ACCEPTANCE REQUIRED.**
+Status: **REPOSITORY REMEDIATION GREEN / ISOLATED-STAGING ACCEPTANCE REQUIRED.**
 
 This document does not authorize a production data migration, deletion of existing profile fields, production Firestore rule deployment, production messaging, production merge, or production cutover.
 
@@ -30,24 +30,15 @@ The member-facing migration covers:
 
 The retained Legacy Dashboard no longer lists private profiles directly for community statistics. Its member/ministry statistics come from `member_directory`.
 
-## Trusted privileged-summary migrations completed in source
+## Trusted recipient and privileged-summary boundaries
 
-Two additional browser-side private-profile read paths have now been removed from recipient/governance discovery:
+Browser-side private-profile discovery used solely for communication/governance summaries has been removed:
 
 - `src/pages/Announcements.tsx` no longer downloads `users` to resolve announcement recipients. Publishing calls authenticated `/api/announcements/publish-notifications`, where audience eligibility, notification records and device routing are resolved on the trusted server.
 - `src/lib/privilegedMemberQueries.ts` no longer imports Firestore or reads `users` directly. Pending-member summaries and legacy poll/email recipient summaries are requested through authenticated `/api/admin/member-summaries/*` routes. The server returns only the minimum summary fields required by those workflows.
+- the legacy automatic-duty path no longer reads another member's private communication profile when PWA/email execution is disabled; durable Inbox creation remains intact.
 
-`scripts/verify-announcement-recipient-boundary.ts` and `scripts/verify-privileged-member-query-boundary.ts` guard these migrations. Caller-supplied arbitrary push-token lists remain prohibited.
-
-The trusted privileged-summary routes authenticate the caller, verify current account state/roles from private server-side profile data, and return bounded response shapes rather than complete member documents.
-
-## Remaining private-browser read review
-
-The broad historical officer/leader read model is **not yet considered final**. Some dedicated Admin/governance surfaces still legitimately inspect private member-account fields, but current Firestore `users` rules still allow complete-profile get/list to the broader inherited `isAdmin()` / `isLeader()` sets.
-
-Before final private-read rules are tightened, each remaining direct private-profile consumer must be mapped to the exact minimum roles and fields its workflow requires. The final rule change must be staged together with those source consumers so a role is neither over-privileged nor accidentally broken.
-
-This is now the principal repository privacy task: complete the remaining Admin/governance consumer-role matrix, narrow `/users` get/list to the smallest justified set, and prove it in isolated staging.
+`scripts/verify-announcement-recipient-boundary.ts`, `scripts/verify-privileged-member-query-boundary.ts` and the member-profile containment contracts guard these migrations. Caller-supplied arbitrary push-token lists remain prohibited.
 
 ## Public member projection
 
@@ -68,32 +59,37 @@ The projection deliberately excludes email, birthdate, home address, phone numbe
 
 `scripts/verify-member-public-projection.ts` binds the TypeScript allowlist to the Firestore rule allowlist and injects private sentinel fields to prove they cannot enter the projection.
 
+## Final private profile read boundary
+
+The branch source now uses the least-privilege private `users` read contract:
+
+- a signed-in user may `get` only their own private `users/{uid}` profile;
+- Admin / President member administrators may `get` another member's private profile;
+- only Admin / President member administrators may `list` private `users` documents; and
+- all ordinary approved member/Core/ministry workflows consume `member_directory` or trusted server summaries instead.
+
+The exact Firestore branch rules are:
+
+- `allow get: if isOwner(userId) || canAdministerMembers();`
+- `allow list: if canAdministerMembers();`
+
+This removes the inherited whole-profile read grant from Vice President, Secretary, Auditor, P.R.O., Spiritual Director and ministry-leader roles. Those roles retain only the narrower workflow-specific capabilities explicitly implemented elsewhere.
+
+The current Leadership Admin page that hosts direct cross-member private-profile administration is itself gated to Admin/President. Self-profile/authentication paths continue to read the signed-in user's own document.
+
+`scripts/verify-private-user-read-boundary.ts` binds CI to the final rule contract and rejects the former ordinary-member and broad officer/leader read models.
+
 ## Private profile mutation boundary
 
-The branch now separates broad historical officer capabilities from member-account administration:
+The branch separates broad historical officer capabilities from member-account administration:
 
 - Admin / President can perform managed-member profile/status mutations and member deletion;
-- Secretary retains the explicitly used governance mutations for roles, verification, Core status, ministries and liturgical sub-roles;
-- Vice President, Auditor, P.R.O. and Spiritual Director no longer inherit managed-member mutation or deletion authority merely because older rules classified them under the broad `isAdmin()` helper;
+- Secretary retains only the explicitly used governance mutations for roles, verification, Core status, ministries and liturgical sub-roles;
+- Vice President, Auditor, P.R.O. and Spiritual Director do not inherit managed-member mutation or deletion authority merely because older rules classified them under the broad `isAdmin()` helper;
 - member deletion is Admin/President only; and
 - the trusted `member_directory` managed-sync route is restricted to Admin/President/Secretary so it matches the roles that can actually mutate projected member fields.
 
 `scripts/verify-member-directory-sync-boundary.ts` fails closed if the broader officer set regains managed-member sync/write/delete authority.
-
-## Private profile read boundary
-
-Current branch rules are stricter than the inherited ordinary-member model, but the final least-privilege read cutover remains open while the last Admin/governance consumers are mapped:
-
-- ordinary approved members use `member_directory` and cannot list private `users`;
-- owners can get their own private profile;
-- full private-profile list/get remains temporarily available to broader officer/leader roles required by retained governance code.
-
-This is **not** the final target. `/users` get/list rules must be narrowed to the minimum governance roles that demonstrably require complete profiles once the remaining role/consumer matrix is complete.
-
-`scripts/verify-private-user-read-boundary.ts` continues to reject the former ordinary-member-wide rules:
-
-- `allow get: if isSignedIn();`
-- `allow list: if isApproved();`
 
 ## Member-directory synchronization
 
@@ -108,7 +104,7 @@ The projection has a durable trusted synchronization boundary:
 
 ## Communication recipient boundary
 
-Modern liturgical communication, preserved poll notification flows and announcement publishing now resolve recipients through authenticated trusted server routes. Pending governance summaries and legacy email-recipient discovery also use trusted summary routes instead of downloading complete private profiles in the browser.
+Modern liturgical communication, preserved poll notification flows and announcement publishing resolve recipients through authenticated trusted server routes. Pending governance summaries and legacy email-recipient discovery also use trusted summary routes instead of downloading complete private profiles in the browser.
 
 Staging continues to suppress real Gmail delivery. Repository migration work must not be used to trigger live SMTP or mass messaging.
 
@@ -123,10 +119,10 @@ Staging continues to suppress real Gmail delivery. Repository migration work mus
 3. run the staging backfill in **dry-run** mode and review counts/target identity;
 4. apply the backfill to isolated staging only;
 5. inspect staging `member_directory` documents and verify that every document contains only allowlisted public fields;
-6. deploy the updated **staging-only** projection rules and application;
+6. deploy the updated **staging-only** projection/private-profile rules and application;
 7. verify projection synchronization/self-healing and trusted announcement/member-summary server routes;
-8. after the final private-profile role/consumer matrix is source-complete, deploy the tightened **staging-only** private `users` read rules;
-9. verify the complete role/access matrix; and
+8. verify the final private `users` read role matrix;
+9. verify all affected member/admin workflows; and
 10. retain rollback/redeployability evidence before any production proposal.
 
 ## Isolated-staging acceptance matrix
@@ -138,8 +134,9 @@ Using synthetic staging identities/data only, verify:
 - ordinary member cannot get another member's private profile by known UID;
 - ordinary approved member can read `member_directory`;
 - projection documents contain no contact/device/private fields;
-- authorized governance roles can perform only their intended member-admin actions;
-- VP/Auditor/P.R.O./Spiritual Director cannot mutate/delete managed member profiles merely through direct Firestore calls;
+- Admin/President can perform intended member administration;
+- VP/Secretary/Auditor/P.R.O./Spiritual Director/ministry leaders cannot list private `users` or read another member's private profile merely through direct Firestore calls;
+- Secretary's explicitly authorized managed-member mutations still work without acquiring broad private read authority;
 - Community Directory, Home, Schedule, Availability, Legacy Polls/Duties and assignment tooling work from public projection state;
 - announcement creation/publishing works through trusted recipient resolution without browser `users` collection access;
 - pending-member summaries expose only their bounded governance response shape;
@@ -158,11 +155,13 @@ A production migration proposal must include exact production target identity, d
 
 ### Repository implementation
 
-**AMBER / FINAL ROLE REVIEW OPEN.** Ordinary-member/Core/ministry-facing private-profile list debt is closed, the public projection and trusted synchronization boundary are source-controlled, announcement recipient discovery is server-side, and privileged pending/legacy-recipient summary discovery is server-side. The remaining task is to map the direct Admin/governance private-profile consumers to exact minimum roles and tighten the private `users` read rules accordingly.
+**GREEN / SOURCE-COMPLETE.** Ordinary/member/Core/ministry private-profile list debt is closed; the sanitized projection and trusted synchronization boundary are source-controlled; communication/summary recipient discovery is trusted-server-side; unnecessary leader private-profile reads were removed; and cross-member private `users` get/list access is source-limited to Admin/President.
+
+Repository GREEN does not imply deployed staging or production acceptance.
 
 ### Isolated staging
 
-**AMBER / OPEN.** The updated projection/backfill, trusted summary/announcement routes and eventual final private-profile rules require empirical isolated-staging deployment and role/browser verification.
+**AMBER / OPEN.** The projection/backfill, trusted routes and final private-profile rules require empirical isolated-staging deployment and role/browser verification.
 
 ### Production
 
