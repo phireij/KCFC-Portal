@@ -1,17 +1,43 @@
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 
-export function subscribePendingMemberCount(
-  onCount: (count: number) => void,
+export type PendingMemberSummary = {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string;
+};
+
+export function subscribePendingMembers(
+  onMembers: (members: PendingMemberSummary[]) => void,
   onError?: (error: Error) => void,
 ) {
   return onSnapshot(
     query(collection(db, 'users'), where('isVerified', '==', false)),
-    (snapshot) => onCount(snapshot.docs.filter((item) => {
-      const email = String(item.data().email || '').trim().toLowerCase();
-      return email !== 'kcfc.jp@gmail.com';
-    }).length),
+    (snapshot) => onMembers(snapshot.docs.flatMap((item) => {
+      const data = item.data();
+      const email = String(data.email || '').trim();
+      if (email.toLowerCase() === 'kcfc.jp@gmail.com') return [];
+      const displayName = String(data.displayName || '').trim() || 'Pending member';
+      const photoURL = String(data.photoURL || '').trim();
+      return [{
+        uid: item.id,
+        displayName,
+        email,
+        ...(photoURL ? { photoURL } : {}),
+      }];
+    })),
     (error) => onError?.(error),
+  );
+}
+
+export function subscribePendingMemberCount(
+  onCount: (count: number) => void,
+  onError?: (error: Error) => void,
+) {
+  return subscribePendingMembers(
+    (members) => onCount(members.length),
+    onError,
   );
 }
 
