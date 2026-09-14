@@ -37,6 +37,15 @@ issues = validateMemberGovernance({
 });
 assert(issues.some((issue) => issue.code === 'core_required_for_leadership'));
 assert(issues.some((issue) => issue.code === 'core_required_for_chore'));
+assert(issues.some((issue) => issue.code === 'core_required_for_officer_or_committee'));
+
+issues = validateMemberGovernance({
+  member: regular,
+  allMembers: [regular],
+  roles: ['member'],
+  ministries: ['usher', 'cleaning'],
+});
+assert(issues.some((issue) => issue.code === 'liturgical_chore_exclusive'));
 
 const choir = base('choir');
 issues = validateMemberGovernance({

@@ -2557,7 +2557,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // The production bundle is emitted as dist/server.cjs alongside Vite's
+    // index.html and assets. App Hosting does not guarantee that `cwd` is the
+    // application source root, so resolving via `process.cwd()/dist` can serve
+    // a stale or missing asset directory after a rollout. Anchor static files
+    // to the bundled server instead.
+    const distPath = currentDirname;
     app.use(express.static(distPath));
     app.get('/{*splat}', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

@@ -43,6 +43,14 @@ export const LEADERSHIP_ROLES: UserRole[] = [
   'cleaning_sub_leader',
 ];
 
+// These are the offices and committee posts governed by Core-member status.
+// `admin` is deliberately omitted: it is an application access grant, not a
+// KCFC organizational office.
+export const OFFICER_AND_COMMITTEE_ROLES: UserRole[] = [
+  ...EXECUTIVE_ROLES,
+  ...LEADERSHIP_ROLES,
+];
+
 export const CHORE_MINISTRIES: MinistryType[] = [
   'kitchen',
   'cleaning',
@@ -78,7 +86,9 @@ export type MemberGovernanceIssue = {
     | 'role_limit'
     | 'role_requires_ministry'
     | 'core_required_for_leadership'
+    | 'core_required_for_officer_or_committee'
     | 'core_required_for_chore'
+    | 'liturgical_chore_exclusive'
     | 'choir_exclusive'
     | 'cleaning_status_requires_cleaning';
   message: string;
@@ -142,8 +152,18 @@ export function validateMemberGovernance(input: {
     issues.push({ code: 'core_required_for_leadership', message: 'Committee leadership roles require Core Member status.' });
   }
 
+  if (!member.isCoreMember && extraRoles.some((role) => OFFICER_AND_COMMITTEE_ROLES.includes(role))) {
+    issues.push({ code: 'core_required_for_officer_or_committee', message: 'Officer and committee roles require Core Member status. Regular members retain only the Member role.' });
+  }
+
   if (!member.isCoreMember && ministries.some((ministry) => CHORE_MINISTRIES.includes(ministry))) {
     issues.push({ code: 'core_required_for_chore', message: 'Kitchen and Cleaning committee assignments require Core Member status.' });
+  }
+
+  const hasLiturgicalMembership = ministries.some((ministry) => LITURGICAL_MINISTRIES.includes(ministry));
+  const hasChoreMembership = ministries.some((ministry) => CHORE_MINISTRIES.includes(ministry));
+  if (hasLiturgicalMembership && hasChoreMembership) {
+    issues.push({ code: 'liturgical_chore_exclusive', message: 'Liturgical and chore memberships are mutually exclusive. Choose either a liturgical ministry or Kitchen/Cleaning service.' });
   }
 
   const hasChoir = ministries.some((ministry) => ministry === 'choir_a' || ministry === 'choir_b');

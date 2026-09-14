@@ -247,7 +247,7 @@ export default function MemberRoleEditor() {
 
               <fieldset>
                 <legend className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-slate-400">Organizational role</legend>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Member is permanent. Select at most one additional role unless the current Core-member Kitchen/Cleaning dual-role rule applies.</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Member is permanent. Officer and committee roles require Core Member status; select at most one additional role unless the current Core-member Kitchen/Cleaning dual-role rule applies.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#123B66] px-3 text-[11px] font-extrabold text-white"><Check className="h-3.5 w-3.5" /> Member</span>
                   {ROLE_OPTIONS.map((role) => {
@@ -274,7 +274,7 @@ export default function MemberRoleEditor() {
 
               <fieldset>
                 <legend className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-slate-400">Ministry membership</legend>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Liturgical and chore membership is validated before saving. Kitchen/Cleaning require Core Member status.</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Regular members may serve only in liturgical ministries. Kitchen/Cleaning require Core Member status, and liturgical and chore memberships cannot be combined.</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {MINISTRY_OPTIONS.map((ministry) => {
                     const active = draftMinistries.includes(ministry);

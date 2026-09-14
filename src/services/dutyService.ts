@@ -10,6 +10,7 @@ export interface ChoreAttendee {
   toiletOk: boolean;
   isKitchen?: boolean;
   isCleaning?: boolean;
+  isCoreMember?: boolean;
 }
 
 export interface ChoreDutyTemplate {
@@ -25,6 +26,16 @@ export interface AutoChoreAssignment {
   userDisplayName: string;
   dutyName: string;
   group: 'cleaning' | 'kitchen';
+}
+
+export function isEligibleForChoreAssignment(
+  attendee: ChoreAttendee,
+  template: Pick<ChoreDutyTemplate, 'group' | 'restrictedToToiletOk'>,
+): boolean {
+  if (!attendee.isCoreMember) return false;
+  if (template.group === 'kitchen' && !attendee.isKitchen) return false;
+  if (template.group === 'cleaning' && !attendee.isCleaning) return false;
+  return !template.restrictedToToiletOk || attendee.toiletOk;
 }
 
 /**
@@ -64,24 +75,11 @@ export function balanceChoreSlots(
   const assignments: AutoChoreAssignment[] = [];
 
   for (const slot of slotsToAssign) {
-    let potential = attendees.filter(a => {
-      if (slot.template.group === 'kitchen') return !!a.isKitchen;
-      if (slot.template.group === 'cleaning') return !!a.isCleaning;
-      return true;
-    });
+    const potential = attendees.filter((attendee) => isEligibleForChoreAssignment(attendee, slot.template));
 
-    if (slot.template.restrictedToToiletOk) {
-      const toiletPotentials = potential.filter(a => a.toiletOk);
-      if (toiletPotentials.length > 0) potential = toiletPotentials;
-    }
-
-    if (potential.length === 0) {
-      potential = [...attendees];
-      if (slot.template.restrictedToToiletOk) {
-        const fallbackToilet = potential.filter(a => a.toiletOk);
-        if (fallbackToilet.length > 0) potential = fallbackToilet;
-      }
-    }
+    // A governed schedule must leave an unfillable slot unassigned rather than
+    // assigning a regular, wrong-committee, or non-authorized member.
+    if (potential.length === 0) continue;
 
     potential.sort((a, b) => {
       const curA = currentlyAssignedCount[a.userId] || 0;
