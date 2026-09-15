@@ -13,6 +13,14 @@ function expectFalse(name) {
   }
 }
 
+function booleanFlag(name, defaultValue = false) {
+  const raw = String(process.env[name] ?? String(defaultValue)).trim().toLowerCase();
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error(`KCFC staging preflight: ${name} must be either true or false (received ${JSON.stringify(raw)}).`);
+  }
+  return raw === 'true';
+}
+
 const committedConfig = JSON.parse(readFileSync(new URL('../firebase-applet-config.json', import.meta.url), 'utf8'));
 const committedProjectId = String(committedConfig.projectId || '').trim();
 
@@ -71,7 +79,9 @@ if (firebaseFcmVapidPublic === serverVapidPublic) {
   throw new Error('KCFC staging preflight: Firebase FCM and native Web Push must use distinct VAPID public keys; Firebase does not expose the FCM private key to this server.');
 }
 
-expectFalse('KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED');
+// Core-status writes are still default-off, but an operator may explicitly enable
+// the staging-only executor for governed acceptance testing in the isolated project.
+const coreStatusExecutorEnabled = booleanFlag('KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED', false);
 for (const name of [
   'KCFC_CONNECTOR_LINE_ENABLED',
   'KCFC_CONNECTOR_TELEGRAM_ENABLED',
@@ -91,5 +101,5 @@ console.log(`Firebase project: ${clientProjectId}`);
 console.log(`Firestore database: ${clientDatabaseId || '(default)'}`);
 console.log('Runtime markers: client=staging, server=staging');
 console.log('External connectors: OFF');
-console.log('Core status staging executor: OFF');
+console.log(`Core status staging executor: ${coreStatusExecutorEnabled ? 'ON (explicit staging-only activation)' : 'OFF'}`);
 console.log('VAPID: Firebase FCM public key plus a distinct explicit native Web Push server key pair are present');
