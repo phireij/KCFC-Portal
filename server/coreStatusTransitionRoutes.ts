@@ -142,7 +142,13 @@ export function registerCoreStatusTransitionRoutes(
       const message = error instanceof Error ? error.message : 'Core Member status change failed.';
       const stale = /stale|changed after/i.test(message);
       console.error('[CORE STATUS TRANSITION ERROR]', error);
-      res.status(stale ? 409 : 500).json({ error: message });
+      if (stale) {
+        res.status(409).json({ error: 'This member changed after the status review. Refresh the member and review the transition again.' });
+        return;
+      }
+      // Keep provider/Auth/Firestore diagnostics in server logs only. The browser
+      // receives a stable generic error so internal runtime details cannot leak.
+      res.status(500).json({ error: 'Core Member status change failed.' });
     }
   });
 }
