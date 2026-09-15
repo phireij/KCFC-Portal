@@ -3,11 +3,17 @@ import fs from 'node:fs';
 
 const read = (path: string) => fs.readFileSync(path, 'utf8');
 
+const appShell = read('src/App.tsx');
+const navbar = read('src/components/layout/Navbar.tsx');
 const admin = read('src/pages/Admin.tsx');
 const approvals = read('src/components/admin/MemberApprovalQueue.tsx');
 const roles = read('src/components/admin/MemberRoleEditor.tsx');
 const core = read('src/components/admin/CoreStatusPlanner.tsx');
 const inquiries = read('src/components/admin/LeadershipInquiries.tsx');
+
+assert.match(admin, /const adminRoles = \['admin', 'president'\]/, 'Leadership workspace must remain Admin/President-only.');
+assert.match(appShell, /<Route path="\/admin"[^\n]*\['admin', 'president'\]/, 'The /admin route must remain Admin/President-only.');
+assert.match(navbar, /\['admin', 'president'\]\.includes\(role\)/, 'Leadership navigation must remain Admin/President-only.');
 
 assert.match(admin, /role="tablist"/);
 assert.match(admin, /role="tab"/);
@@ -42,4 +48,4 @@ assert.match(approvals, /without recreating the Firebase account, changing the U
 
 assert.doesNotMatch(admin, /onClick=.*delete/i, 'Routine Leadership shell must not expose inline deletion actions');
 
-console.log('Leadership roving tabs, keyboard navigation, touch targets and safety accessibility guards verified.');
+console.log('Leadership route boundary, roving tabs, keyboard navigation, touch targets and safety accessibility guards verified.');
