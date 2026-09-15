@@ -2,6 +2,7 @@ import type { Express, Request } from 'express';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import { toMemberDirectoryProfile } from '../src/lib/memberPublicProjection';
+import { registerCoreStatusTransitionRoutes } from './coreStatusTransitionRoutes';
 
 type MemberDirectorySyncDependencies = {
   auth: Auth;
@@ -67,6 +68,15 @@ export function registerMemberDirectorySyncRoutes(
   app: Express,
   { auth, db }: MemberDirectorySyncDependencies,
 ) {
+  // Core-status mutation remains staging-only and disabled unless the dedicated
+  // server-side feature gate is explicitly enabled for the isolated staging runtime.
+  registerCoreStatusTransitionRoutes(app, {
+    auth,
+    db,
+    runtimeEnvironment: String(process.env.KCFC_RUNTIME_ENV || 'production').trim().toLowerCase(),
+    executorEnabled: String(process.env.KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED || 'false').trim().toLowerCase() === 'true',
+  });
+
   app.post('/api/member-directory/sync-self', async (req, res) => {
     const token = bearerToken(req);
     if (!token) {
