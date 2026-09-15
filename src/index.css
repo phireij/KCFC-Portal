@@ -181,6 +181,39 @@ a {
   color: var(--kcfc-slate);
 }
 
+@layer components {
+  .kcfc-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 3rem;
+    border: 1px solid var(--kcfc-border);
+    border-radius: 1rem;
+    background: #ffffff;
+    padding-block: 0.75rem;
+    padding-inline: 1rem;
+    color: var(--kcfc-ink);
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  }
+
+  .kcfc-input::placeholder {
+    color: #94a3b8;
+  }
+
+  .kcfc-input:focus {
+    border-color: var(--kcfc-royal);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  }
+
+  .dark .kcfc-input {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: #ffffff;
+  }
+}
+
 /* Preserve compatibility for legacy pixel utility classes while keeping them readable. */
 .text-\[8px\] {
   font-size: 0.6875rem !important;
