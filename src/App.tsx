@@ -644,7 +644,7 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC] p-4 text-center">
         <div className="max-w-md bg-white p-12 rounded-[32px] shadow-xl space-y-6">
           <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-.2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           </div>
           <h1 className="text-2xl font-serif">Verify Your Email</h1>
           <p className="text-gray-500 text-sm leading-relaxed">
@@ -749,7 +749,7 @@ export default function App() {
               <Route path="/polls" element={isAuthReady ? <Polls /> : <Navigate to="/login" />} />
               <Route path="/duties" element={isAuthReady ? <Duties /> : <Navigate to="/login" />} />
               <Route path="/resources" element={isAuthReady ? <Resources /> : <Navigate to="/login" />} />
-              <Route path="/admin" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r))) ? <Admin /> : <Navigate to="/" />} />
+              <Route path="/admin" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president'].includes(r))) ? <Admin /> : <Navigate to="/" />} />
               <Route path="/members" element={isAuthReady ? <Members /> : <Navigate to="/login" />} />
               <Route path="/announcements" element={isAuthReady ? <Announcements /> : <Navigate to="/login" />} />
               <Route path="/accounting" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'treasurer', 'vice_president', 'auditor'].includes(r))) ? <Accounting /> : <Navigate to="/" />} />
