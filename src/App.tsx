@@ -752,7 +752,7 @@ export default function App() {
               <Route path="/admin" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(r))) ? <Admin /> : <Navigate to="/" />} />
               <Route path="/members" element={isAuthReady ? <Members /> : <Navigate to="/login" />} />
               <Route path="/announcements" element={isAuthReady ? <Announcements /> : <Navigate to="/login" />} />
-              <Route path="/accounting" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'treasurer'].includes(r))) ? <Accounting /> : <Navigate to="/" />} />
+              <Route path="/accounting" element={isAuthReady && ((profile?.roles || []).some(r => ['admin', 'president', 'treasurer', 'vice_president', 'auditor'].includes(r))) ? <Accounting /> : <Navigate to="/" />} />
               <Route path="/profile" element={isAuthReady ? <Profile /> : <Navigate to="/login" />} />
               <Route path="/inbox" element={isAuthReady ? <Inbox /> : <Navigate to="/login" />} />
               {/* Fallback for deep-linking unmatched routes or /index.html pathing */}
