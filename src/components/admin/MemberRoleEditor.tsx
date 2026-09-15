@@ -2,11 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { Check, Search, ShieldCheck, UsersRound } from 'lucide-react';
 import { db } from '../../lib/firebase';
+import { normalizeCoreStatusUpdatedAt } from '../../lib/coreStatusMutationPlan';
+import { transitionManagedMemberCoreStatus } from '../../lib/coreStatusTransitionClient';
 import { syncManagedMemberDirectoryProfile } from '../../lib/memberDirectorySyncClient';
 import {
   CHORE_MINISTRIES,
   LITURGICAL_MINISTRIES,
   normalizeMemberRoles,
+  planCoreStatusTransition,
   validateMemberGovernance,
 } from '../../lib/memberGovernance';
 import type { MinistryType, UserProfile, UserRole } from '../../types';
@@ -56,9 +59,13 @@ export default function MemberRoleEditor() {
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [draftRoles, setDraftRoles] = useState<UserRole[]>(['member']);
   const [draftMinistries, setDraftMinistries] = useState<MinistryType[]>([]);
+  const [statusTarget, setStatusTarget] = useState<boolean | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const statusWriteAvailable = String(import.meta.env.VITE_KCFC_RUNTIME_ENV || '').trim().toLowerCase() === 'staging';
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -95,12 +102,19 @@ export default function MemberRoleEditor() {
     if (!selected) {
       setDraftRoles(['member']);
       setDraftMinistries([]);
+      setStatusTarget(null);
       return;
     }
     setDraftRoles(normalizeMemberRoles((selected.roles || ['member']).filter((role) => role !== 'admin')));
     setDraftMinistries((selected.ministries || []).filter((ministry) => MINISTRY_OPTIONS.includes(ministry)));
+    setStatusTarget(null);
     setFeedback(null);
   }, [selectedUid, selected?.updatedAt]);
+
+  const statusPlan = useMemo(() => {
+    if (!selected || statusTarget === null || statusTarget === Boolean(selected.isCoreMember)) return null;
+    return planCoreStatusTransition(selected, statusTarget);
+  }, [selected, statusTarget]);
 
   const issues = useMemo(() => {
     if (!selected) return [];
@@ -134,17 +148,59 @@ export default function MemberRoleEditor() {
   }, [changeSummary]);
 
   const toggleRole = (role: UserRole) => {
+    if (statusPlan) return;
     setDraftRoles((current) => current.includes(role) ? current.filter((item) => item !== role) : [...current, role]);
     setFeedback(null);
   };
 
   const toggleMinistry = (ministry: MinistryType) => {
+    if (statusPlan) return;
     setDraftMinistries((current) => current.includes(ministry) ? current.filter((item) => item !== ministry) : [...current, ministry]);
     setFeedback(null);
   };
 
+  const changeCoreStatus = async () => {
+    if (!selected || !statusPlan || statusSaving) return;
+    const name = memberLabel(selected);
+    if (hasChanges) {
+      setFeedback('Save or discard the pending role/ministry changes before changing membership status.');
+      return;
+    }
+
+    const cleanup: string[] = [];
+    if (statusPlan.rolesToRemove.length > 0) {
+      cleanup.push(`remove roles: ${statusPlan.rolesToRemove.map((role) => ROLE_LABELS[role] || role).join(', ')}`);
+    }
+    if (statusPlan.ministriesToRemove.length > 0) {
+      cleanup.push(`remove chore assignments: ${statusPlan.ministriesToRemove.map((ministry) => MINISTRY_LABELS[ministry] || ministry).join(', ')}`);
+    }
+    const cleanupText = cleanup.length > 0 ? `\n\nThis transition will ${cleanup.join('; ')}.` : '';
+    const confirmed = window.confirm(
+      `Change ${name} from ${statusPlan.fromCore ? 'Core Member' : 'Regular Member'} to ${statusPlan.toCore ? 'Core Member' : 'Regular Member'}?${cleanupText}\n\nThe Firebase account and UID will not be recreated.`,
+    );
+    if (!confirmed) return;
+
+    setStatusSaving(true);
+    setFeedback(null);
+    try {
+      await transitionManagedMemberCoreStatus({
+        targetUserId: selected.uid,
+        toCore: statusPlan.toCore,
+        expectedUpdatedAt: normalizeCoreStatusUpdatedAt(selected.updatedAt),
+        reason: `Governed member editing: ${statusPlan.fromCore ? 'Core Member' : 'Regular Member'} to ${statusPlan.toCore ? 'Core Member' : 'Regular Member'}`,
+      });
+      setStatusTarget(null);
+      setFeedback(`${name} is now a ${statusPlan.toCore ? 'Core Member' : 'Regular Member'}. The existing account identity was preserved and the transition was audited.`);
+    } catch (error) {
+      console.error('Core Member status change failed', error);
+      setFeedback(error instanceof Error ? error.message : `Could not change ${name}'s membership status.`);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   const save = async () => {
-    if (!selected || !hasChanges || issues.length > 0) return;
+    if (!selected || !hasChanges || issues.length > 0 || statusPlan) return;
     const name = memberLabel(selected);
     const confirmed = window.confirm(`Apply the reviewed role and ministry changes for ${name}? This updates the existing member profile only; the Firebase UID and account are not recreated.`);
     if (!confirmed) return;
@@ -183,7 +239,7 @@ export default function MemberRoleEditor() {
           <div>
             <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#2563EB]">Governed member editing</span>
             <h2 id="member-role-editor-title" className="mt-1 text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Roles & ministries</h2>
-            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">Edit verified members through the centralized KCFC role rules. Destructive account actions and Core-member downgrade cleanup remain outside this workspace.</p>
+            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">Edit verified members through the centralized KCFC governance rules. Membership-status changes are reviewed and audited while the existing Firebase account identity is preserved.</p>
           </div>
         </div>
       </div>
@@ -246,6 +302,71 @@ export default function MemberRoleEditor() {
               </div>
 
               <fieldset>
+                <legend className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-slate-400">Membership status</legend>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                  Regular ↔ Core changes use a separate reviewed transaction. A Core → Regular downgrade automatically removes Core-only roles and chore assignments while preserving valid liturgical ministries.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {[false, true].map((toCore) => {
+                    const active = (statusTarget ?? Boolean(selected.isCoreMember)) === toCore;
+                    return (
+                      <button
+                        key={toCore ? 'core' : 'regular'}
+                        type="button"
+                        aria-pressed={active}
+                        disabled={!statusWriteAvailable || statusSaving}
+                        onClick={() => {
+                          setStatusTarget(toCore === Boolean(selected.isCoreMember) ? null : toCore);
+                          setFeedback(null);
+                        }}
+                        className={cn(
+                          'min-h-12 rounded-2xl border px-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-45',
+                          active
+                            ? 'border-[#2563EB] bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-100'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300',
+                        )}
+                      >
+                        <span className="block text-[11px] font-extrabold">{toCore ? 'Core Member' : 'Regular Member'}</span>
+                        <span className="mt-0.5 block text-[9px] uppercase tracking-wide opacity-55">{toCore ? 'Core governance eligibility' : 'Liturgical-service eligibility'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {!statusWriteAvailable && (
+                  <p className="mt-2 text-[10px] leading-4 text-amber-700 dark:text-amber-300">Core-status writes remain production-gated. They are available only in the isolated staging runtime until production approval is granted.</p>
+                )}
+
+                {statusPlan && (
+                  <section className="mt-3 rounded-2xl border border-blue-200 bg-[#F7FAFF] p-4 dark:border-blue-400/20 dark:bg-blue-500/[0.06]" aria-labelledby="core-status-preview-title">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-[#2563EB]">Membership status review</p>
+                    <h3 id="core-status-preview-title" className="mt-1 text-[13px] font-extrabold text-[#172033] dark:text-white">
+                      {statusPlan.fromCore ? 'Core Member' : 'Regular Member'} → {statusPlan.toCore ? 'Core Member' : 'Regular Member'}
+                    </h3>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <ChangeGroup title="Roles removed" tone="remove" items={statusPlan.rolesToRemove.map((role) => ROLE_LABELS[role] || role)} />
+                      <ChangeGroup title="Chore assignments removed" tone="remove" items={statusPlan.ministriesToRemove.map((ministry) => MINISTRY_LABELS[ministry] || ministry)} />
+                    </div>
+                    <ul className="mt-3 space-y-1 text-[10px] leading-5 text-slate-600 dark:text-slate-300">
+                      {statusPlan.warnings.map((warning) => <li key={warning}>• {warning}</li>)}
+                    </ul>
+                    {hasChanges && (
+                      <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Save or discard pending role/ministry edits before applying the membership-status transition.</p>
+                    )}
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={changeCoreStatus}
+                        disabled={statusSaving || hasChanges}
+                        className="min-h-11 rounded-xl bg-[#123B66] px-5 text-[11px] font-extrabold text-white transition hover:bg-[#0f3156] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {statusSaving ? 'Changing status…' : `Apply ${statusPlan.toCore ? 'Core Member' : 'Regular Member'}`}
+                      </button>
+                    </div>
+                  </section>
+                )}
+              </fieldset>
+
+              <fieldset>
                 <legend className="text-[10px] font-extrabold uppercase tracking-[0.09em] text-slate-400">Organizational role</legend>
                 <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Member is permanent. Officer and committee roles require Core Member status; select at most one additional role unless the current Core-member Kitchen/Cleaning dual-role rule applies.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -257,9 +378,10 @@ export default function MemberRoleEditor() {
                         key={role}
                         type="button"
                         aria-pressed={active}
+                        disabled={Boolean(statusPlan) || statusSaving}
                         onClick={() => toggleRole(role)}
                         className={cn(
-                          'min-h-11 rounded-xl border px-3 text-[11px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                          'min-h-11 rounded-xl border px-3 text-[11px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-45',
                           active
                             ? 'border-[#2563EB] bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-100'
                             : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300',
@@ -285,9 +407,10 @@ export default function MemberRoleEditor() {
                         key={ministry}
                         type="button"
                         aria-pressed={active}
+                        disabled={Boolean(statusPlan) || statusSaving}
                         onClick={() => toggleMinistry(ministry)}
                         className={cn(
-                          'min-h-12 rounded-2xl border px-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                          'min-h-12 rounded-2xl border px-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-45',
                           active
                             ? 'border-[#2563EB] bg-[#EAF3FF] text-[#123B66] dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-100'
                             : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300',
@@ -339,7 +462,7 @@ export default function MemberRoleEditor() {
                 <button
                   type="button"
                   onClick={save}
-                  disabled={!hasChanges || issues.length > 0 || saving}
+                  disabled={!hasChanges || issues.length > 0 || saving || Boolean(statusPlan) || statusSaving}
                   className="min-h-11 rounded-xl bg-[#123B66] px-5 text-[11px] font-extrabold text-white transition hover:bg-[#0f3156] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {saving ? 'Saving…' : hasChanges ? 'Review & save' : 'No changes'}
