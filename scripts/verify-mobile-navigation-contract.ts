@@ -23,7 +23,7 @@ assert.match(source, /aria-label="Close"/, 'More sheet close button must remain 
 assert.match(source, /focus-visible:ring-2/, 'Navigation controls must retain visible keyboard focus.');
 assert.doesNotMatch(source, /overflow-x-auto/, 'Primary navigation must not regress to horizontal scrolling.');
 
-assert.match(source, /\['admin', 'president', 'treasurer'\]/, 'Accounting navigation must remain role-gated.');
+assert.match(source, /\['admin', 'president', 'treasurer', 'vice_president', 'auditor'\]/, 'Accounting navigation must retain the treasury reader-role matrix.');
 assert.match(source, /\['admin', 'president', 'vice_president', 'secretary', 'auditor'\]/, 'Leadership navigation must remain role-gated.');
 
 console.log('Mobile navigation order, touch targets, safe areas, dialog semantics and role gates verified.');
