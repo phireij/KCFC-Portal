@@ -49,7 +49,7 @@ export default function Navbar() {
 
   const userRoles = profile?.roles || [];
   const isAdmin = userRoles.some((role) =>
-    ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(role),
+    ['admin', 'president'].includes(role),
   );
   const isAccountingAuthorized = userRoles.some((role) =>
     ['admin', 'president', 'treasurer', 'vice_president', 'auditor'].includes(role),
