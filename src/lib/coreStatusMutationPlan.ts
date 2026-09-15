@@ -32,7 +32,7 @@ export type CoreStatusMutationPlan = {
   };
 };
 
-function normalizeUpdatedAt(value: unknown): string | null {
+export function normalizeCoreStatusUpdatedAt(value: unknown): string | null {
   if (!value) return null;
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString();
@@ -85,7 +85,7 @@ export function buildCoreStatusMutationPlan(input: {
     removedRoles: transition.rolesToRemove,
     removedMinistries: transition.ministriesToRemove,
     precondition: {
-      expectedUpdatedAt: normalizeUpdatedAt(input.member.updatedAt),
+      expectedUpdatedAt: normalizeCoreStatusUpdatedAt(input.member.updatedAt),
     },
     audit: {
       action: 'core_status_change',
@@ -107,5 +107,5 @@ export function coreStatusPlanStillMatches(member: UserProfile, plan: CoreStatus
   return current.isCoreMember === expected.isCoreMember
     && current.roles.slice().sort().join('|') === expected.roles.slice().sort().join('|')
     && current.ministries.slice().sort().join('|') === expected.ministries.slice().sort().join('|')
-    && normalizeUpdatedAt(member.updatedAt) === plan.precondition.expectedUpdatedAt;
+    && normalizeCoreStatusUpdatedAt(member.updatedAt) === plan.precondition.expectedUpdatedAt;
 }
