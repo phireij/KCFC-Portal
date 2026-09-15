@@ -181,7 +181,7 @@ service cloud.firestore {
 
       allow get: if isOwner(userId) || canAdministerMembers();
       allow list: if canAdministerMembers();
-      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && hasValidGovernanceMemberships(incoming()) && 
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && hasValidGovernanceMemberships(incoming()) &&
                     (isBootstrapAdmin() || (
                       incoming().roles.hasAll(['member']) && 
                       incoming().roles.size() == 1 && 
