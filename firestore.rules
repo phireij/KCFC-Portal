@@ -159,9 +159,29 @@ service cloud.firestore {
                (!('webPushSubscriptions' in data) || data.webPushSubscriptions is list);
       }
 
+      function hasValidGovernanceMemberships(data) {
+        let ministries = data.get('ministries', []);
+        let hasLiturgicalMembership = ministries.hasAny([
+          'choir_a', 'choir_b', 'lector_commentator', 'usher', 'altar_server'
+        ]);
+        let hasChoreMembership = ministries.hasAny(['kitchen', 'cleaning']);
+        let hasOfficerOrCommitteeRole = data.roles.hasAny([
+          'president', 'vice_president', 'secretary', 'treasurer', 'auditor',
+          'pro', 'spiritual_director', 'leader', 'choir_a_leader',
+          'choir_b_leader', 'lector_commentator_leader', 'usher_leader',
+          'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader',
+          'cleaning_leader', 'cleaning_sub_leader'
+        ]);
+
+        return !(hasLiturgicalMembership && hasChoreMembership) &&
+               (data.get('isCoreMember', false) == true ||
+                (!hasChoreMembership && !hasOfficerOrCommitteeRole &&
+                 data.roles.hasOnly(['member'])));
+      }
+
       allow get: if isOwner(userId) || canAdministerMembers();
       allow list: if canAdministerMembers();
-      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && hasValidGovernanceMemberships(incoming()) && 
                     (isBootstrapAdmin() || (
                       incoming().roles.hasAll(['member']) && 
                       incoming().roles.size() == 1 && 
@@ -174,7 +194,7 @@ service cloud.firestore {
         )) ||
         (canAdministerMembers() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens', 'webPushSubscriptions'])) ||
         (hasRole('secretary') && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'updatedAt', 'ministries', 'lcRoles']))
-      ) && isValidUser(incoming());
+      ) && isValidUser(incoming()) && hasValidGovernanceMemberships(incoming());
       allow delete: if canAdministerMembers();
     }
 
