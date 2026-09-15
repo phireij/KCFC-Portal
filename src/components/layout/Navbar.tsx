@@ -52,7 +52,7 @@ export default function Navbar() {
     ['admin', 'president', 'vice_president', 'secretary', 'auditor'].includes(role),
   );
   const isAccountingAuthorized = userRoles.some((role) =>
-    ['admin', 'president', 'treasurer'].includes(role),
+    ['admin', 'president', 'treasurer', 'vice_president', 'auditor'].includes(role),
   );
 
   useEffect(() => {
