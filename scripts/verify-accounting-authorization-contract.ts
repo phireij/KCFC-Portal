@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 
+const appShell = fs.readFileSync('src/App.tsx', 'utf8');
+const navbar = fs.readFileSync('src/components/layout/Navbar.tsx', 'utf8');
 const accountingShell = fs.readFileSync('src/pages/Accounting.tsx', 'utf8');
 const legacyAccounting = fs.readFileSync('src/pages/LegacyAccounting.tsx', 'utf8');
 const rules = fs.readFileSync('firestore.rules', 'utf8');
@@ -10,15 +12,27 @@ const requireMarker = (source: string, marker: string, label: string) => {
   }
 };
 
+const readerRoleList = "['admin', 'president', 'treasurer', 'vice_president', 'auditor']";
+
 // Existing UI intent: VP and Auditor may view; Treasurer edits; Auditor approves.
 requireMarker(
+  appShell,
+  `<Route path="/accounting" element={isAuthReady && ((profile?.roles || []).some(r => ${readerRoleList}.includes(r))) ? <Accounting /> : <Navigate to="/" />} />`,
+  'App accounting route read-access role contract',
+);
+requireMarker(
+  navbar,
+  `${readerRoleList}.includes(role)`,
+  'Navbar accounting read-access role contract',
+);
+requireMarker(
   accountingShell,
-  "const accessRoles = ['admin', 'president', 'treasurer', 'vice_president', 'auditor'];",
+  `const accessRoles = ${readerRoleList};`,
   'Accounting shell read-access role contract',
 );
 requireMarker(
   legacyAccounting,
-  "['admin', 'president', 'treasurer', 'vice_president', 'auditor'].includes(r)",
+  `${readerRoleList}.includes(r)`,
   'Legacy Accounting read-access role contract',
 );
 requireMarker(
