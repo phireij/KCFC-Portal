@@ -12,7 +12,7 @@ This record captures the current isolated-staging checkpoint for the governed Re
 - Production `main`: `653cc7229600fd7baff17a21a21f12d267b66d2b` — unchanged
 - Draft PR #1: OPEN / DRAFT / NOT MERGED at the checkpoint
 - Staging build: `build-2026-09-15-006` — current for the exercised application code
-- Core-status staging executor: restored to `false` after controlled staging work
+- Core-status staging executor provider state was previously restored to `false`; on 2026-09-16 the user explicitly authorized enabling it in isolated staging for the active acceptance/testing period
 - `/api/health`: healthy at the accepted staging checkpoint
 
 Repository documentation/test-hardening commits made after this evidence record may advance the branch head without changing the application bundle represented by `build-2026-09-15-006`. Any future staging deployment must use the then-current exact head and repeat only the checks materially affected by that deployment.
@@ -33,10 +33,22 @@ At this checkpoint:
 - `leadership_audit` contains exactly **two** existing Core-status transition records from the controlled staging acceptance work;
 - an attempted additional Regular → Core upgrade did **not** commit;
 - the audit count remained exactly two after that non-committing attempt;
-- no additional Core-status audit record should be inferred from the attempted upgrade;
-- the executor has been returned to `false` and is not to remain enabled between controlled mutation tests.
+- no additional Core-status audit record should be inferred from the attempted upgrade.
 
 This is evidence of the observed staging state, not a claim that all rejection/concurrency cases are complete.
+
+## User authorization update — 2026-09-16
+
+The user explicitly clarified that the Core-status staging executor should not be kept disabled throughout the testing period and instructed that it be enabled so the workflow can be tested properly.
+
+For the active isolated-staging acceptance period, this authorizes:
+
+- `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=true` on the isolated staging backend;
+- keeping that flag enabled while the approved Core-status acceptance tests are carried out;
+- use of the already-approved staging-only test identity/data for those tests;
+- no production mutation, no real-member mutation merely for evidence, no live connectors, and no secret exposure.
+
+The flag should return to `false` when the Core-status acceptance/testing period is complete or immediately if isolation/safety checks fail. This supersedes the earlier evidence wording that required the executor to be disabled between each controlled staging test.
 
 ## Automated contract hardening after the empirical checkpoint
 
@@ -58,10 +70,10 @@ The following are accepted for this checkpoint and should not be repeated merely
 - healthy `/api/health` result;
 - isolated staging runtime already established by the preceding staging acceptance;
 - Governed Member Editing / Membership Status workflow present in the exercised build;
-- executor returned to disabled state after controlled mutation work;
 - `Staging QA` restored to Regular Member with no ministries;
 - exactly two existing Core-status audit records retained;
-- the attempted additional upgrade did not commit.
+- the attempted additional upgrade did not commit;
+- executor activation for the current staging acceptance period is now explicitly authorized, but the provider-side flag must still be changed in the staging environment before empirical write tests can proceed.
 
 ## Remaining empirical work
 
@@ -69,7 +81,7 @@ The following are accepted for this checkpoint and should not be repeated merely
 
 Still required. The test must prove that a reviewed transition based on an old member revision is rejected without changing `users/{uid}`, `member_directory/{uid}`, or appending a `leadership_audit` event.
 
-Keep `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=false` before and after the tightly controlled test. Enable it only for the minimum staging-only execution window after exact staging identity is re-confirmed.
+The executor may remain enabled for this active isolated-staging acceptance period after exact staging identity is re-confirmed.
 
 ### 2. Core-only role + Cleaning downgrade cleanup
 
@@ -99,9 +111,11 @@ Record transport acceptance, OS presentation, durable Inbox persistence, and tap
 
 Still deferred until approved staging data exists: a staging chore poll plus an eligible Core Cleaning member with toilet-cleaning authorization. Do not create or alter a real member merely to unblock this test.
 
-## Executor operating rule
+## Executor operating rule during the active testing period
 
-`KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED` stays **false by default and between tests**. A future temporary `true` setting is permitted only for a separately authorized, tightly controlled, isolated-staging mutation test. Re-confirm staging project/runtime identity immediately before enabling it and restore it to `false` immediately after evidence is captured.
+`KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=true` is authorized for the current isolated-staging acceptance period.
+
+Before empirical mutation testing, re-confirm staging project/backend/runtime identity and the expected pre-test target/audit state. Keep production and external connectors unchanged. Return the flag to `false` once Core-status acceptance is complete or immediately if any stop condition occurs.
 
 ## Stop conditions
 
