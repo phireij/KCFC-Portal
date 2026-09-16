@@ -35,7 +35,7 @@ export async function preloadVapidKeyFromServer(): Promise<string | null> {
       if (data && data.publicKey) {
         const cleanedKey = cleanVapidKey(data.publicKey);
         cachedVapidKeyFromServer = cleanedKey;
-        console.log("WebPush: Preloaded VAPID public key from server successfully:", cleanedKey);
+        console.log("WebPush: Preloaded VAPID public key from server successfully.");
         return cleanedKey;
       }
     }
@@ -333,13 +333,23 @@ export async function registerDeviceToken(userId: string, requestPermission = fa
     }
 
     if (token) {
-      // Cleanly append device token to current user's profile in Firestore using arrayUnion
-      const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
-        fcmTokens: arrayUnion(token),
-        updatedAt: new Date().toISOString()
+      const currentUser = auth.currentUser;
+      if (!currentUser || currentUser.uid !== userId) {
+        throw new Error("Authenticated user does not match the device-registration target.");
+      }
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch("/api/users/register-fcm-token", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
       });
-      console.log("FCM: Device push token registered successfully:", token);
+      if (!response.ok) {
+        throw new Error("Failed to register FCM device token with the KCFC server.");
+      }
+      console.log("FCM: Device push token registered successfully.");
       return token;
     } else {
       throw new Error("No token returned by the FCM registration server.");
@@ -423,7 +433,7 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
       }
     }
 
-    console.log("WebPush: Obtained PushSubscription successfully:", subscription);
+    console.log("WebPush: Obtained PushSubscription successfully.");
     const subscriptionJson = subscription.toJSON();
 
     // 4. Send subscription to our backend register endpoint
@@ -447,19 +457,7 @@ export async function registerStandardWebPush(serviceWorkerRegistration: Service
     });
 
     if (!regResponse.ok) {
-      const errText = await regResponse.text();
-      const isPermissionDenied = regResponse.status === 403 || /PERMISSION_DENIED|permission/i.test(errText);
-      if (isPermissionDenied) {
-        console.warn("WebPush: Backend registration lacked permission. Falling back to direct Firestore self-update.", errText);
-        const userRef = doc(db, "users", userId);
-        await updateDoc(userRef, {
-          webPushSubscriptions: arrayUnion(subscriptionJson),
-          updatedAt: new Date().toISOString()
-        });
-        console.log("WebPush: Successfully registered PushSubscription directly in Firestore.");
-        return true;
-      }
-      throw new Error(`Backend registration failed: ${errText}`);
+      throw new Error(`Backend Web Push registration failed with status ${regResponse.status}.`);
     }
 
     console.log("WebPush: Successfully registered PushSubscription on backend.");

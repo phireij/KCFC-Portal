@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Poll, PollResponse, COMMITTEE_ROLES, ROLE_COLORS, UserProfile } from '../types';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
+import { listPrivilegedPollEmailRecipients } from '../lib/privilegedMemberQueries';
 import { doc, updateDoc, collection, getDocs, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { format } from 'date-fns';
@@ -57,7 +59,7 @@ interface CommitteeAssignmentsProps {
   poll: Poll;
   pollResponses: PollResponse[];
   profile: UserProfile | null;
-  users?: UserProfile[];
+  users?: MemberDirectoryProfile[];
 }
 
 export function CommitteeAssignments({ poll, pollResponses, profile, users = [] }: CommitteeAssignmentsProps) {
@@ -292,10 +294,6 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
     }
   });
 
-  // Exclude Admin from responders
-  const adminProfiles = users.filter(u => u.email === 'kcfc.jp@gmail.com').map(u => u.uid);
-  adminProfiles.forEach(adminId => respondersMap.delete(adminId));
-
   const responders = Array.from(respondersMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   const handleAssignRole = async (date: string, userId: string, role: string) => {
@@ -401,7 +399,6 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
         // Ask the admin/president first before sending the notifications
         const shouldSend = confirm("All liturgical assignments have been completed! Would you like to send email notifications to all assigned members now?");
         if (shouldSend) {
-          const usersSnap = await getDocs(collection(db, 'users'));
           const batch = writeBatch(db);
           
           const assignedUserIds = new Set<string>();
@@ -409,14 +406,13 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
             Object.keys(dateAssignments).forEach(uid => assignedUserIds.add(uid));
           });
 
-          const usersToEmail: UserProfile[] = [];
+          const usersToEmail = users.filter(member => assignedUserIds.has(member.uid));
 
-          usersSnap.docs.forEach(userDoc => {
-            if (assignedUserIds.has(userDoc.id)) {
-              usersToEmail.push({ uid: userDoc.id, ...userDoc.data() } as UserProfile);
+          usersToEmail.forEach(member => {
+            if (assignedUserIds.has(member.uid)) {
               const notificationRef = doc(collection(db, 'notifications'));
               batch.set(notificationRef, {
-                userId: userDoc.id,
+                userId: member.uid,
                 title: `Assignment: ${poll.title}`,
                 message: `You have new assignments for the upcoming masses. Please check the assignments matrix.`,
                 type: 'system',
@@ -430,6 +426,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
 
           const clientId = (import.meta as any).env.VITE_CLIENT_ID || (window as any).VITE_CLIENT_ID;
           if (clientId && usersToEmail.length > 0) {
+            const privilegedRecipients = await listPrivilegedPollEmailRecipients();
             const subject = `[KCFC] New Assignments: ${poll.title}`;
             const baseUrl = window.location.origin;
 
@@ -443,7 +440,8 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
 
             let successCount = 0;
             for (const member of usersToEmail) {
-              if (member.email) {
+              const emailRecipient = privilegedRecipients.find(recipient => recipient.uid === member.uid);
+              if (emailRecipient?.email) {
                 try {
                   // Construct personalized assignments list for this specific member
                   const memberAssignments: { date: string, role: string }[] = [];
@@ -532,11 +530,11 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
                     </div>
                   `;
 
-                  const formattedTo = member.displayName ? `"${member.displayName}" <${member.email}>` : member.email;
+                  const formattedTo = member.displayName ? `"${member.displayName}" <${emailRecipient.email}>` : emailRecipient.email;
                   await sendGmail(formattedTo, subject, body);
                   successCount++;
                 } catch (err) {
-                  console.error(`Failed to send email to ${member.email}`, err);
+                  console.error(`Failed to send email to ${emailRecipient.email}`, err);
                 }
               }
             }
@@ -630,7 +628,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
 
   const handleBroadcastEmails = async () => {
     // 1. Determine recipients
-    let recipientUsers: UserProfile[] = [];
+    let recipientUsers: MemberDirectoryProfile[] = [];
     
     // Get full profiles for our responders
     const responderProfiles = users.filter(u => responders.some(r => r.id === u.uid));
@@ -670,6 +668,7 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
     let successCount = 0;
     try {
       const baseUrl = window.location.origin;
+      const privilegedRecipients = await listPrivilegedPollEmailRecipients();
 
       // We should also write system notifications in Firestore
       const batch = writeBatch(db);
@@ -698,7 +697,8 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
       const summaryHtml = broadcastType === 'summary' ? getLiturgicalSummaryHtml() : '';
 
       for (const member of recipientUsers) {
-        if (member.email) {
+        const emailRecipient = privilegedRecipients.find(recipient => recipient.uid === member.uid);
+        if (emailRecipient?.email) {
           try {
             let assignmentsHtml = '';
             
@@ -792,11 +792,11 @@ export function CommitteeAssignments({ poll, pollResponses, profile, users = [] 
               </div>
             `;
 
-            const formattedTo = member.displayName ? `"${member.displayName}" <${member.email}>` : member.email;
+            const formattedTo = member.displayName ? `"${member.displayName}" <${emailRecipient.email}>` : emailRecipient.email;
             await sendGmail(formattedTo, customSubject, body);
             successCount++;
           } catch (err) {
-            console.error(`Failed to send email to ${member.email}`, err);
+            console.error(`Failed to send email to ${emailRecipient.email}`, err);
           }
         }
       }

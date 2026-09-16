@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Poll, PollResponse, UserProfile, DutyAssignment } from '../types';
-import { balanceChoreSlots, ChoreAttendee, ChoreDutyTemplate, AutoChoreAssignment } from '../services/dutyService';
+import type { MemberDirectoryProfile } from '../lib/memberPublicProjection';
+import { listPrivilegedPollEmailRecipients } from '../lib/privilegedMemberQueries';
+import { balanceChoreSlots, ChoreAttendee, ChoreDutyTemplate, AutoChoreAssignment, isEligibleForChoreAssignment } from '../services/dutyService';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, Edit2, Check, Sparkles, Send, Mail, User, AlertTriangle, BarChart3, RotateCw, Calendar, CheckSquare, XSquare, HelpCircle, Save, Sliders, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
@@ -15,7 +17,7 @@ interface ChoreCommitteeDashboardProps {
   poll: Poll;
   pollResponses: PollResponse[];
   profile: UserProfile | null;
-  users: UserProfile[];
+  users: MemberDirectoryProfile[];
 }
 
 const DEFAULT_TEMPLATES: Omit<ChoreDutyTemplate, 'id'>[] = [
@@ -175,17 +177,20 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
     }
   }, [poll.id, poll.massDate]);
 
-  // List of YES responders to this poll, with toiletOk checked from their verified profile ministries
+  // Only Core committee members can be selected for chores. Toilet slots also
+  // require the explicit Cleaning + Toilet OK authorization on the profile.
   const yesResponders = pollResponses.filter(r => r.attendance === 'yes').map(r => {
     const userProfile = users.find(u => u.uid === r.userId);
     const isCleaning = userProfile?.ministries?.includes('cleaning') || false;
     const isKitchen = userProfile?.ministries?.includes('kitchen') || false;
-    const isToiletOk = isCleaning && userProfile?.ministries?.includes('cleaning_toilet_ok');
+    const isCoreMember = userProfile?.isCoreMember === true;
+    const isToiletOk = isCoreMember && isCleaning && userProfile?.ministries?.includes('cleaning_toilet_ok');
     return {
       ...r,
       toiletOk: !!isToiletOk,
       isCleaning,
-      isKitchen
+      isKitchen,
+      isCoreMember,
     };
   });
 
@@ -201,7 +206,8 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
       userDisplayName: r.userDisplayName,
       toiletOk: !!r.toiletOk,
       isKitchen: !!r.isKitchen,
-      isCleaning: !!r.isCleaning
+      isCleaning: !!r.isCleaning,
+      isCoreMember: !!r.isCoreMember,
     }));
 
     const suggestedAndBalanced = balanceChoreSlots(attendees, historicalDuties, templates);
@@ -220,13 +226,17 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
     });
 
     setStagedAssignments(mapping);
-    setAlertStatus("Successfully calculated a resilient balanced schedule suggestion!");
+    const requiredSlots = templates.reduce((total, template) => total + Math.max(0, template.requiredPersons || 0), 0);
+    setAlertStatus(mapping.length === requiredSlots
+      ? 'Successfully calculated a governed balanced schedule suggestion!'
+      : `Created ${mapping.length} of ${requiredSlots} chore slots. Unfilled slots have no eligible Core committee member${templates.some((template) => template.restrictedToToiletOk) ? ' (toilet slots require Cleaning + Toilet OK authorization)' : ''}.`);
   };
 
   // Override / Change specific slot user
   const handleOverrideSlot = (slotId: string, newUserId: string) => {
     const matchingUser = yesResponders.find(u => u.userId === newUserId);
-    if (!matchingUser) return;
+    const slot = stagedAssignments.find((assignment) => assignment.id === slotId);
+    if (!matchingUser || !slot || !isEligibleForChoreAssignment(matchingUser, slot)) return;
 
     setStagedAssignments(prev => prev.map(slot => {
       if (slot.id === slotId) {
@@ -244,6 +254,15 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
   const handleApproveAssignments = async () => {
     if (stagedAssignments.length === 0) {
       alert("No staged assignments exist to approve.");
+      return;
+    }
+
+    const invalidSlot = stagedAssignments.find((slot) => {
+      const attendee = yesResponders.find((responder) => responder.userId === slot.userId);
+      return !attendee || !isEligibleForChoreAssignment(attendee, slot);
+    });
+    if (invalidSlot) {
+      setAlertStatus(`Cannot save ${invalidSlot.templateName}: select an eligible Core ${invalidSlot.group === 'cleaning' ? 'Cleaning' : 'Kitchen'} member${invalidSlot.restrictedToToiletOk ? ' authorized for toilet cleaning' : ''}.`);
       return;
     }
     
@@ -304,12 +323,14 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
 
       // Send Gmail alerting (HTML inline tables)
       try {
+        const privilegedRecipients = await listPrivilegedPollEmailRecipients();
         const resultsArray = Array.from(uniqueSelectedUsers).map(userId => {
           const userProfile = users.find(u => u.uid === userId);
           const tasks = stagedAssignments.filter(s => s.userId === userId).map(s => s.templateName);
           const recipientName = userProfile?.nickname?.trim() || userProfile?.displayName || 'Community Member';
+          const emailRecipient = privilegedRecipients.find(recipient => recipient.uid === userId);
           return {
-            email: userProfile?.email || '',
+            email: emailRecipient?.email || '',
             name: recipientName,
             tasks: tasks.join(', ')
           };
@@ -435,7 +456,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
     const assignedUserIds = Array.from(new Set(existingPollDuties.map(d => d.userId)));
     const assignedProfiles = users.filter(u => assignedUserIds.includes(u.uid));
 
-    let recipientUsers: UserProfile[] = [];
+    let recipientUsers: MemberDirectoryProfile[] = [];
     if (broadcastTarget === 'all') {
       recipientUsers = assignedProfiles;
     } else if (broadcastTarget === 'selected') {
@@ -461,6 +482,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
 
     try {
       const baseUrl = window.location.origin;
+      const privilegedRecipients = await listPrivilegedPollEmailRecipients();
       let successCount = 0;
 
       const batch = writeBatch(db);
@@ -481,7 +503,8 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
       const summaryTableHtml = broadcastType === 'summary' ? getChoreSummaryHtml() : '';
 
       for (const recipient of recipientUsers) {
-        if (!recipient.email) continue;
+        const emailRecipient = privilegedRecipients.find(candidate => candidate.uid === recipient.uid);
+        if (!emailRecipient?.email) continue;
 
         let contentHtml = '';
         const recipientName = recipient.nickname?.trim() || recipient.displayName || 'Committee Member';
@@ -523,10 +546,10 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
         `;
 
         try {
-          await sendGmail(recipient.email, customSubject, body);
+          await sendGmail(emailRecipient.email, customSubject, body);
           successCount++;
         } catch (mErr) {
-          console.warn(`Could not dispatch Gmail to ${recipient.email}:`, mErr);
+          console.warn(`Could not dispatch Gmail to ${emailRecipient.email}:`, mErr);
         }
       }
 
@@ -715,7 +738,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
                   <div className="space-y-3">
                     {stagedAssignments.filter(s => s.group === 'cleaning').map(slot => {
                       const responds = yesResponders.find(y => y.userId === slot.userId);
-                      const toiletWarning = slot.restrictedToToiletOk && !responds?.toiletOk;
+                      const toiletWarning = slot.restrictedToToiletOk && !isEligibleForChoreAssignment(responds || { userId: '', userDisplayName: '', toiletOk: false }, slot);
                       const doubleCount = getUserStagedCount(slot.userId);
 
                       return (
@@ -746,8 +769,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
                               className="px-3 py-2 bg-gray-50 dark:bg-[#252520] text-gray-800 dark:text-[#f5f5f0] border border-gray-100 dark:border-white/5 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer max-w-[150px] sm:max-w-none"
                             >
                               {(() => {
-                                const eligible = yesResponders.filter(vr => !!vr.isCleaning);
-                                const list = eligible.length > 0 ? eligible : yesResponders;
+                                const list = yesResponders.filter((responder) => isEligibleForChoreAssignment(responder, slot));
                                 return list.map(vr => {
                                   const pastMatches = historicalDuties.filter(hd => hd.userId === vr.userId).length;
                                   return (
@@ -796,8 +818,7 @@ export default function ChoreCommitteeDashboard({ poll, pollResponses, profile, 
                               className="px-3 py-2 bg-gray-50 dark:bg-[#252520] text-gray-800 dark:text-[#f5f5f0] border border-gray-100 dark:border-white/5 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer max-w-[150px] sm:max-w-none"
                             >
                               {(() => {
-                                const eligible = yesResponders.filter(vr => !!vr.isKitchen);
-                                const list = eligible.length > 0 ? eligible : yesResponders;
+                                const list = yesResponders.filter((responder) => isEligibleForChoreAssignment(responder, slot));
                                 return list.map(vr => {
                                   const pastMatches = historicalDuties.filter(hd => hd.userId === vr.userId).length;
                                   return (

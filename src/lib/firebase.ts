@@ -3,8 +3,10 @@ import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth
 import { getFirestore, initializeFirestore, memoryLocalCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import firebaseConfigFromFile from '../../firebase-applet-config.json';
 
-// Support loading from environment variables in production (Hostinger, etc.) to prevent git-overwrite of credentials
+// Prefer explicit runtime environment variables when a complete Firebase client config is supplied.
+// The committed file remains a legacy/default fallback for the current production-compatible path.
 const metaEnv = (import.meta as any).env || {};
+const runtimeEnvironment = String(metaEnv.VITE_KCFC_RUNTIME_ENV || 'production').trim().toLowerCase();
 const envConfig = {
   apiKey: metaEnv.VITE_FIREBASE_API_KEY,
   authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN,
@@ -17,18 +19,34 @@ const envConfig = {
 
 const hasEnvConfig = !!(envConfig.apiKey && envConfig.projectId);
 const hasFileConfig = !!(firebaseConfigFromFile && firebaseConfigFromFile.apiKey && firebaseConfigFromFile.projectId);
-const firebaseConfig = hasFileConfig ? { ...firebaseConfigFromFile } : (hasEnvConfig ? envConfig : {});
+const committedProjectId = String(firebaseConfigFromFile?.projectId || '').trim();
 
-// Allow overriding ONLY the database ID in production (e.g. Hostinger environment variables)
-// If the environment variable is set to "(default)", it should not overwrite our custom database ID
-if (metaEnv.VITE_FIREBASE_DATABASE_ID && metaEnv.VITE_FIREBASE_DATABASE_ID !== "(default)") {
-  (firebaseConfig as any).firestoreDatabaseId = metaEnv.VITE_FIREBASE_DATABASE_ID;
-} else if ((firebaseConfig as any).firestoreDatabaseId === "(default)") {
-  if (hasFileConfig && firebaseConfigFromFile.firestoreDatabaseId && firebaseConfigFromFile.firestoreDatabaseId !== "(default)") {
-    (firebaseConfig as any).firestoreDatabaseId = firebaseConfigFromFile.firestoreDatabaseId;
-  } else {
-    delete (firebaseConfig as any).firestoreDatabaseId;
+if (runtimeEnvironment === 'staging') {
+  if (!hasEnvConfig) {
+    throw new Error(
+      'KCFC staging safety guard: VITE_KCFC_RUNTIME_ENV=staging requires an explicit VITE_FIREBASE_* staging configuration. Refusing to fall back to the committed Firebase project.'
+    );
   }
+
+  if (String(envConfig.projectId || '').trim() === committedProjectId) {
+    throw new Error(
+      'KCFC staging safety guard: staging Firebase projectId must differ from the committed production/default projectId.'
+    );
+  }
+}
+
+const firebaseConfig = hasEnvConfig
+  ? { ...envConfig }
+  : (hasFileConfig ? { ...firebaseConfigFromFile } : {});
+
+// Database ID follows the selected Firebase project configuration. An explicit env database ID
+// may override the selected value, except "(default)" which means use Firebase's default database.
+if (metaEnv.VITE_FIREBASE_DATABASE_ID && metaEnv.VITE_FIREBASE_DATABASE_ID !== '(default)') {
+  (firebaseConfig as any).firestoreDatabaseId = metaEnv.VITE_FIREBASE_DATABASE_ID;
+} else if (metaEnv.VITE_FIREBASE_DATABASE_ID === '(default)') {
+  delete (firebaseConfig as any).firestoreDatabaseId;
+} else if ((firebaseConfig as any).firestoreDatabaseId === '(default)') {
+  delete (firebaseConfig as any).firestoreDatabaseId;
 }
 
 export const app = initializeApp(firebaseConfig);
@@ -43,23 +61,23 @@ try {
       tabManager: persistentMultipleTabManager()
     })
   };
-  firestoreInstance = dbId 
+  firestoreInstance = dbId
     ? initializeFirestore(app, cacheSettings, dbId)
     : initializeFirestore(app, cacheSettings);
-  console.log("Firestore: Initialized successfully with persistent local cache.");
+  console.log('Firestore: Initialized successfully with persistent local cache.');
 } catch (err) {
-  console.warn("Firestore: Persistent local cache initialization failed or unsupported in this environment. Falling back to default/memory cache.", err);
+  console.warn('Firestore: Persistent local cache initialization failed or unsupported in this environment. Falling back to default/memory cache.', err);
   try {
     // If it was already registered or initialized, retrieve the existing instance
     firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
   } catch (err2) {
-    console.error("Firestore standard retrieval failed, initializing with memory local cache.", err2);
+    console.error('Firestore standard retrieval failed, initializing with memory local cache.', err2);
     try {
       firestoreInstance = dbId
         ? initializeFirestore(app, { localCache: memoryLocalCache() }, dbId)
         : initializeFirestore(app, { localCache: memoryLocalCache() });
     } catch (err3) {
-      console.error("Firestore memory cache initialization failed, falling back to standard getFirestore:", err3);
+      console.error('Firestore memory cache initialization failed, falling back to standard getFirestore:', err3);
       firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
     }
   }
@@ -112,7 +130,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     },
     operationType,
     path
-  }
+  };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
