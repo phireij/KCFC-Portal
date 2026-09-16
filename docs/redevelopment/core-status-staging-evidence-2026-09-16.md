@@ -8,14 +8,15 @@ This record captures the current isolated-staging checkpoint for the governed Re
 
 - Repository: `phireij/KCFC-Portal`
 - Branch: `redesign/mobile-first-v2`
-- Application head exercised by the staging build: `99229433e9750862443a2a3a4e18f6d8c4b5d0f4`
+- Application head exercised by the current staging build: `f83ab686e8e29943a767789817686403fc0faaf1`
 - Production `main`: `653cc7229600fd7baff17a21a21f12d267b66d2b` — unchanged
 - Draft PR #1: OPEN / DRAFT / NOT MERGED at the checkpoint
-- Staging build: `build-2026-09-15-006` — current for the exercised application code
-- Core-status staging executor provider state was previously restored to `false`; on 2026-09-16 the user explicitly authorized enabling it in isolated staging for the active acceptance/testing period
-- `/api/health`: healthy at the accepted staging checkpoint
+- Staging build: `build-2026-09-16-000` — current for the exercised application code
+- Core-status staging executor: `true` in the isolated staging backend for the authorized active acceptance period
+- `/api/health`: returned `status: "ok"`, runtime `staging`, Firebase project `kcfc-portal-staging`, and Firestore database `(default)`
+- External connector flags remained off and the deployed UI displayed the `STAGING • TEST ENVIRONMENT` banner
 
-Repository documentation/test-hardening commits made after this evidence record may advance the branch head without changing the application bundle represented by `build-2026-09-15-006`. Any future staging deployment must use the then-current exact head and repeat only the checks materially affected by that deployment.
+Repository documentation/test-hardening commits made after this evidence record may advance the branch head without changing the application bundle represented by `build-2026-09-16-000`. Any future staging deployment must use the then-current exact head and repeat only the checks materially affected by that deployment.
 
 ## Staging test identity state
 
@@ -28,14 +29,14 @@ Do not alter real KCFC member records to extend this evidence. New synthetic ide
 
 ## Core-status mutation / audit evidence
 
-At this checkpoint:
+At the completed Cleaning cleanup checkpoint:
 
-- `leadership_audit` contains exactly **two** existing Core-status transition records from the controlled staging acceptance work;
-- an attempted additional Regular → Core upgrade did **not** commit;
-- the audit count remained exactly two after that non-committing attempt;
-- no additional Core-status audit record should be inferred from the attempted upgrade.
+- `leadership_audit` contains exactly **four** Core-status transition records: the two pre-existing records plus one controlled Regular → Core transition and one controlled Core → Regular transition performed on 2026-09-16;
+- the intermediate governed role/ministry edits did not append Core-status audit records;
+- the final downgrade appended exactly one Core-status audit record;
+- no stale-plan rejection audit record exists because the live UI invalidated and cleared the reviewed plan as soon as the concurrent member revision arrived, before the old request could be submitted.
 
-This is evidence of the observed staging state, not a claim that all rejection/concurrency cases are complete.
+This is evidence of the observed staging state, not a claim that the server-side stale-request rejection has been empirically completed.
 
 ## User authorization update — 2026-09-16
 
@@ -62,18 +63,38 @@ Repository test coverage was strengthened after the exercised staging build with
 
 These are automated repository safeguards only. They do **not** replace the remaining empirical Firestore/directory/audit acceptance tests listed below.
 
+## Empirical result — Core-only role + Cleaning downgrade cleanup
+
+The approved `Staging QA` identity was exercised only in isolated staging:
+
+1. Regular → Core committed with the existing Firebase Auth UID preserved.
+2. `Cleaning Leader` plus `Cleaning` were assigned through Governed Member Editing.
+3. A concurrent governed edit changed the Core-only role to `Cleaning Sub-Leader` while preserving `Cleaning`.
+4. A fresh Core → Regular transition preview explicitly listed `Cleaning Sub-Leader` and `Cleaning` for removal.
+5. The committed downgrade returned the profile to Regular Member.
+
+Post-transition observations:
+
+- `users/92wkikALiZYldr8wcCcr7oicfPb2`: `isCoreMember=false`, roles contain only permanent `member`, and ministries are empty;
+- `member_directory/92wkikALiZYldr8wcCcr7oicfPb2`: `isCoreMember=false`, roles contain only `member`, ministries are empty, and the UID is unchanged;
+- no Cleaning role, Cleaning ministry, or cleaning-status marker is present;
+- the application reports `Staging QA` as `REGULAR MEMBER · 0 MINISTRIES` and states that the existing account identity was preserved and the transition was audited;
+- `leadership_audit` contains exactly four Core-status records, with exactly one new record for the final downgrade.
+
+No liturgical ministry was present in the approved pre-test profile, so liturgical preservation was not empirically exercised in this run; it remains covered by the repository contract tests.
+
 ## Accepted current posture
 
 The following are accepted for this checkpoint and should not be repeated merely for caution unless a later deployment or regression affects them:
 
-- current staging build identity `build-2026-09-15-006`;
+- current staging build identity `build-2026-09-16-000` at `f83ab686e8e29943a767789817686403fc0faaf1`;
 - healthy `/api/health` result;
 - isolated staging runtime already established by the preceding staging acceptance;
 - Governed Member Editing / Membership Status workflow present in the exercised build;
 - `Staging QA` restored to Regular Member with no ministries;
-- exactly two existing Core-status audit records retained;
-- the attempted additional upgrade did not commit;
-- executor activation for the current staging acceptance period is now explicitly authorized, but the provider-side flag must still be changed in the staging environment before empirical write tests can proceed.
+- exactly four Core-status audit records after the controlled upgrade and downgrade;
+- Core-only role and Cleaning downgrade cleanup empirically passed for the approved staging identity;
+- executor activation remains authorized and enabled while the remaining stale-request acceptance work is incomplete.
 
 ## Remaining empirical work
 
@@ -85,18 +106,7 @@ The executor may remain enabled for this active isolated-staging acceptance peri
 
 ### 2. Core-only role + Cleaning downgrade cleanup
 
-Still required. Using approved staging-only data, establish a Core Member with a Core-only organizational role and Cleaning assignment, then verify Core → Regular atomically:
-
-- sets `isCoreMember=false`;
-- preserves permanent `member`;
-- removes the Core-only organizational role;
-- removes Cleaning membership and any cleaning-status marker in scope;
-- preserves otherwise-valid liturgical ministries if present;
-- updates `member_directory/{uid}` consistently;
-- appends exactly one audit record for the committed transition;
-- preserves the Firebase Auth UID/account.
-
-Do not manufacture real-member data or use production accounts to satisfy this test.
+Empirically passed for the approved staging identity, subject to the explicit note above that no liturgical ministry was present to exercise preservation in this run.
 
 ### 3. Physical-device PWA / Web Push
 

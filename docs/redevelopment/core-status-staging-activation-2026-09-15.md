@@ -4,17 +4,17 @@
 
 - Repository: `phireij/KCFC-Portal`
 - Branch: `redesign/mobile-first-v2`
-- Exercised staging application head: `99229433e9750862443a2a3a4e18f6d8c4b5d0f4`
-- Exercised staging build: `build-2026-09-15-006`
+- Exercised staging application head: `f83ab686e8e29943a767789817686403fc0faaf1`
+- Exercised staging build: `build-2026-09-16-000`
 - Production `main`: `653cc7229600fd7baff17a21a21f12d267b66d2b` — unchanged
 - Draft PR #1: must remain OPEN / DRAFT / NOT MERGED
 - `/api/health`: healthy at the accepted staging checkpoint
-- Core-status staging executor: provider state was previously restored to `false`; user has now explicitly authorized enabling it in isolated staging for the active acceptance/testing period
+- Core-status staging executor: enabled only in isolated staging for the user-authorized active acceptance/testing period
 - `Staging QA`: Regular Member, no ministries
-- `leadership_audit`: exactly two existing Core-status records from controlled staging work
-- attempted additional Regular → Core upgrade: did not commit; audit count remained two
+- `leadership_audit`: exactly four Core-status records after the controlled 2026-09-16 upgrade/downgrade run
+- Core-only role + Cleaning cleanup: empirically passed for `Staging QA`; the final state is Regular Member with only permanent `member` and no ministries
 
-The branch may advance with documentation or automated-test hardening without changing the accepted `build-2026-09-15-006` staging application bundle. Treat `docs/redevelopment/core-status-staging-evidence-2026-09-16.md` as the evidence/status companion to this handoff.
+The branch may advance with documentation or automated-test hardening without changing the accepted `build-2026-09-16-000` staging application bundle. Treat `docs/redevelopment/core-status-staging-evidence-2026-09-16.md` as the evidence/status companion to this handoff.
 
 This handoff is for isolated Firebase/App Hosting staging only. It does not authorize production deployment, production Core-status changes, production data mutation, PR merge, connector activation, Firebase Auth account recreation, or secret exposure.
 
@@ -87,22 +87,13 @@ Never expose or copy the private key into screenshots, logs, PR text, browser co
 
 ### 1. Stale-plan concurrency rejection
 
-Still required. A controlled isolated-staging test must demonstrate that a reviewed transition based on an old member revision is rejected without modifying `users/{uid}`, `member_directory/{uid}`, or appending `leadership_audit`.
+Still required at the server boundary. A two-tab browser attempt established an old reviewed downgrade plan and then committed a concurrent governed role edit. The live Firestore listener refreshed the first tab and cleared the old plan before submission, preventing the UI from sending a stale request. This client behavior is safe, but it is not empirical proof of the server-side rejection. A controlled isolated-staging test must still submit an old `expectedUpdatedAt` and demonstrate no mutation to `users/{uid}` or `member_directory/{uid}` and no `leadership_audit` append.
 
 The executor is authorized to remain enabled during this active acceptance period, provided the staging identity/isolation checks remain green.
 
 ### 2. Core-only role + Cleaning downgrade cleanup
 
-Still required. Using approved staging-only data, establish a Core Member with a Core-only organizational role and Cleaning assignment, then verify Core → Regular:
-
-- sets `isCoreMember=false`;
-- preserves permanent `member`;
-- removes the Core-only organizational role;
-- removes Cleaning and any cleaning-status marker;
-- preserves otherwise-valid liturgical ministries if present;
-- updates `member_directory/{uid}` consistently inside the transaction boundary;
-- appends exactly one audit record;
-- preserves Firebase Auth UID/account.
+Empirically passed on isolated staging with the approved `Staging QA` identity. The test established Core status, a Core-only Cleaning role, and Cleaning membership; the final governed downgrade produced matching `users/{uid}` and `member_directory/{uid}` projections with `isCoreMember=false`, permanent `member` preserved, Cleaning role/ministry removed, UID unchanged, and exactly one new downgrade audit record. No liturgical ministry was present in the approved pre-test profile, so liturgical preservation was not empirically exercised in this run.
 
 ### 3. Physical-device PWA / Web Push
 
