@@ -9,7 +9,7 @@
 - Production `main`: `653cc7229600fd7baff17a21a21f12d267b66d2b` — unchanged
 - Draft PR #1: must remain OPEN / DRAFT / NOT MERGED
 - `/api/health`: healthy at the accepted staging checkpoint
-- Core-status staging executor: restored to `false`
+- Core-status staging executor: provider state was previously restored to `false`; user has now explicitly authorized enabling it in isolated staging for the active acceptance/testing period
 - `Staging QA`: Regular Member, no ministries
 - `leadership_audit`: exactly two existing Core-status records from controlled staging work
 - attempted additional Regular → Core upgrade: did not commit; audit count remained two
@@ -39,6 +39,22 @@ The server-side transition route:
 Regular → Core expands eligibility only and grants no role or ministry automatically.
 
 Core → Regular preserves the permanent Member role and otherwise-valid liturgical ministries, while removing Core-only organizational roles, Kitchen/Cleaning membership, and cleaning-status markers according to the governed transition plan.
+
+## User authorization for the staging acceptance period
+
+On 2026-09-16 the user explicitly clarified that the Core-status staging executor should **not** be kept disabled throughout testing and instructed that it be enabled so the workflow can be tested properly.
+
+Accordingly, for the active isolated-staging acceptance period:
+
+- `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=true` is authorized on the isolated staging backend;
+- the flag may remain enabled while the approved Core-status acceptance tests are being performed;
+- production remains blocked by the independent runtime guard and is not authorized;
+- all external connectors remain disabled;
+- only approved staging-only identities/data may be mutated;
+- no real KCFC member record may be altered merely to obtain evidence;
+- the flag should be returned to `false` after the Core-status acceptance/testing period is complete or if any isolation stop condition is triggered.
+
+This authorization supersedes the earlier handoff wording that required a separate approval for every temporary executor window during the same staging acceptance period.
 
 ## Automated contract hardening after the accepted staging build
 
@@ -71,9 +87,9 @@ Never expose or copy the private key into screenshots, logs, PR text, browser co
 
 ### 1. Stale-plan concurrency rejection
 
-Still required. A tightly controlled isolated-staging test must demonstrate that a reviewed transition based on an old member revision is rejected without modifying `users/{uid}`, `member_directory/{uid}`, or appending `leadership_audit`.
+Still required. A controlled isolated-staging test must demonstrate that a reviewed transition based on an old member revision is rejected without modifying `users/{uid}`, `member_directory/{uid}`, or appending `leadership_audit`.
 
-Do not enable the executor merely to repeat automated evidence. The empirical test needs a separately authorized mutation window and approved staging-only target/data.
+The executor is authorized to remain enabled during this active acceptance period, provided the staging identity/isolation checks remain green.
 
 ### 2. Core-only role + Cleaning downgrade cleanup
 
@@ -96,20 +112,20 @@ Still required separately on a physical iPhone and physical Android tablet. Reco
 
 Still deferred until approved staging data exists: a staging chore poll and an eligible Core Cleaning member with toilet-cleaning authorization.
 
-## Executor operating rule
+## Executor operating rule during the authorized testing period
 
-`KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=false` is the required resting state.
+For the active isolated-staging acceptance period, `KCFC_CORE_STATUS_STAGING_EXECUTOR_ENABLED=true` is authorized.
 
-A future temporary `true` setting is permitted only for a separately authorized, tightly controlled isolated-staging mutation test. Immediately before enabling it:
+Before relying on it for a mutation test:
 
 1. verify the exact isolated staging project/backend/URL and healthy `/api/health`;
 2. confirm no production/default identity or production data is visible;
 3. confirm the approved staging-only target/data and expected pre-test audit count;
-4. enable only the Core-status staging executor flag;
-5. perform only the approved test;
-6. capture non-secret evidence;
-7. restore the flag to `false` immediately;
-8. verify post-test target state, directory projection, audit count, and healthy staging runtime.
+4. perform only the planned staging acceptance test;
+5. capture non-secret evidence;
+6. verify post-test target state, directory projection, audit count, and healthy staging runtime.
+
+Return the flag to `false` when the Core-status staging acceptance period is complete, or immediately if an isolation/safety stop condition is triggered.
 
 Do not create new synthetic accounts or alter real KCFC members merely to obtain acceptance evidence without explicit approval.
 
@@ -143,4 +159,4 @@ Stop immediately and do not improvise if any of the following occurs:
 
 ## Post-acceptance posture
 
-Keep the Core-status executor disabled between tests. Production remains hard-blocked by runtime checks and is not authorized for Core-status mutation. A separate explicit approval is required before any future production-capable promotion.
+After the Core-status staging acceptance period is complete, restore the executor to `false`. Production remains hard-blocked by runtime checks and is not authorized for Core-status mutation. A separate explicit approval is required before any future production-capable promotion.
