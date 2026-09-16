@@ -20,6 +20,19 @@ function member(updatedAt = '2026-09-10T12:00:00.000Z'): UserProfile {
   } as UserProfile;
 }
 
+function cleaningMember(updatedAt = '2026-09-10T12:00:00.000Z'): UserProfile {
+  return {
+    uid: 'member-cleaning',
+    email: 'cleaning@example.com',
+    displayName: 'Staging Cleaning Member',
+    isVerified: true,
+    isCoreMember: true,
+    roles: ['member', 'cleaning_leader'],
+    ministries: ['cleaning', 'cleaning_toilet_ok'],
+    updatedAt,
+  } as UserProfile;
+}
+
 function adapterFor(initial: UserProfile) {
   let stored = structuredClone(initial);
   const audits: CoreStatusAuditRecord[] = [];
@@ -44,7 +57,7 @@ function adapterFor(initial: UserProfile) {
       return result;
     },
   };
-  return { adapter, getStored: () => stored, audits };
+  return { adapter, getStored: () => structuredClone(stored), audits };
 }
 
 const source = member();
@@ -62,6 +75,7 @@ for (const [label, context] of [
   ['actor mismatch', { environment: 'staging' as const, executorEnabled: true, actorUid: 'other-leader', actorRoles: ['admin' as const] }],
 ] as const) {
   const store = adapterFor(source);
+  const before = store.getStored();
   await assert.rejects(
     executeCoreStatusTransitionInStaging({
       plan,
@@ -71,11 +85,12 @@ for (const [label, context] of [
     undefined,
     `${label} execution must be rejected`,
   );
-  assert.equal(store.getStored().isCoreMember, true, `${label} rejection must not mutate the member`);
+  assert.deepEqual(store.getStored(), before, `${label} rejection must not mutate any member field`);
   assert.equal(store.audits.length, 0, `${label} rejection must not append audit evidence`);
 }
 
 const staleStore = adapterFor(member('2026-09-10T12:30:00.000Z'));
+const staleBefore = staleStore.getStored();
 await assert.rejects(
   executeCoreStatusTransitionInStaging({
     plan,
@@ -90,8 +105,8 @@ await assert.rejects(
   }),
   /stale/i,
 );
-assert.equal(staleStore.getStored().isCoreMember, true);
-assert.equal(staleStore.audits.length, 0);
+assert.deepEqual(staleStore.getStored(), staleBefore, 'A stale reviewed plan must leave the member snapshot unchanged.');
+assert.equal(staleStore.audits.length, 0, 'A stale reviewed plan must not append audit evidence.');
 
 const successStore = adapterFor(source);
 const result = await executeCoreStatusTransitionInStaging({
@@ -117,4 +132,35 @@ assert.equal(successStore.audits[0].source, 'staging_core_status_executor');
 assert.deepEqual(successStore.audits[0].before, plan.from);
 assert.deepEqual(successStore.audits[0].after, plan.to);
 
-console.log('Staging-only Core status executor guards and atomic adapter contract verified.');
+const cleaningSource = cleaningMember();
+const cleaningPlan = buildCoreStatusMutationPlan({
+  member: cleaningSource,
+  toCore: false,
+  actorUid: 'leader-1',
+  reason: 'Staging verification of Cleaning cleanup on Core-status downgrade.',
+});
+assert.deepEqual(cleaningPlan.removedRoles, ['cleaning_leader']);
+assert.deepEqual(cleaningPlan.removedMinistries, ['cleaning', 'cleaning_toilet_ok']);
+assert.deepEqual(cleaningPlan.to.roles, ['member']);
+assert.deepEqual(cleaningPlan.to.ministries, []);
+
+const cleaningStore = adapterFor(cleaningSource);
+await executeCoreStatusTransitionInStaging({
+  plan: cleaningPlan,
+  adapter: cleaningStore.adapter,
+  context: {
+    environment: 'staging',
+    executorEnabled: true,
+    actorUid: 'leader-1',
+    actorRoles: ['president'],
+    now: () => '2026-09-10T13:20:00.000Z',
+  },
+});
+assert.equal(cleaningStore.getStored().isCoreMember, false);
+assert.deepEqual(cleaningStore.getStored().roles, ['member']);
+assert.deepEqual(cleaningStore.getStored().ministries, []);
+assert.equal(cleaningStore.audits.length, 1, 'Cleaning downgrade must append exactly one audit record.');
+assert.deepEqual(cleaningStore.audits[0].before, cleaningPlan.from);
+assert.deepEqual(cleaningStore.audits[0].after, cleaningPlan.to);
+
+console.log('Staging-only Core status executor guards, stale-plan rejection, liturgical preservation, and Cleaning cleanup contract verified.');
