@@ -142,3 +142,7 @@ Stop without improvising if any of the following occurs:
 ## Production boundary
 
 No production action is authorized by this evidence record. Production `main`, production Firebase resources, production member records, public cutover, connector activation, mass messaging, and production Core-status mutation remain out of scope without separate explicit authorization.
+
+## Follow-up server-boundary stale-plan attempt (2026-09-17)
+
+The approved Staging QA identity was used exclusively. A concurrent liturgical-ministry revision was committed, and an older reviewed Core-status transition was paused at the authenticated `/api/admin/core-status/transition` XHR/fetch breakpoint and then resumed. The browser did not capture a readable HTTP response artifact, so the required HTTP 409 stale-review result is **inconclusive** and must not be reported as passed. The governed cleanup transition restored Staging QA to Regular Member with the valid `choir_a` liturgical ministry preserved and the Firebase Auth UID unchanged. No production or external-connector action occurred. The resulting additional audit entries are retained as non-secret evidence of the controlled test and cleanup.
