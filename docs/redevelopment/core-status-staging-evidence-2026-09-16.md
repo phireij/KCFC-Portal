@@ -15,7 +15,7 @@ This record captures the current isolated-staging checkpoint for the governed Re
 - Core-status staging executor: restored to `false` after controlled staging work
 - `/api/health`: healthy at the accepted staging checkpoint
 
-Repository documentation commits made after this evidence record may advance the branch head without changing the application bundle represented by `build-2026-09-15-006`. Any future staging deployment must use the then-current exact head and repeat only the checks materially affected by that deployment.
+Repository documentation/test-hardening commits made after this evidence record may advance the branch head without changing the application bundle represented by `build-2026-09-15-006`. Any future staging deployment must use the then-current exact head and repeat only the checks materially affected by that deployment.
 
 ## Staging test identity state
 
@@ -37,6 +37,18 @@ At this checkpoint:
 - the executor has been returned to `false` and is not to remain enabled between controlled mutation tests.
 
 This is evidence of the observed staging state, not a claim that all rejection/concurrency cases are complete.
+
+## Automated contract hardening after the empirical checkpoint
+
+Repository test coverage was strengthened after the exercised staging build without changing the accepted staging data:
+
+- stale-plan rejection now asserts the entire member snapshot remains byte-for-byte equivalent at the test-model level, not only `isCoreMember`;
+- stale-plan rejection continues to require zero audit append;
+- the successful downgrade contract continues to verify removal of Core-only organizational roles while preserving otherwise-valid liturgical ministry membership;
+- a dedicated Cleaning downgrade case now verifies removal of `cleaning_leader`, `cleaning`, and `cleaning_toilet_ok`, preservation of permanent `member`, and exactly one audit append;
+- production-runtime, disabled-executor, unauthorized-actor, and actor-mismatch rejections continue to assert no member mutation and zero audit append.
+
+These are automated repository safeguards only. They do **not** replace the remaining empirical Firestore/directory/audit acceptance tests listed below.
 
 ## Accepted current posture
 
