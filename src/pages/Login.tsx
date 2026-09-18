@@ -7,7 +7,6 @@ import {
   signInWithPopup,
   updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
   ArrowRight,
   CheckCircle2,
@@ -22,11 +21,12 @@ import {
   User,
   UsersRound,
 } from 'lucide-react';
-import { auth, db, googleProvider } from '../lib/firebase';
+import { auth, googleProvider } from '../lib/firebase';
 import { Logo } from '../components/ui/Logo';
 import { cn } from '../lib/utils';
 import { syncOwnMemberDirectoryProfile } from '../lib/memberDirectorySyncClient';
 import { claimPendingProfile } from '../lib/pendingProfileClaimClient';
+import { ensureAuthenticatedMemberProfile } from '../lib/authMemberProfileClient';
 
 const avatarUrl = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'KCFC')}&background=123B66&color=fff`;
@@ -49,34 +49,11 @@ export default function Login() {
     }
   });
 
-  const migrateOrCreateGoogleProfile = async (uid: string, accountEmail: string, displayName: string, photoURL?: string | null, emailVerified?: boolean) => {
-    const userDocRef = doc(db, 'users', uid);
-    const existing = await getDoc(userDocRef);
-    if (existing.exists()) {
-      await syncOwnMemberDirectoryProfile();
-      return;
-    }
-
-    const emailLower = accountEmail.trim().toLowerCase();
-    const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
+  const claimOrCreateAuthenticatedProfile = async (displayName?: string | null) => {
     const pendingClaim = await claimPendingProfile();
-    if (pendingClaim.claimed) {
-      await syncOwnMemberDirectoryProfile();
-      return;
+    if (!pendingClaim.claimed) {
+      await ensureAuthenticatedMemberProfile(displayName || undefined);
     }
-
-    await setDoc(userDocRef, {
-      uid,
-      email: emailLower,
-      displayName: isBootstrapAdmin ? 'ADMIN' : (displayName || 'Member'),
-      photoURL: photoURL || avatarUrl(displayName || 'Member'),
-      roles: isBootstrapAdmin ? ['admin'] : ['member'],
-      ministries: [],
-      isEmailVerified: isBootstrapAdmin || emailVerified || false,
-      isVerified: isBootstrapAdmin,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
     await syncOwnMemberDirectoryProfile();
   };
 
@@ -88,13 +65,7 @@ export default function Login() {
       const result = await signInWithPopup(auth, googleProvider);
       sessionStorage.setItem('kcfc_just_authenticated', 'true');
       if (result.user) {
-        await migrateOrCreateGoogleProfile(
-          result.user.uid,
-          result.user.email || '',
-          result.user.displayName || 'Member',
-          result.user.photoURL,
-          result.user.emailVerified,
-        );
+        await claimOrCreateAuthenticatedProfile(result.user.displayName || 'Member');
       }
     } catch (e: any) {
       console.error('Google sign-in failed', e);
@@ -131,8 +102,9 @@ export default function Login() {
 
     try {
       if (!isSignUp) {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
+        const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
         sessionStorage.setItem('kcfc_just_authenticated', 'true');
+        await claimOrCreateAuthenticatedProfile(credential.user.displayName || undefined);
         return;
       }
 
@@ -141,25 +113,7 @@ export default function Login() {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       await updateProfile(cred.user, { displayName: name.trim() });
 
-      const userDocRef = doc(db, 'users', cred.user.uid);
-      const emailLower = (cred.user.email || '').trim().toLowerCase();
-      const isBootstrapAdmin = emailLower === 'kcfc.jp@gmail.com';
-      const pendingClaim = await claimPendingProfile();
-      if (!pendingClaim.claimed) {
-        await setDoc(userDocRef, {
-          uid: cred.user.uid,
-          email: cred.user.email || '',
-          displayName: isBootstrapAdmin ? 'ADMIN' : name.trim(),
-          photoURL: avatarUrl(name.trim()),
-          roles: isBootstrapAdmin ? ['admin'] : ['member'],
-          ministries: [],
-          isEmailVerified: isBootstrapAdmin || false,
-          isVerified: isBootstrapAdmin,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-      await syncOwnMemberDirectoryProfile();
+      await claimOrCreateAuthenticatedProfile(name.trim());
 
       try {
         const idToken = await cred.user.getIdToken();
