@@ -40,6 +40,12 @@ service cloud.firestore {
         )
       );
     }
+    function canAdministerMembers() {
+      return hasRole('admin') || hasRole('president');
+    }
+    function canGovernMemberAssignments() {
+      return canAdministerMembers() || hasRole('secretary');
+    }
     function isAdmin() { 
       let data = getUserData();
       let roles = data != null ? data.get('roles', []) : [];
@@ -153,9 +159,29 @@ service cloud.firestore {
                (!('webPushSubscriptions' in data) || data.webPushSubscriptions is list);
       }
 
-      allow get: if isSignedIn();
-      allow list: if isApproved();
-      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
+      function hasValidGovernanceMemberships(data) {
+        let ministries = data.get('ministries', []);
+        let hasLiturgicalMembership = ministries.hasAny([
+          'choir_a', 'choir_b', 'lector_commentator', 'usher', 'altar_server'
+        ]);
+        let hasChoreMembership = ministries.hasAny(['kitchen', 'cleaning']);
+        let hasOfficerOrCommitteeRole = data.roles.hasAny([
+          'president', 'vice_president', 'secretary', 'treasurer', 'auditor',
+          'pro', 'spiritual_director', 'leader', 'choir_a_leader',
+          'choir_b_leader', 'lector_commentator_leader', 'usher_leader',
+          'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader',
+          'cleaning_leader', 'cleaning_sub_leader'
+        ]);
+
+        return !(hasLiturgicalMembership && hasChoreMembership) &&
+               (data.get('isCoreMember', false) == true ||
+                (!hasChoreMembership && !hasOfficerOrCommitteeRole &&
+                 data.roles.hasOnly(['member'])));
+      }
+
+      allow get: if isOwner(userId) || canAdministerMembers();
+      allow list: if canAdministerMembers();
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && hasValidGovernanceMemberships(incoming()) &&
                     (isBootstrapAdmin() || (
                       incoming().roles.hasAll(['member']) && 
                       incoming().roles.size() == 1 && 
@@ -166,9 +192,34 @@ service cloud.firestore {
           isBootstrapAdmin() || 
           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'ministries', 'updatedAt', 'nickname', 'birthdate', 'homeAddress', 'phoneNumber', 'preferences', 'isEmailVerified', 'fcmTokens', 'webPushSubscriptions'])
         )) ||
-        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens', 'webPushSubscriptions']))
-      ) && isValidUser(incoming());
-      allow delete: if isAdmin();
+        (canAdministerMembers() && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'isDisabled', 'updatedAt', 'ministries', 'lcRoles', 'isEmailVerified', 'displayName', 'nickname', 'phoneNumber', 'fcmTokens', 'webPushSubscriptions'])) ||
+        (hasRole('secretary') && incoming().diff(existing()).affectedKeys().hasOnly(['roles', 'isVerified', 'isCoreMember', 'updatedAt', 'ministries', 'lcRoles']))
+      ) && isValidUser(incoming()) && hasValidGovernanceMemberships(incoming());
+      allow delete: if canAdministerMembers();
+    }
+
+    // --- Public-safe Member Directory Projection ---
+    // This collection intentionally contains only fields approved for authenticated
+    // community workflows. Private contact, notification preference, token and Web
+    // Push subscription data must remain in the private users collection.
+    match /member_directory/{userId} {
+      function isValidMemberDirectoryProfile(data) {
+        return data.keys().hasOnly([
+                 'uid', 'displayName', 'photoURL', 'nickname', 'roles', 'ministries', 'lcRoles', 'isCoreMember'
+               ]) &&
+               data.uid == userId &&
+               data.displayName is string && data.displayName.size() <= 200 &&
+               data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 2000 &&
+               data.get('nickname', '') is string && data.get('nickname', '').size() <= 120 &&
+               data.roles is list && data.roles.size() <= 10 &&
+               data.ministries is list && data.ministries.size() <= 20 &&
+               data.lcRoles is list && data.lcRoles.size() <= 20 &&
+               data.isCoreMember is bool;
+      }
+
+      allow read: if isApproved();
+      // Projection synchronization is trusted-server only; Admin SDK bypasses client rules.
+      allow create, update, delete: if false;
     }
 
     // --- Polls Collection ---
@@ -269,13 +320,96 @@ service cloud.firestore {
 
     // --- Accounting Collection ---
     match /accounting/{transactionId} {
-      function canAccessAccounting() {
+      function accountingRoles() {
+        let data = getUserData();
+        return data != null ? data.get('roles', []) : [];
+      }
+
+      function isAccountingMember() {
+        let data = getUserData();
+        return isSignedIn() && (
+          isBootstrapAdmin() || (
+            data != null &&
+            data.get('isVerified', false) == true &&
+            data.get('isDisabled', false) == false
+          )
+        );
+      }
+
+      function canReadAccounting() {
+        let roles = accountingRoles();
+        return isAccountingMember() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'vice_president' in roles ||
+          'treasurer' in roles ||
+          'auditor' in roles
+        );
+      }
+
+      function canEditAccounting() {
+        let roles = accountingRoles();
+        return isAccountingMember() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'treasurer' in roles
+        );
+      }
+
+      function canApproveAccounting() {
+        let roles = accountingRoles();
+        return isAccountingMember() && (
+          isBootstrapAdmin() ||
+          'admin' in roles ||
+          'president' in roles ||
+          'auditor' in roles
+        );
+      }
+
+      function hasValidAccountingShape(data) {
+        return data.type in ['income', 'expense'] &&
+               data.amount is number &&
+               data.category is string;
+      }
+
+      function isEditorUpdate() {
+        return canEditAccounting() &&
+               hasValidAccountingShape(incoming()) &&
+               incoming().diff(existing()).affectedKeys().hasOnly([
+                 'type', 'amount', 'category', 'description', 'date', 'receiptUrl',
+                 'updatedAt', 'lastModifiedBy', 'lastModifiedByName'
+               ]);
+      }
+
+      function isApprovalUpdate() {
+        return canApproveAccounting() &&
+               hasValidAccountingShape(incoming()) &&
+               incoming().get('status', '') == 'approved' &&
+               incoming().get('approvedBy', '') == request.auth.uid &&
+               incoming().diff(existing()).affectedKeys().hasOnly([
+                 'status', 'approvedBy', 'approvedByName', 'updatedAt'
+               ]);
+      }
+
+      allow read: if canReadAccounting();
+      allow create: if canEditAccounting() &&
+                    hasValidAccountingShape(incoming()) &&
+                    incoming().get('processedBy', '') == request.auth.uid;
+      allow update: if isEditorUpdate() || isApprovalUpdate();
+      allow delete: if canEditAccounting();
+    }
+
+    // --- Accounting Categories Collection ---
+    match /accounting_categories/{categoryId} {
+      function canEditAccountingCategories() {
         let data = getUserData();
         let roles = data != null ? data.get('roles', []) : [];
         return isSignedIn() && (
           isBootstrapAdmin() || (
             data != null &&
-            data.get('isVerified', false) == true && 
+            data.get('isVerified', false) == true &&
             data.get('isDisabled', false) == false &&
             (
               'admin' in roles ||
@@ -285,24 +419,9 @@ service cloud.firestore {
           )
         );
       }
-      
-      function isValidTransaction(data) {
-        return data.type in ['income', 'expense'] &&
-               data.amount is number &&
-               data.category is string &&
-               data.processedBy == request.auth.uid;
-      }
 
-      allow read: if canAccessAccounting();
-      allow create: if canAccessAccounting() && isValidTransaction(incoming());
-      allow update: if canAccessAccounting() && isValidTransaction(incoming());
-      allow delete: if canAccessAccounting();
-    }
-
-    // --- Accounting Categories Collection ---
-    match /accounting_categories/{categoryId} {
       allow read: if isApproved();
-      allow write: if isAdmin();
+      allow write: if canEditAccountingCategories();
     }
 
     // --- Messages Collection ---

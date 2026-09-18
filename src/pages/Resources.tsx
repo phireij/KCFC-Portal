@@ -1,225 +1,384 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../App';
-import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+} from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Resource } from '../types';
 import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
-import { FileText, Image as ImageIcon, ExternalLink, Plus, Trash2, Search } from 'lucide-react';
-import { format } from 'date-fns';
+import {
+  BookOpen,
+  ExternalLink,
+  FileText,
+  FolderOpen,
+  Image as ImageIcon,
+  Music2,
+  Plus,
+  Search,
+  Trash2,
+  UsersRound,
+  X,
+} from 'lucide-react';
+
+type ResourceForm = {
+  title: string;
+  description: string;
+  ministry: string;
+  fileUrl: string;
+  fileType: string;
+};
+
+const initialForm: ResourceForm = {
+  title: '',
+  description: '',
+  ministry: 'General',
+  fileUrl: '',
+  fileType: 'link',
+};
+
+const categories = [
+  'All',
+  'General',
+  'Choir',
+  'Lector & Commentator',
+  'Usher',
+  'Altar Server',
+  'Kitchen',
+  'Cleaning',
+  'Other',
+];
+
+const managerRoles = [
+  'admin',
+  'president',
+  'vice_president',
+  'secretary',
+  'auditor',
+  'choir_a_leader',
+  'choir_b_leader',
+  'lector_commentator_leader',
+  'usher_leader',
+  'altar_server_leader',
+  'kitchen_leader',
+  'kitchen_sub_leader',
+  'cleaning_leader',
+  'cleaning_sub_leader',
+];
+
+const formatDate = (value: unknown) => {
+  if (!value) return 'Recently added';
+  try {
+    const candidate = value as { toDate?: () => Date; seconds?: number };
+    const date = typeof candidate.toDate === 'function'
+      ? candidate.toDate()
+      : typeof candidate.seconds === 'number'
+        ? new Date(candidate.seconds * 1000)
+        : new Date(value as string | number | Date);
+    if (Number.isNaN(date.getTime())) return 'Recently added';
+    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  } catch {
+    return 'Recently added';
+  }
+};
+
+const resourceIcon = (resource: Resource) => {
+  const type = (resource.fileType || '').toLowerCase();
+  if (type.includes('image')) return ImageIcon;
+  if (type.includes('music') || type.includes('audio')) return Music2;
+  return FileText;
+};
 
 export default function Resources() {
   const { profile, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const categoryParam = searchParams.get('category');
+  const category = categories.includes(categoryParam || '') ? categoryParam! : 'All';
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newResource, setNewResource] = useState({
-    title: '',
-    description: '',
-    ministry: 'Choir',
-    fileUrl: '',
-    fileType: 'pdf'
-  });
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<ResourceForm>(initialForm);
 
-  const isAdmin = (profile?.roles || []).some(r => ['admin', 'president', 'vice_president', 'secretary', 'auditor', 'choir_a_leader', 'choir_b_leader', 'lector_commentator_leader', 'usher_leader', 'altar_server_leader', 'kitchen_leader', 'kitchen_sub_leader', 'cleaning_leader', 'cleaning_sub_leader'].includes(r));
+  const canManage = (profile?.roles || []).some((role) => managerRoles.includes(role));
 
   useEffect(() => {
-    const fetchResources = async () => {
-      try {
-        const q = query(collection(db, 'resources'), orderBy('createdAt', 'desc'));
-        const snap = await getDocs(q);
-        setResources(snap.docs.map(d => ({ id: d.id, ...d.data() } as Resource)));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchResources();
+    const q = query(collection(db, 'resources'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      setResources(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Resource)));
+      setLoading(false);
+    }, (error) => {
+      console.error('Resources: failed to load library', error);
+      setLoading(false);
+    });
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !profile) return;
+  const filteredResources = useMemo(() => {
+    const needle = searchText.trim().toLowerCase();
+    return resources.filter((resource) => {
+      const matchesCategory = category === 'All' || resource.ministry?.toLowerCase() === category.toLowerCase();
+      if (!matchesCategory) return false;
+      if (!needle) return true;
+      return [resource.title, resource.description || '', resource.ministry, resource.fileType]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [resources, searchText, category]);
+
+  const handleCreate = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user || !profile || saving) return;
+    if (!form.title.trim() || !form.fileUrl.trim()) return;
+
+    setSaving(true);
     try {
-      const resourceData: Omit<Resource, 'id'> = {
-        ...newResource,
+      await addDoc(collection(db, 'resources'), {
+        title: form.title.trim(),
+        description: form.description.trim(),
+        ministry: form.ministry,
+        fileUrl: form.fileUrl.trim(),
+        fileType: form.fileType,
         uploadedBy: user.uid,
-        createdAt: new Date().toISOString()
-      };
-      const docRef = await addDoc(collection(db, 'resources'), {
-        ...resourceData,
-        createdAt: serverTimestamp()
+        uploaderName: profile.displayName,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
-      setResources(prev => [{ id: docRef.id, ...resourceData }, ...prev]);
+      setForm(initialForm);
       setShowAddForm(false);
-      setNewResource({ title: '', description: '', ministry: 'Choir', fileUrl: '', fileType: 'pdf' });
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error('Resources: failed to create item', error);
+      alert('This resource could not be added. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this document?")) return;
+  const handleDelete = async (resource: Resource) => {
+    if (!resource.id) return;
+    if (!window.confirm(`Delete “${resource.title}” from the KCFC library?`)) return;
     try {
-      await deleteDoc(doc(db, 'resources', id));
-      setResources(prev => prev.filter(r => r.id !== id));
-    } catch (err) {
-      console.error(err);
+      await deleteDoc(doc(db, 'resources', resource.id));
+    } catch (error) {
+      console.error('Resources: failed to delete item', error);
+      alert('This resource could not be deleted.');
     }
   };
 
-  const filteredResources = filter === 'all' 
-    ? resources 
-    : resources.filter(r => r.ministry.toLowerCase() === filter.toLowerCase());
+  const setResourceCategory = (nextCategory: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextCategory === 'All') next.delete('category');
+      else next.set('category', nextCategory);
+      return next;
+    });
+  };
+
+  const resetFilters = () => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('category');
+      return next;
+    });
+    setSearchText('');
+  };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif text-gray-900 dark:text-white">Ministry Resources</h1>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic text-sm mt-1">Guides, music sheets, and liturgical materials.</p>
-        </div>
-        {isAdmin && !showAddForm && (
-          <button 
-            onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-full text-sm font-medium hover:bg-[#4a4a35] transition-all"
-          >
-            <Plus size={18} />
-            Library Addition
-          </button>
-        )}
-      </div>
-
-      {showAddForm && (
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-[#1e1e1a] p-8 rounded-[32px] border border-gray-100 dark:border-white/5 shadow-lg space-y-6"
-        >
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add to Library</h2>
-            <button onClick={() => setShowAddForm(false)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 font-bold">Cancel</button>
+    <div className="kcfc-page space-y-5 pb-4">
+      <section className="overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-[#123B66] via-[#174E83] to-[#2563EB] p-5 text-white shadow-[0_18px_45px_rgba(18,59,102,0.18)] sm:p-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 flex items-center gap-2 text-blue-100">
+              <BookOpen className="h-4 w-4" />
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.13em]">KCFC Resource Library</span>
+            </div>
+            <h1 className="text-[28px] font-extrabold leading-tight tracking-[-0.03em] sm:text-[34px]">Find what your ministry needs.</h1>
+            <p className="mt-2 max-w-xl text-[14px] leading-6 text-blue-50/90">
+              Browse liturgical guides, music sheets, ministry references and community documents from one mobile-friendly library.
+            </p>
           </div>
-          <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input
-              required
-              placeholder="Document Title"
-              value={newResource.title}
-              onChange={e => setNewResource({...newResource, title: e.target.value})}
-              className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none"
-            />
-            <select
-              value={newResource.ministry}
-              onChange={e => setNewResource({...newResource, ministry: e.target.value})}
-              className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] outline-none"
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-[13px] font-bold text-[#123B66] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              <option className="bg-white dark:bg-[#1e1e1a]">Choir</option>
-              <option className="bg-white dark:bg-[#1e1e1a]">Lector</option>
-              <option className="bg-white dark:bg-[#1e1e1a]">Usher</option>
-              <option className="bg-white dark:bg-[#1e1e1a]">Altar Server</option>
-              <option className="bg-white dark:bg-[#1e1e1a]">Other</option>
-            </select>
-            <input
-              required
-              placeholder="File URL (e.g., Google Drive link)"
-              value={newResource.fileUrl}
-              onChange={e => setNewResource({...newResource, fileUrl: e.target.value})}
-              className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] col-span-full outline-none"
-            />
-            <textarea
-              placeholder="Short description..."
-              value={newResource.description}
-              onChange={e => setNewResource({...newResource, description: e.target.value})}
-              className="px-4 py-3 bg-gray-50 dark:bg-[#252520] text-gray-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-[#8a8a65] col-span-full h-24 outline-none"
-            />
-            <button 
-              type="submit"
-              className="px-6 py-3 bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f] rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-[#4a4a35] transition-all"
-            >
-              Add Document
+              <Plus className="h-4 w-4" /> Add resource
             </button>
-          </form>
-        </motion.div>
-      )}
+          )}
+        </div>
+      </section>
 
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
-        {['All', 'Choir', 'Lector', 'Usher', 'Altar Server'].map(cat => (
-          <button
-            key={cat}
-            onClick={() => setFilter(cat.toLowerCase() === 'all' ? 'all' : cat)}
-            className={cn(
-              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap",
-              (filter === 'all' && cat === 'All') || (filter.toLowerCase() === cat.toLowerCase())
-                ? "bg-[#5A5A40] dark:bg-[#8a8a65] text-white dark:text-[#11110f]"
-                : "bg-white dark:bg-[#1e1e1a] text-gray-400 dark:text-gray-500 border border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-[#252520]"
-            )}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
+      <section className="kcfc-surface overflow-hidden">
+        <div className="border-b border-slate-100 p-4 sm:p-5 dark:border-white/10">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-[18px] font-extrabold tracking-tight text-[#172033] dark:text-white">Browse library</h2>
+              <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">Search by title, description, ministry or file type.</p>
+            </div>
+            <div className="relative w-full lg:max-w-sm">
+              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search resources..."
+                className="kcfc-input min-h-11 w-full pl-10"
+              />
+            </div>
+          </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {categories.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setResourceCategory(item)}
+                className={cn(
+                  'min-h-10 shrink-0 rounded-xl px-3.5 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                  category === item
+                    ? 'bg-[#123B66] text-white'
+                    : 'border border-slate-200 bg-white text-slate-500 hover:text-[#123B66] dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+                )}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {loading ? (
-          <div className="col-span-full text-center py-20 text-gray-400 dark:text-gray-500">Loading resources...</div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="h-44 animate-pulse rounded-[22px] bg-slate-100 dark:bg-white/5" />)}
+          </div>
         ) : filteredResources.length === 0 ? (
-          <div className="col-span-full text-center py-20 bg-white dark:bg-[#1e1e1a] rounded-[32px] border border-dashed border-gray-200 dark:border-white/10">
-            <p className="text-gray-400 dark:text-gray-500 font-serif italic">No documents found for this category.</p>
+          <div className="px-5 py-14 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><FolderOpen className="h-6 w-6" /></div>
+            <h3 className="mt-4 text-[16px] font-extrabold text-[#172033] dark:text-white">No matching resources</h3>
+            <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-500 dark:text-slate-400">Try another ministry or clear the current search.</p>
+            {(category !== 'All' || searchText) && (
+              <button type="button" onClick={resetFilters} className="mt-4 min-h-10 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white">Clear filters</button>
+            )}
           </div>
         ) : (
-          filteredResources.map((res, i) => (
-            <motion.div
-              key={res.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.05 }}
-              className="bg-white dark:bg-[#1e1e1a] p-6 rounded-[24px] border border-gray-100 dark:border-white/5 shadow-sm hover:shadow-md transition-shadow group relative"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="p-3 bg-gray-50 dark:bg-[#252520] rounded-2xl">
-                  {res.fileType.includes('image') ? (
-                    <ImageIcon size={24} className="text-[#5A5A40] dark:text-[#8a8a65]" />
-                  ) : (
-                    <FileText size={24} className="text-[#5A5A40] dark:text-[#8a8a65]" />
-                  )}
-                </div>
-                <div className="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500">
-                  {res.ministry}
-                </div>
-              </div>
-              
-              <h3 className="text-lg font-bold line-clamp-1 text-gray-900 dark:text-white">{res.title}</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 min-h-[32px]">{res.description || 'No description provided.'}</p>
-              
-              <div className="mt-6 pt-4 border-t border-gray-50 dark:border-white/5 flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 dark:text-gray-550">
-                  {format(new Date(res.createdAt), 'MMM dd, yyyy')}
-                </span>
-                <div className="flex items-center gap-2">
-                  {isAdmin && (
-                    <button 
-                      onClick={() => res.id && handleDelete(res.id)}
-                      className="p-2 text-gray-200 dark:text-gray-600 hover:text-red-500 rounded-full transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                  <a 
-                    href={res.fileUrl} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="p-2 bg-gray-50 dark:bg-[#252520] text-gray-400 dark:text-gray-500 hover:text-[#5A5A40] dark:hover:text-[#8a8a65] hover:bg-gray-100 dark:hover:bg-[#2d2d25] rounded-full transition-colors"
-                  >
-                    <ExternalLink size={14} />
-                  </a>
-                </div>
-              </div>
-            </motion.div>
-          ))
+          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
+            {filteredResources.map((resource) => {
+              const Icon = resourceIcon(resource);
+              return (
+                <article key={resource.id} className="flex min-h-[190px] flex-col rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EAF3FF] text-[#123B66] dark:bg-blue-500/15 dark:text-blue-200"><Icon className="h-5 w-5" /></div>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-300">{resource.ministry || 'General'}</span>
+                  </div>
+
+                  <h3 className="mt-4 line-clamp-2 text-[16px] font-extrabold leading-5 text-[#172033] dark:text-white">{resource.title}</h3>
+                  <p className="mt-1.5 line-clamp-3 text-[12px] leading-5 text-slate-500 dark:text-slate-400">{resource.description || 'KCFC ministry resource.'}</p>
+
+                  <div className="mt-auto flex items-end justify-between gap-3 border-t border-slate-100 pt-3 dark:border-white/10">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400">{formatDate(resource.createdAt)}</p>
+                      <p className="mt-0.5 truncate text-[9px] uppercase tracking-wide text-slate-400">{resource.fileType || 'resource'}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(resource)}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:hover:bg-red-500/10"
+                          aria-label={`Delete ${resource.title}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                      <a
+                        href={resource.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-3 text-[11px] font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        Open <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         )}
-      </div>
+      </section>
+
+      {showAddForm && canManage && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setShowAddForm(false); }}>
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-[26px] bg-white shadow-2xl sm:max-w-2xl sm:rounded-[26px] dark:bg-[#172033]">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-4 sm:px-5 dark:border-white/10 dark:bg-[#172033]">
+              <div>
+                <h2 className="text-[18px] font-extrabold text-[#172033] dark:text-white">Add resource</h2>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Add a trusted link or document reference to the KCFC library.</p>
+              </div>
+              <button type="button" onClick={() => setShowAddForm(false)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5" aria-label="Close"><X className="h-5 w-5" /></button>
+            </div>
+
+            <form onSubmit={handleCreate} className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400">Title</span>
+                <input required value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} className="kcfc-input" placeholder="Resource title" />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400">Ministry</span>
+                <select value={form.ministry} onChange={(event) => setForm((current) => ({ ...current, ministry: event.target.value }))} className="kcfc-input">
+                  {categories.filter((item) => item !== 'All').map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400">Type</span>
+                <select value={form.fileType} onChange={(event) => setForm((current) => ({ ...current, fileType: event.target.value }))} className="kcfc-input">
+                  <option value="link">Web / Drive link</option>
+                  <option value="pdf">PDF</option>
+                  <option value="image">Image</option>
+                  <option value="music">Music / audio</option>
+                  <option value="document">Document</option>
+                </select>
+              </label>
+
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400">Resource URL</span>
+                <input required type="url" value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} className="kcfc-input" placeholder="https://..." />
+              </label>
+
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-slate-400">Description</span>
+                <textarea rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} className="kcfc-input resize-none py-3" placeholder="What is this resource for?" />
+              </label>
+
+              <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setShowAddForm(false)} className="min-h-11 rounded-xl border border-slate-200 px-4 text-[12px] font-bold text-slate-500 dark:border-white/10 dark:text-slate-300">Cancel</button>
+                <button type="submit" disabled={saving || !form.title.trim() || !form.fileUrl.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123B66] px-4 text-[12px] font-bold text-white disabled:opacity-45">
+                  <Plus className="h-4 w-4" /> {saving ? 'Adding…' : 'Add to library'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <section className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-400/10 dark:bg-blue-500/5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#123B66] shadow-sm dark:bg-white/10 dark:text-blue-200"><UsersRound className="h-5 w-5" /></div>
+          <div>
+            <p className="text-[13px] font-extrabold text-[#172033] dark:text-white">Shared ministry knowledge</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Resources stay inside the authenticated KCFC Portal unless an authorized future publishing workflow deliberately marks an item public.</p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
