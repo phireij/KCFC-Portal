@@ -25,3 +25,75 @@ assert.match(route, /Native push transport was not confirmed\. A fallback notifi
 assert.doesNotMatch(route, /successCount:\s*realTokens\.length/, 'Fallback must not fabricate FCM transport success counts.');
 
 console.log('Self-test push recipient-boundary verification passed.');
+
+// Execute the actual route without starting the application or loading Firebase.
+// Every provider dependency is synthetic; only loopback HTTP is used.
+const { default: express } = await import('express');
+const { runInNewContext } = await import('node:vm');
+const { transpileModule, ModuleKind } = await import('typescript');
+const compile = (text: string) => transpileModule(text, { compilerOptions: { module: ModuleKind.None } }).outputText;
+for (const [label, profile, expected] of [
+  ['deleted profile', null, 404],
+  ['pending member', { isVerified: false }, 403],
+  ['disabled member', { isVerified: true, isDisabled: true }, 403],
+  ['malformed disabled string', { isVerified: true, isDisabled: 'true' }, 403],
+  ['malformed disabled number', { isVerified: true, isDisabled: 1 }, 403],
+  ['malformed disabled null', { isVerified: true, isDisabled: null }, 403],
+  ['missing approval flag', {}, 403],
+  ['string approval flag', { isVerified: 'true' }, 403],
+  ['active ordinary member', { isVerified: true, isDisabled: false, isCoreMember: false, roles: ['member'], isEmailVerified: false }, 200],
+  ['legacy active member', { isVerified: true }, 200],
+] as const) {
+  let credentialReads = 0;
+  const caller = profile && Object.defineProperties({ ...profile }, {
+    fcmTokens: { get() { credentialReads++; return []; } },
+    webPushSubscriptions: { get() { credentialReads++; return []; } },
+  });
+  const app = express(); app.use(express.json());
+  runInNewContext(compile(route), {
+    app: { post(path: string, handler: (req: any, res: any) => Promise<void>) {
+      app.post(path, (req, res) => Promise.resolve(handler(req, res)));
+    } },
+    authAdmin: { async verifyIdToken(token: string) { assert.equal(token, 'synthetic'); return { uid: 'owner-test' }; } },
+    async fetchUserDocWithFallback(uid: string) { assert.equal(uid, 'owner-test'); return caller; },
+    isDeliverableFcmToken: () => false,
+    console: { error() { throw new Error('Unexpected route error'); } },
+    // No send or database-write APIs are supplied: reaching one fails the case.
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+  try {
+    const { port } = server.address() as import('node:net').AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${port}/api/users/send-test-push`, {
+      method: 'POST', headers: { authorization: 'Bearer synthetic', 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'not-the-owner', targetToken: 'must-be-ignored' }),
+    });
+    assert.equal(response.status, expected, label);
+    const payload = await response.json() as { error?: string; success?: boolean };
+    if (expected === 403) assert.equal(payload.error, 'Active verified membership is required to test notifications.');
+    if (expected !== 200) assert.equal(credentialReads, 0, `${label}: reject before reading saved credentials`);
+    else { assert.equal(credentialReads, 2); assert.equal(payload.success, false); }
+  } finally { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); }
+}
+
+// Both loader paths must retain membership flags; otherwise the route would
+// incorrectly reject active users or fail to see disabled membership.
+const loader = source.slice(source.indexOf('async function fetchUserDocWithFallback('), source.indexOf('\nasync function startServer()'));
+for (const useRest of [false, true]) for (const disabledValue of [true, false, undefined, 'true', 1, null]) {
+  const flags = { isVerified: true, isDisabled: disabledValue };
+  const context: Record<string, any> = {
+    dbAdmin: { collection: () => ({ doc: () => ({ get: async () => {
+      if (useRest) throw new Error('Synthetic Admin read failure');
+      return { exists: true, id: 'owner-test', data: () => flags };
+    } }) }) },
+    firebaseConfig: {}, targetProjectId: 'synthetic-only', logMessage() {},
+    fetch: async () => ({ status: 200, ok: true, json: async () => ({}) }),
+    simplifyRESTDoc: () => flags,
+    console: { error() {} },
+  };
+  runInNewContext(compile(loader), context);
+  const result = await context.fetchUserDocWithFallback('owner-test', 'synthetic');
+  assert.equal(result.isVerified, true, `Loader approval flag, REST=${useRest}`);
+  assert.equal(result.isDisabled, disabledValue !== undefined && disabledValue !== false, `Loader disabled flag, REST=${useRest}`);
+}
+console.log('Self-test active-member gate and Admin/REST flag preservation: PASS');
