@@ -37,11 +37,13 @@ const target = {
   updatedAt: '2026-09-17T00:05:00.000Z',
 } satisfies SyntheticMember;
 
-function syntheticDependencies(executorEnabled: boolean) {
+function syntheticDependencies(executorEnabled: boolean, transactionTarget?: SyntheticMember) {
   let authVerifyCalls = 0;
   let actorReads = 0;
   let targetReads = 0;
   let transactionCalls = 0;
+  let transactionReads = 0;
+  let mutationCalls = 0;
 
   const auth = {
     async verifyIdToken(token: string) {
@@ -72,9 +74,19 @@ function syntheticDependencies(executorEnabled: boolean) {
         },
       };
     },
-    async runTransaction() {
+    async runTransaction(work: (transaction: unknown) => Promise<unknown>) {
       transactionCalls += 1;
-      throw new Error('A stale route-level review must be rejected before any Firestore transaction begins.');
+      assert.ok(transactionTarget, 'A route-level stale review must reject before the transaction.');
+      return work({
+        async get() {
+          transactionReads += 1;
+          return { exists: true, id: target.uid, data: () => structuredClone(transactionTarget) };
+        },
+        update() { mutationCalls += 1; throw new Error('Unexpected member write'); },
+        set() { mutationCalls += 1; throw new Error('Unexpected directory write'); },
+        delete() { mutationCalls += 1; throw new Error('Unexpected directory deletion'); },
+        create() { mutationCalls += 1; throw new Error('Unexpected audit append'); },
+      });
     },
   };
 
@@ -90,6 +102,8 @@ function syntheticDependencies(executorEnabled: boolean) {
       actorReads: () => actorReads,
       targetReads: () => targetReads,
       transactionCalls: () => transactionCalls,
+      transactionReads: () => transactionReads,
+      mutationCalls: () => mutationCalls,
     },
   };
 }
@@ -97,10 +111,11 @@ function syntheticDependencies(executorEnabled: boolean) {
 async function withServer(
   executorEnabled: boolean,
   run: (baseUrl: string, counters: ReturnType<typeof syntheticDependencies>['counters']) => Promise<void>,
+  transactionTarget?: SyntheticMember,
 ) {
   const app = express();
   app.use(express.json());
-  const { dependencies, counters } = syntheticDependencies(executorEnabled);
+  const { dependencies, counters } = syntheticDependencies(executorEnabled, transactionTarget);
   registerCoreStatusTransitionRoutes(app, dependencies as never);
 
   const server = app.listen(0, '127.0.0.1');
@@ -174,4 +189,42 @@ await withServer(true, async (baseUrl, counters) => {
   );
 });
 
-console.log('Core-status route disabled-executor 503 and stale-review HTTP 409 boundaries: PASS');
+// Real route -> Firestore adapter -> executor; only Auth/Firestore are synthetic.
+// Each reread differs from the earlier route read. No Firebase calls occur.
+for (const [name, changed] of Object.entries({
+  updatedAt: { ...target, updatedAt: '2026-09-17T00:06:00.000Z' },
+  roles: { ...target, roles: ['member', 'secretary'] },
+  ministries: { ...target, ministries: ['choir_b'] },
+  coreStatus: { ...target, isCoreMember: true },
+})) {
+  const before = structuredClone(changed);
+  await withServer(true, async (baseUrl, counters) => {
+    const response = await fetch(`${baseUrl}/api/admin/core-status/transition`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer synthetic-route-test-token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        targetUserId: target.uid,
+        toCore: true,
+        expectedUpdatedAt: target.updatedAt,
+        reason: 'Synthetic transaction-reread race verification.',
+      }),
+    });
+    assert.equal(response.status, 409, `${name}: transaction-reread race must return HTTP 409.`);
+    assert.deepEqual(await response.json(), {
+      error: 'This member changed after the status review. Refresh the member and review the transition again.',
+    }, 'Only the stable sanitized stale-review error may reach the client.');
+    assert.equal(counters.authVerifyCalls(), 1);
+    assert.equal(counters.actorReads(), 1);
+    assert.equal(counters.targetReads(), 1);
+    assert.equal(counters.transactionCalls(), 1);
+    assert.equal(counters.transactionReads(), 1);
+    assert.equal(counters.mutationCalls(), 0, 'No member/directory/audit write may be attempted.');
+    assert.deepEqual(changed, before, 'The synthetic current snapshot must remain unchanged.');
+    console.log(`${name}: HTTP409, exact sanitized response, zero writes: PASS`);
+  }, changed);
+}
+
+console.log('Core-status route disabled503, pre-transaction stale409 and four transaction-race409 cases: PASS');
