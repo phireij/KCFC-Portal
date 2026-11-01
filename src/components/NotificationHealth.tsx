@@ -1,3 +1,4 @@
+import { describeSelfTestPushResult } from '../lib/selfTestPushResult';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BellRing,
@@ -164,19 +165,7 @@ export default function NotificationHealth() {
         body: JSON.stringify({}),
       });
       const result = await response.json().catch(() => ({}));
-      if (response.ok && result.success) {
-        setTestResult({
-          tone: 'ok',
-          text: result.isSandboxSimulated
-            ? 'Test alert was accepted by the current browser environment.'
-            : 'Test notification sent. Check your device notification tray or lock screen.',
-        });
-      } else {
-        setTestResult({
-          tone: 'error',
-          text: result.error || result.message || 'The test notification could not be dispatched.',
-        });
-      }
+      setTestResult(describeSelfTestPushResult(response.ok, result));
     } catch (error) {
       console.error('Notification health: test push failed', error);
       setTestResult({ tone: 'error', text: 'The test request failed. Try repairing device registration first.' });

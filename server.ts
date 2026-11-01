@@ -1938,8 +1938,8 @@ async function startServer() {
         
         await dbAdmin.collection("notifications").add({
           userId: callerUid,
-          title: "🔔 KCFC Smartphone Alert Test",
-          message: "Success! Smartphone push alerts are working perfectly on your device.",
+          title: "KCFC push test could not confirm delivery",
+          message: "Push delivery was not confirmed. This Inbox-only fallback does not prove that a smartphone notification was delivered.",
           type: "announcement",
           status: "unread",
           link: "/inbox",
