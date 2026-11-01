@@ -362,6 +362,8 @@ function simplifyRESTDoc(doc: any) {
 }
 
 interface UserProfileData {
+  isVerified?: boolean;
+  isDisabled?: boolean;
   id: string;
   uid: string;
   email?: string;
@@ -463,6 +465,8 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       webPushSubscriptions: data?.webPushSubscriptions || [],
       preferences: data?.preferences,
       roles: data?.roles || [],
+      isVerified: data?.isVerified === true,
+      isDisabled: data?.isDisabled !== undefined && data?.isDisabled !== false,
     };
   } catch (adminErr: any) {
     logMessage(`[DB USER FETCH WARN] dbAdmin user query for [redacted] failed: ${adminErr.message}. Attempting REST API fallback...`);
@@ -498,6 +502,8 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
           webPushSubscriptions: simplified.webPushSubscriptions || [],
           preferences: simplified.preferences,
           roles: simplified.roles || [],
+          isVerified: simplified.isVerified === true,
+          isDisabled: simplified.isDisabled !== undefined && simplified.isDisabled !== false,
         };
       }
       return null;
@@ -1778,6 +1784,13 @@ async function startServer() {
       const callerProfile = await fetchUserDocWithFallback(callerUid, token);
       if (!callerProfile) {
         res.status(404).json({ error: "User profile not found in database." });
+        return;
+      }
+
+      // Match Profile/notification UI eligibility; email verification and Core/admin
+      // roles are separate from approved, active membership.
+      if (callerProfile.isVerified !== true || (callerProfile.isDisabled !== undefined && callerProfile.isDisabled !== false)) {
+        res.status(403).json({ error: "Active verified membership is required to test notifications." });
         return;
       }
 
