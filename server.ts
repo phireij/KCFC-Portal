@@ -362,6 +362,8 @@ function simplifyRESTDoc(doc: any) {
 }
 
 interface UserProfileData {
+  isVerified?: boolean;
+  isDisabled?: boolean;
   id: string;
   uid: string;
   email?: string;
@@ -463,6 +465,8 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
       webPushSubscriptions: data?.webPushSubscriptions || [],
       preferences: data?.preferences,
       roles: data?.roles || [],
+      isVerified: data?.isVerified === true,
+      isDisabled: data?.isDisabled !== undefined && data?.isDisabled !== false,
     };
   } catch (adminErr: any) {
     logMessage(`[DB USER FETCH WARN] dbAdmin user query for [redacted] failed: ${adminErr.message}. Attempting REST API fallback...`);
@@ -498,6 +502,8 @@ async function fetchUserDocWithFallback(userId: string, idToken: string): Promis
           webPushSubscriptions: simplified.webPushSubscriptions || [],
           preferences: simplified.preferences,
           roles: simplified.roles || [],
+          isVerified: simplified.isVerified === true,
+          isDisabled: simplified.isDisabled !== undefined && simplified.isDisabled !== false,
         };
       }
       return null;
@@ -1781,6 +1787,13 @@ async function startServer() {
         return;
       }
 
+      // Match Profile/notification UI eligibility; email verification and Core/admin
+      // roles are separate from approved, active membership.
+      if (callerProfile.isVerified !== true || (callerProfile.isDisabled !== undefined && callerProfile.isDisabled !== false)) {
+        res.status(403).json({ error: "Active verified membership is required to test notifications." });
+        return;
+      }
+
       // 3. Gather active tokens only from the authenticated caller profile.
       const allTokens: string[] = [];
       const savedTokens = callerProfile.fcmTokens || [];
@@ -1938,8 +1951,8 @@ async function startServer() {
         
         await dbAdmin.collection("notifications").add({
           userId: callerUid,
-          title: "🔔 KCFC Smartphone Alert Test",
-          message: "Success! Smartphone push alerts are working perfectly on your device.",
+          title: "KCFC push test could not confirm delivery",
+          message: "Push delivery was not confirmed. This Inbox-only fallback does not prove that a smartphone notification was delivered.",
           type: "announcement",
           status: "unread",
           link: "/inbox",
