@@ -341,7 +341,8 @@ export default function Accounting() {
 
   // Chart Data (Last 6 Months)
   const chartData = Array.from({ length: 6 }).map((_, i) => {
-    const d = new Date();
+    // Anchor before subtracting months so the 29th-31st cannot overflow a shorter month.
+    const d = startOfMonth(new Date());
     d.setMonth(d.getMonth() - i);
     const month = format(d, 'MMM');
     const monthStart = startOfMonth(d);
