@@ -1,4 +1,5 @@
 import express from "express";
+import { registerWebPushSubscription, pruneExpiredWebPushSubscriptions } from "./server/webPushSubscriptionStore";
 import path from "path";
 import { readFileSync, appendFileSync, writeFileSync, existsSync } from "fs";
 import { initializeApp, getApps, getApp } from "firebase-admin/app";
@@ -587,30 +588,7 @@ async function startServer() {
       const decodedToken = await authAdmin.verifyIdToken(token);
       const userId = decodedToken.uid;
 
-      const userRef = dbAdmin.collection("users").doc(userId);
-      const userDoc = await userRef.get();
-
-      let webPushSubscriptions: any[] = [];
-      if (userDoc.exists) {
-        const existingSubscriptions = userDoc.data()?.webPushSubscriptions;
-        webPushSubscriptions = Array.isArray(existingSubscriptions) ? existingSubscriptions : [];
-      }
-
-      // Replace the same endpoint instead of accumulating duplicates, and keep a bounded
-      // set of the most recent other devices so stale registrations cannot grow forever.
-      webPushSubscriptions = webPushSubscriptions
-        .filter((sub: any) => sub && typeof sub.endpoint === "string" && sub.endpoint !== normalizedSubscription.endpoint)
-        .slice(-(MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER - 1));
-
-      webPushSubscriptions.push({
-        ...normalizedSubscription,
-        registeredAt: new Date().toISOString()
-      });
-
-      await userRef.set({
-        webPushSubscriptions,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      await registerWebPushSubscription(dbAdmin, userId, normalizedSubscription, MAX_WEB_PUSH_SUBSCRIPTIONS_PER_USER);
 
       logMessage(`[WEBPUSH REGISTER] Successfully registered web push subscription for user [redacted]`);
       res.json({ success: true });
@@ -1417,8 +1395,7 @@ async function startServer() {
 
           const subs = u.webPushSubscriptions || [];
           if (Array.isArray(subs) && subs.length > 0) {
-            const updatedSubs = [...subs];
-            let needsUpdate = false;
+            const expiredSubscriptions: any[] = [];
 
             for (const sub of subs) {
               const userDisplayName = u.displayName || 'Member';
@@ -1435,20 +1412,14 @@ async function startServer() {
               } else {
                 webPushFailureCount++;
                 if (result.expired) {
-                  const idx = updatedSubs.indexOf(sub);
-                  if (idx > -1) {
-                    updatedSubs.splice(idx, 1);
-                    needsUpdate = true;
-                  }
+                  expiredSubscriptions.push(sub);
                 }
               }
             }
 
-            if (needsUpdate) {
+            if (expiredSubscriptions.length > 0) {
               try {
-                await dbAdmin.collection("users").doc(u.id).update({
-                  webPushSubscriptions: updatedSubs
-                });
+                await pruneExpiredWebPushSubscriptions(dbAdmin, u.id, expiredSubscriptions);
                 logMessage(`[WEBPUSH ANNOUNCEMENT PRUNE] Pruned expired subscriptions for user [redacted]`);
               } catch (pruneErr) {
                 console.error(`[WEBPUSH ANNOUNCEMENT PRUNE ERROR] Failed to prune for user [redacted]:`, pruneErr);
@@ -1660,8 +1631,7 @@ async function startServer() {
 
           const subs = u.webPushSubscriptions || [];
           if (Array.isArray(subs) && subs.length > 0) {
-            const updatedSubs = [...subs];
-            let needsUpdate = false;
+            const expiredSubscriptions: any[] = [];
 
             for (const sub of subs) {
               const userDisplayName = u.displayName || 'Member';
@@ -1684,20 +1654,14 @@ async function startServer() {
               } else {
                 webPushFailureCount++;
                 if (result.expired) {
-                  const idx = updatedSubs.indexOf(sub);
-                  if (idx > -1) {
-                    updatedSubs.splice(idx, 1);
-                    needsUpdate = true;
-                  }
+                  expiredSubscriptions.push(sub);
                 }
               }
             }
 
-            if (needsUpdate) {
+            if (expiredSubscriptions.length > 0) {
               try {
-                await dbAdmin.collection("users").doc(u.id).update({
-                  webPushSubscriptions: updatedSubs
-                });
+                await pruneExpiredWebPushSubscriptions(dbAdmin, u.id, expiredSubscriptions);
                 logMessage(`[WEBPUSH PRUNE] Pruned expired subscriptions for user [redacted]`);
               } catch (pruneErr) {
                 console.error(`[WEBPUSH PRUNE ERROR] Failed to prune for user [redacted]:`, pruneErr);
@@ -1907,8 +1871,7 @@ async function startServer() {
       let webPushFailureCount = 0;
       if (Array.isArray(callerWebPushSubs) && callerWebPushSubs.length > 0) {
         logMessage(`[WEBPUSH TEST PUSH] Dispatching caller-bound test notification to ${callerWebPushSubs.length} registered subscription(s)...`);
-        const updatedSubs = [...callerWebPushSubs];
-        let needsUpdate = false;
+        const expiredSubscriptions: any[] = [];
 
         for (const sub of callerWebPushSubs) {
           const result = await sendWebPushNotification(
@@ -1922,20 +1885,14 @@ async function startServer() {
           } else {
             webPushFailureCount++;
             if (result.expired) {
-              const idx = updatedSubs.indexOf(sub);
-              if (idx > -1) {
-                updatedSubs.splice(idx, 1);
-                needsUpdate = true;
-              }
+              expiredSubscriptions.push(sub);
             }
           }
         }
 
-        if (needsUpdate) {
+        if (expiredSubscriptions.length > 0) {
           try {
-            await dbAdmin.collection("users").doc(callerUid).update({
-              webPushSubscriptions: updatedSubs
-            });
+            await pruneExpiredWebPushSubscriptions(dbAdmin, callerUid, expiredSubscriptions);
             logMessage(`[WEBPUSH TEST PRUNE] Pruned expired subscriptions for authenticated caller.`);
           } catch (err) {
             console.error("[WEBPUSH TEST PRUNE ERROR]", err);
