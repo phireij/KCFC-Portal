@@ -28,7 +28,8 @@ if (appUrl.protocol !== 'https:') {
   throw new Error('KCFC staging runtime evidence: APP_URL must use HTTPS.');
 }
 const productionPortalHostnames = new Set(['portal.kcfcjp.com', 'www.portal.kcfcjp.com']);
-if (productionPortalHostnames.has(appUrl.hostname.toLowerCase())) {
+// A DNS absolute hostname may include a trailing root dot.
+if (productionPortalHostnames.has(appUrl.hostname.toLowerCase().replace(/\.$/, ''))) {
   throw new Error('KCFC staging runtime evidence: APP_URL must not target the production KCFC Portal hostname.');
 }
 
