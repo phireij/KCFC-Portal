@@ -52,7 +52,8 @@ if (runtimeEnvironment === "staging") {
     throw new Error("KCFC staging safety guard: staging APP_URL must be a valid absolute HTTPS URL.");
   }
   const productionPortalHostnames = new Set(['portal.kcfcjp.com', 'www.portal.kcfcjp.com']);
-  if (productionPortalHostnames.has(stagingAppUrl.hostname.toLowerCase())) {
+  // A DNS absolute hostname may include a trailing root dot.
+  if (productionPortalHostnames.has(stagingAppUrl.hostname.toLowerCase().replace(/\.$/, ''))) {
     throw new Error("KCFC staging safety guard: staging APP_URL must not target the production KCFC Portal hostname.");
   }
 }
