@@ -1,3 +1,4 @@
+import './verify-notification-readiness-display';
 import assert from 'node:assert/strict';
 import { currentDeviceHealthLabel, evaluateCurrentWebPushEndpoint, normalizePushEndpoint } from '../src/lib/currentDeviceNotificationHealth';
 

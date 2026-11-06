@@ -109,6 +109,8 @@ export default function NotificationHealth() {
     if (!standalone && ios) return { label: 'Install the app first on iPhone/iPad', tone: 'warning' as const };
     if (permission === 'denied') return { label: 'Notifications are blocked', tone: 'error' as const };
     if (permission !== 'granted') return { label: 'Notifications are not enabled yet', tone: 'warning' as const };
+    if (serviceWorkerHealth === 'checking') return { label: 'Checking push service readiness', tone: 'warning' as const };
+    if (serviceWorkerHealth === 'unsupported') return { label: 'Push service is not supported in this browser', tone: 'warning' as const };
     if (serviceWorkerHealth === 'missing') return { label: 'Push service worker needs repair', tone: 'warning' as const };
     if (currentDeviceEndpointHealth === 'unregistered') return { label: 'This device subscription needs registration repair', tone: 'warning' as const };
     if (currentDeviceEndpointHealth === 'no_subscription' && subscriptionCount > 0 && tokenCount === 0) return { label: 'Other device registrations exist — this device needs setup', tone: 'warning' as const };
@@ -116,12 +118,16 @@ export default function NotificationHealth() {
     return { label: currentDeviceEndpointHealth === 'registered' ? 'This device is ready for notifications' : 'Notification registration exists — send a test to confirm this device', tone: currentDeviceEndpointHealth === 'registered' ? 'good' as const : 'warning' as const };
   }, [permission, standalone, ios, endpointCount, online, serviceWorkerHealth, currentDeviceEndpointHealth, subscriptionCount, tokenCount]);
 
+  const deviceSetupReady = permission === 'granted' && endpointCount > 0 && serviceWorkerHealth === 'ready'
+    && currentDeviceEndpointHealth !== 'unregistered'
+    && !(currentDeviceEndpointHealth === 'no_subscription' && subscriptionCount > 0 && tokenCount === 0);
+
   const onboardingStep = useMemo(() => {
     if (ios && !standalone) return 1;
     if (permission !== 'granted') return 2;
-    if (endpointCount === 0 || serviceWorkerHealth === 'missing') return 2;
+    if (!deviceSetupReady) return 2;
     return 3;
-  }, [ios, standalone, permission, endpointCount, serviceWorkerHealth]);
+  }, [ios, standalone, permission, deviceSetupReady]);
 
   const connectorStatus = (provider: CommunicationConnector) => {
     const connection = profile?.connectedCommunicationApps?.find((item) => item.provider === provider);
@@ -218,7 +224,7 @@ export default function NotificationHealth() {
             <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Recommended setup</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <SetupStep number={1} label="Install KCFC" detail={standalone ? 'Installed' : ios ? 'Add to Home Screen first' : 'Install when browser offers it'} done={standalone} active={onboardingStep === 1} />
-              <SetupStep number={2} label="Enable alerts" detail={permission === 'granted' && endpointCount > 0 && serviceWorkerHealth !== 'missing' ? 'Device registered' : 'Allow notifications and register/repair device'} done={permission === 'granted' && endpointCount > 0 && serviceWorkerHealth !== 'missing'} active={onboardingStep === 2} />
+              <SetupStep number={2} label="Enable alerts" detail={deviceSetupReady ? 'Device registered' : 'Allow notifications and register/repair device'} done={deviceSetupReady} active={onboardingStep === 2} />
               <SetupStep number={3} label="Send a test" detail="Confirm alerts reach this device" done={Boolean(testResult?.tone === 'ok')} active={onboardingStep === 3} />
             </div>
           </div>
@@ -280,7 +286,7 @@ export default function NotificationHealth() {
           <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Communication channels</p>
           <div className="mt-3 space-y-2">
             <ChannelRow label="KCFC Inbox" detail="Durable source of truth" status="Primary record" strong />
-            <ChannelRow label="PWA Push" detail="Primary alert channel" status={permission === 'granted' && endpointCount > 0 && serviceWorkerHealth !== 'missing' ? 'Enabled' : 'Setup needed'} strong />
+            <ChannelRow label="PWA Push" detail="Primary alert channel" status={deviceSetupReady ? 'Enabled' : 'Setup needed'} strong />
             {channelCards.map((channel) => (
               <ChannelRow
                 key={channel.id}
@@ -331,3 +337,4 @@ function ChannelRow({ label, detail, status, strong = false }: { label: string; 
     </div>
   );
 }
+
